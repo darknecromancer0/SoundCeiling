@@ -8,6 +8,12 @@ public final class PureLogicTest {
         testPeakCeilingAlwaysWins();
         testNormalizationStrengthCanBePartial();
         testTrackerDoesNotDropInstantlyOnSpeechGap();
+        testFlatPlatformVolumeCurveFallsBackInsteadOfMuting();
+        testUsablePlatformVolumeCurveIsPreserved();
+        testDeepPlatformVolumeCurveIsPreserved();
+        testMultipleMutedStepsArePreserved();
+        testNarrowPlatformVolumeCurveIsPreserved();
+        testSignedZeroFlatCurveFallsBackInsteadOfMuting();
         System.out.println("PureLogicTest: PASS");
     }
 
@@ -43,6 +49,100 @@ public final class PureLogicTest {
                 "Gap must not appear louder than preceding audio");
     }
 
+    private static void testFlatPlatformVolumeCurveFallsBackInsteadOfMuting() {
+        float[] flatPlatformCurve = new float[16];
+        float[] usableCurve = VolumeCurveMath.validatedGains(flatPlatformCurve, 0, 15);
+        float capturedRmsDb = -7.8f;
+        float targetRmsDb = -18f;
+        float desiredGainDb = targetRmsDb - capturedRmsDb;
+
+        int index = VolumeCurveMath.bestIndexAtOrBelowGain(
+                usableCurve,
+                0,
+                12,
+                desiredGainDb);
+
+        assertEquals(4, index,
+                "A flat vendor dB curve must use the audible fallback instead of mute");
+    }
+
+    private static void testUsablePlatformVolumeCurveIsPreserved() {
+        float[] platformCurve = {
+                Float.NEGATIVE_INFINITY,
+                -30f,
+                -18f,
+                -9f,
+                0f
+        };
+
+        float[] usableCurve = VolumeCurveMath.validatedGains(platformCurve, 0, 4);
+
+        assertNear(-18f, usableCurve[2], 0.001f,
+                "A usable Android volume curve must not be replaced");
+    }
+
+    private static void testDeepPlatformVolumeCurveIsPreserved() {
+        float[] platformCurve = {
+                Float.NEGATIVE_INFINITY,
+                -127f,
+                -80f,
+                -40f,
+                0f
+        };
+
+        float[] usableCurve = VolumeCurveMath.validatedGains(platformCurve, 0, 4);
+
+        assertNear(-127f, usableCurve[1], 0.001f,
+                "A deep but monotonic Android volume curve must be preserved");
+    }
+
+    private static void testMultipleMutedStepsArePreserved() {
+        float[] platformCurve = {
+                Float.NEGATIVE_INFINITY,
+                Float.NEGATIVE_INFINITY,
+                -60f,
+                -30f,
+                0f
+        };
+
+        float[] usableCurve = VolumeCurveMath.validatedGains(platformCurve, 0, 4);
+
+        assertNear(-80f, usableCurve[1], 0.001f,
+                "Every Android mute step must remain muted in the usable curve");
+        assertNear(-60f, usableCurve[2], 0.001f,
+                "Audible steps after multiple mute indices must be preserved");
+    }
+
+    private static void testNarrowPlatformVolumeCurveIsPreserved() {
+        float[] platformCurve = {
+                Float.NEGATIVE_INFINITY,
+                -5f,
+                -3f,
+                -1f,
+                0f
+        };
+
+        float[] usableCurve = VolumeCurveMath.validatedGains(platformCurve, 0, 4);
+
+        assertNear(-3f, usableCurve[2], 0.001f,
+                "A narrow monotonic Android volume curve must be preserved");
+    }
+
+    private static void testSignedZeroFlatCurveFallsBackInsteadOfMuting() {
+        float[] flatPlatformCurve = new float[16];
+        flatPlatformCurve[5] = -0.0f;
+        float[] usableCurve = VolumeCurveMath.validatedGains(flatPlatformCurve, 0, 15);
+
+        int index = VolumeCurveMath.bestIndexAtOrBelowGain(
+                usableCurve,
+                0,
+                12,
+                -10.2f);
+
+        assertEquals(4, index,
+                "Signed zeroes must not make a flat vendor curve look usable");
+    }
+
     private static boolean contains(int[] values, int wanted) {
         return Arrays.stream(values).anyMatch(v -> v == wanted);
     }
@@ -57,6 +157,12 @@ public final class PureLogicTest {
 
     private static void assertNear(float expected, float actual, float epsilon, String message) {
         if (Math.abs(expected - actual) > epsilon) {
+            throw new AssertionError(message + ": expected " + expected + ", got " + actual);
+        }
+    }
+
+    private static void assertEquals(int expected, int actual, String message) {
+        if (expected != actual) {
             throw new AssertionError(message + ": expected " + expected + ", got " + actual);
         }
     }

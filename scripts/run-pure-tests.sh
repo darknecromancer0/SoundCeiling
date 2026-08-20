@@ -11,6 +11,7 @@ javac -d "$OUT" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/GainPlanner.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/LoudnessTracker.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/OutputDevicePriority.java" \
+  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeCurveMath.java" \
   "$ROOT/tests/PureLogicTest.java"
 
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest

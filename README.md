@@ -1,8 +1,10 @@
-# Sound Ceiling for Android — v0.2.1
+# Sound Ceiling for Android — v0.2.2
 
 No-root Android 10+ adaptive media-volume normalizer with a hard user volume cap and optional calibrated dB SPL mode.
 
-## v0.2.1 highlights
+## v0.2.2 highlights
+
+- **Samsung/vendor volume-curve fallback**: invalid or flat platform dB tables no longer collapse adaptive control to media volume zero.
 
 - **dBFS mode**: target RMS plus peak ceiling.
 - **Calibrated dB SPL mode**: set an approximate physical target and ceiling after calibrating the current audio output.

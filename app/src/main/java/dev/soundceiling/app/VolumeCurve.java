@@ -3,10 +3,14 @@ package dev.soundceiling.app;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 
+import java.util.HashMap;
+import java.util.Map;
+
 final class VolumeCurve {
     private final AudioManager audio;
     private final int minIndex;
     private final int maxIndex;
+    private final Map<Integer, float[]> gainsByDeviceType = new HashMap<>();
 
     VolumeCurve(AudioManager audio) {
         this.audio = audio;
@@ -32,34 +36,35 @@ final class VolumeCurve {
 
     float gainDbForIndex(int index, int deviceType) {
         index = DbMath.clamp(index, minIndex, maxIndex);
-        try {
-            float db = audio.getStreamVolumeDb(AudioManager.STREAM_MUSIC, index, deviceType);
-            if (Float.isInfinite(db) && db < 0f) return -80f;
-            if (!Float.isNaN(db) && db <= 0.25f && db > -160f) return db;
-        } catch (RuntimeException ignored) {
-        }
-
-        if (index <= minIndex) return -80f;
-        float normalized = (index - minIndex) / (float) Math.max(1, maxIndex - minIndex);
-        return (float) (20.0 * Math.log10(Math.max(0.0001, normalized)));
+        return gainsForDeviceType(deviceType)[index - minIndex];
     }
 
     int bestIndexAtOrBelowGain(float desiredGainDb, int capIndex, int deviceType) {
-        capIndex = DbMath.clamp(capIndex, minIndex, maxIndex);
-        int best = minIndex;
-        float bestError = Float.MAX_VALUE;
+        return VolumeCurveMath.bestIndexAtOrBelowGain(
+                gainsForDeviceType(deviceType),
+                minIndex,
+                capIndex,
+                desiredGainDb);
+    }
 
-        for (int i = minIndex; i <= capIndex; i++) {
-            float gain = gainDbForIndex(i, deviceType);
-            if (gain <= desiredGainDb + 0.20f) {
-                float error = Math.abs(desiredGainDb - gain);
-                if (error < bestError) {
-                    bestError = error;
-                    best = i;
-                }
+    private float[] gainsForDeviceType(int deviceType) {
+        float[] gains = gainsByDeviceType.get(deviceType);
+        if (gains != null) return gains;
+
+        float[] platformGains = new float[maxIndex - minIndex + 1];
+        for (int index = minIndex; index <= maxIndex; index++) {
+            try {
+                platformGains[index - minIndex] = audio.getStreamVolumeDb(
+                        AudioManager.STREAM_MUSIC,
+                        index,
+                        deviceType);
+            } catch (RuntimeException ignored) {
+                platformGains[index - minIndex] = Float.NaN;
             }
         }
-        return best;
+        gains = VolumeCurveMath.validatedGains(platformGains, minIndex, maxIndex);
+        gainsByDeviceType.put(deviceType, gains);
+        return gains;
     }
 
     static int detectOutputDeviceType(AudioManager audio) {
