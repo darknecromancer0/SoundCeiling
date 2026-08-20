@@ -92,12 +92,12 @@ Requirements:
 - JDK 17
 - Android SDK 35
 - Android Gradle Plugin 8.10.1
-- Gradle 8.11.1
+- Gradle Wrapper (downloads verified Gradle 8.11.1)
 
 From the repository root:
 
 ```bash
-gradle :app:assembleDebug
+./gradlew :app:assembleDebug
 ```
 
 APK output:
