@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -47,7 +46,7 @@ final class SessionLogger implements AutoCloseable {
     }
 
     synchronized void decision(ControlDecision decision) {
-        decisionContext.add(LogFormatter.formatDecision(decision));
+        if (decision != null) decisionContext.add(LogFormatter.formatDecision(decision));
     }
 
     synchronized void event(String code, String detail) {
@@ -56,6 +55,14 @@ final class SessionLogger implements AutoCloseable {
 
     synchronized void anomaly(List<DiagnosticItem> items) {
         if (items == null || items.isEmpty()) return;
+        boolean hasProblem = false;
+        for (DiagnosticItem item : items) {
+            if (item.severity != DiagnosticItem.Severity.GREEN) {
+                hasProblem = true;
+                break;
+            }
+        }
+        if (!hasProblem) return;
         write("ANOMALY_CONTEXT_BEGIN");
         for (String line : decisionContext.snapshot()) write(line);
         for (DiagnosticItem item : items) {
