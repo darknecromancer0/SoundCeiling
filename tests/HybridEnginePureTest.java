@@ -13,6 +13,7 @@ public final class HybridEnginePureTest {
         testNoConfidenceNoRaise();
         testAppPolicyDefaults();
         testSystemStreamDefaults();
+        testDeviceProfileMigration();
         System.out.println("HybridEnginePureTest: PASS");
     }
 
@@ -122,19 +123,32 @@ public final class HybridEnginePureTest {
             SystemStreamPolicy policy = defaults.get(kind);
             if (policy == null) throw new AssertionError("Missing system stream policy: " + kind);
             boolean shouldEnable = kind == SystemStreamPolicy.Kind.MEDIA;
-            if (policy.enabled != shouldEnable) {
-                throw new AssertionError(kind + " default enabled=" + policy.enabled);
-            }
+            if (policy.enabled != shouldEnable) throw new AssertionError(kind + " default enabled=" + policy.enabled);
         }
         SystemStreamPolicy alarm = defaults.get(SystemStreamPolicy.Kind.ALARM);
         SystemStreamPolicy enabledAlarm = alarm.withEnabled(true).withCeilingPercent(35);
-        if (!enabledAlarm.enabled || enabledAlarm.ceilingPercent != 35) {
-            throw new AssertionError("alarm opt-in must be independent");
+        if (!enabledAlarm.enabled || enabledAlarm.ceilingPercent != 35) throw new AssertionError("alarm opt-in must be independent");
+        if (defaults.get(SystemStreamPolicy.Kind.ALARM).enabled) throw new AssertionError("app policy must not mutate ALARM stream default");
+    }
+
+    private static void testDeviceProfileMigration() {
+        DeviceProfile old = new DeviceProfile("route:speaker", "Phone speaker", 2,
+                "Built-in speaker", 11.75f, 123456L);
+        DeviceProfileV2 migrated = DeviceProfileMigrator.fromV04(old);
+        assertEquals(DeviceProfileV2.SCHEMA_VERSION, migrated.schemaVersion, "profile schema");
+        assertEquals(old.key, migrated.key, "profile key preserved");
+        assertEquals(old.name, migrated.name, "profile name preserved");
+        assertFloat(old.calibrationOffsetDb, migrated.calibrationOffsetDb, "calibration preserved");
+        if (!migrated.appOverrides().isEmpty()) throw new AssertionError("migration must not invent app overrides");
+        for (SystemStreamPolicy.Kind kind : SystemStreamPolicy.Kind.values()) {
+            SystemStreamPolicy policy = migrated.streamPolicies().get(kind);
+            if (policy == null) throw new AssertionError("migrated profile missing stream " + kind);
+            boolean expected = kind == SystemStreamPolicy.Kind.MEDIA;
+            if (policy.enabled != expected) throw new AssertionError("migration enabled unexpected stream " + kind);
         }
-        if (AppPolicy.on().mode != AppRule.Mode.ON) throw new AssertionError("app ON sanity");
-        if (defaults.get(SystemStreamPolicy.Kind.ALARM).enabled) {
-            throw new AssertionError("enabling an app must not mutate ALARM stream default");
-        }
+        DeviceProfileV2 once = DeviceProfileMigrator.normalize(migrated);
+        DeviceProfileV2 twice = DeviceProfileMigrator.normalize(once);
+        if (!once.equals(twice)) throw new AssertionError("profile migration/normalization must be idempotent");
     }
 
     private static EngineCapabilities exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence confidence, boolean healthy) {
@@ -151,5 +165,9 @@ public final class HybridEnginePureTest {
 
     private static void assertEquals(int expected, int actual, String message) {
         if (expected != actual) throw new AssertionError(message + ": " + actual);
+    }
+
+    private static void assertFloat(float expected, float actual, String message) {
+        if (Math.abs(expected - actual) > 0.0001f) throw new AssertionError(message + ": " + actual);
     }
 }
