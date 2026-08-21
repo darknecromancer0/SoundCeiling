@@ -16,6 +16,9 @@ public final class V060OneWayPureTest {
         streamMinimumPausesOrdinaryNormalization();
         transientAttenuationMapsExcessDbToCurve();
         unexpectedZeroRequiresWriteMismatchEvidence();
+        calibrationToneWaitsForEngineStop();
+        calibrationToneCompletesExplicitly();
+        calibrationToneStopTimeoutErrors();
         System.out.println("V060OneWayPureTest: PASS");
     }
 
@@ -183,6 +186,43 @@ public final class V060OneWayPureTest {
         VolumeWriteTracker.Observation ackZero = tracker.observe(0, 3_050L);
         assertFalse(UnexpectedZeroPolicy.isUnexpectedZero(0, 0, 5, ackZero),
                 "acknowledged deliberate app zero must not be unexpected");
+    }
+
+    private static void calibrationToneWaitsForEngineStop() {
+        CalibrationToneStateMachine machine = new CalibrationToneStateMachine();
+        machine.request(true, 1_000L);
+        assertSame(CalibrationToneStateMachine.State.STOPPING_ENGINE, machine.state(),
+                "running engine request must enter STOPPING_ENGINE");
+        machine.onStopRequested(1_000L);
+        assertSame(CalibrationToneStateMachine.State.WAITING_STOPPED, machine.state(),
+                "after stop command calibration waits for the engine to report stopped");
+        machine.onEngineObserved(false, 1_050L);
+        assertSame(CalibrationToneStateMachine.State.STARTING_TONE, machine.state(),
+                "stopped callback advances to STARTING_TONE without render side effects");
+    }
+
+    private static void calibrationToneCompletesExplicitly() {
+        CalibrationToneStateMachine machine = new CalibrationToneStateMachine();
+        machine.request(false, 2_000L);
+        assertSame(CalibrationToneStateMachine.State.STARTING_TONE, machine.state(),
+                "already-stopped engine starts tone directly");
+        machine.onToneStarted();
+        assertSame(CalibrationToneStateMachine.State.PLAYING_TONE, machine.state(),
+                "tone start callback advances to PLAYING_TONE");
+        machine.onToneComplete();
+        assertSame(CalibrationToneStateMachine.State.COMPLETE, machine.state(),
+                "tone completion callback advances to COMPLETE");
+    }
+
+    private static void calibrationToneStopTimeoutErrors() {
+        CalibrationToneStateMachine machine = new CalibrationToneStateMachine();
+        machine.request(true, 3_000L);
+        machine.onStopRequested(3_000L);
+        machine.onEngineObserved(true, 3_000L + CalibrationToneStateMachine.STOP_TIMEOUT_MS);
+        assertSame(CalibrationToneStateMachine.State.ERROR, machine.state(),
+                "engine stop timeout must terminate calibration instead of hanging");
+        assertTrue(machine.error().contains("timeout"),
+                "timeout state must expose a diagnostic reason");
     }
 
     private static EffectivePolicy policy(boolean sourceControl, boolean raise,
