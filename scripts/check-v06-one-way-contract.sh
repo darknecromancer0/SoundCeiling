@@ -31,7 +31,7 @@ require "$PKG/NormalizerService.java" 'manualThreshold.onUserChange'
 require "$PKG/NormalizerService.java" 'manualThreshold.onDeliberateLowering'
 require "$PKG/NormalizerService.java" 'manualThreshold.effectiveThreshold(p.targetLoudness)'
 require "$PKG/NormalizerService.java" 'manualThreshold.effectiveThreshold(p.sourcePeakThresholdDbfs)'
-require "$PKG/NormalizerService.java" 'ordinaryNormalizationPaused(current, controlCurve.minIndex())'
+require "$PKG/NormalizerService.java" 'manualThreshold.ordinaryNormalizationPaused'
 reject "$PKG/NormalizerService.java" 'manualSafety.effectiveMax()'
 reject "$PKG/NormalizerService.java" 'manualSafety.isManualSafetyPause()'
 
