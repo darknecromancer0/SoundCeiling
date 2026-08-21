@@ -41,7 +41,7 @@ final class LoudnessControlPolicy {
         }
 
         GainPlanner.Plan plan = GainPlanner.loudness(sourceLoudness, sourcePeakDbfs, currentGain,
-                profile.targetLoudness, ControlDefaults.SOURCE_PEAK_THRESHOLD_DBFS,
+                profile.targetLoudness, profile.sourcePeakThresholdDbfs,
                 true, profile.normalizationStrength);
         int raw = curve.bestIndexAtOrBelowGain(plan.desiredGainDb, curve.maxIndex());
 
