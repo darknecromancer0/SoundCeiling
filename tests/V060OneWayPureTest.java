@@ -14,6 +14,7 @@ public final class V060OneWayPureTest {
         manualRaiseRestoresThresholdsWithoutMediaAuthority();
         quietNowLoweringFeedsThresholdFollower();
         streamMinimumPausesOrdinaryNormalization();
+        transientAttenuationMapsExcessDbToCurve();
         System.out.println("V060OneWayPureTest: PASS");
     }
 
@@ -144,6 +145,23 @@ public final class V060OneWayPureTest {
                 "stream minimum/mute pauses ordinary normalization until the user raises Media");
         assertFalse(follower.ordinaryNormalizationPaused(1, 0),
                 "raising Media manually above stream minimum re-enables ordinary normalization");
+    }
+
+    private static void transientAttenuationMapsExcessDbToCurve() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        int current = 12;
+        float deltaDb = 16f;
+        float emergencyThresholdDb = 10f;
+        int actual = TransientAttenuationPolicy.safeTarget(current, curve, deltaDb,
+                emergencyThresholdDb, 1, 15);
+        float requiredGain = curve.gainDbForIndex(current) - (deltaDb - emergencyThresholdDb);
+        int expected = Math.max(1, curve.bestIndexAtOrBelowGain(requiredGain, 15));
+        assertEquals(expected, actual,
+                "transient emergency must map required dB attenuation through the volume curve");
+        assertTrue(actual < current, "transient emergency above threshold must attenuate");
+        assertEquals(current, TransientAttenuationPolicy.safeTarget(current, curve, 9f,
+                        emergencyThresholdDb, 1, 15),
+                "transient below emergency threshold must hold");
     }
 
     private static EffectivePolicy policy(boolean sourceControl, boolean raise,
