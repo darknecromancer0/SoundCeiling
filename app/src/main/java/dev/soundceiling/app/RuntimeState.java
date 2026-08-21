@@ -1,5 +1,7 @@
 package dev.soundceiling.app;
 
+import java.util.List;
+
 final class RuntimeState {
     enum CaptureStatus { STOPPED, STARTING, RUNNING, WAITING_SIGNAL, ERROR }
     enum ControlActivity { IDLE, HOLDING, DECREASING, RAISING, MINIMUM_LIMIT, MAXIMUM_LIMIT, ERROR }
@@ -15,6 +17,7 @@ final class RuntimeState {
     final long lastVolumeChangeElapsedMs, lastReactionLatencyMs;
     final ControlDecision lastDecision;
     private final float[] bandLevels;
+    private final DiagnosticItem[] diagnostics;
 
     private RuntimeState(Builder b) {
         running=b.running; captureStatus=b.captureStatus; controlActivity=b.controlActivity;
@@ -27,11 +30,12 @@ final class RuntimeState {
         logStatus=n(b.logStatus); message=n(b.message); backendLabel=n(b.backendLabel);
         lastVolumeChangeElapsedMs=b.lastVolumeChangeElapsedMs;
         lastReactionLatencyMs=b.lastReactionLatencyMs; lastDecision=b.lastDecision;
-        bandLevels=b.bandLevels.clone();
+        bandLevels=b.bandLevels.clone(); diagnostics=b.diagnostics.clone();
     }
 
     private static String n(String s){return s==null?"":s;}
     float[] bandLevels(){return bandLevels.clone();}
+    DiagnosticItem[] diagnostics(){return diagnostics.clone();}
 
     static RuntimeState stopped(String message) {
         return new Builder().running(false).captureStatus(CaptureStatus.STOPPED)
@@ -52,6 +56,7 @@ final class RuntimeState {
         long lastVolumeChangeElapsedMs, lastReactionLatencyMs=-1L;
         ControlDecision lastDecision;
         float[] bandLevels=new float[5];
+        DiagnosticItem[] diagnostics=new DiagnosticItem[0];
 
         Builder running(boolean v){running=v;return this;}
         Builder captureStatus(CaptureStatus v){captureStatus=v;return this;}
@@ -69,7 +74,9 @@ final class RuntimeState {
         Builder message(String v){message=v;return this;}
         Builder lastVolumeChangeElapsedMs(long v){lastVolumeChangeElapsedMs=v;return this;}
         Builder lastDecision(ControlDecision v){lastDecision=v;return this;}
-        Builder bandLevels(float[] v){bandLevels=v.clone();return this;}
+        Builder bandLevels(float[] v){bandLevels=v==null?new float[5]:v.clone();return this;}
+        Builder diagnostics(List<DiagnosticItem> v){diagnostics=v==null?new DiagnosticItem[0]:v.toArray(new DiagnosticItem[0]);return this;}
+        Builder diagnostics(DiagnosticItem[] v){diagnostics=v==null?new DiagnosticItem[0]:v.clone();return this;}
         RuntimeState build(){return new RuntimeState(this);}
     }
 }
