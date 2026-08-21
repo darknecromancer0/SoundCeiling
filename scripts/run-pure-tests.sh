@@ -44,6 +44,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmAvailabilityState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmStateResolver.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ConfidenceGate.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AppRule.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AppPolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AppClassifier.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
