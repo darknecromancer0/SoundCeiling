@@ -37,6 +37,10 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PeakSafetyDetector.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TransientGuard.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/EngineCapabilities.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackSnapshot.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/SourceDescriptor.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/SourceSet.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
