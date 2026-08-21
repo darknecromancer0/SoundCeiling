@@ -35,6 +35,7 @@ final class SystemStreamController {
         }
         int stream = streamFor(kind);
         if (stream < 0) {
+            logAvailability(kind, false, "public_stream_unavailable");
             return new Result(false, false, -1, -1, "system_stream_unavailable");
         }
         try {
@@ -44,14 +45,23 @@ final class SystemStreamController {
             int cap = min + Math.round((max - min) * (policy.ceilingPercent / 100f));
             cap = Math.max(min, Math.min(max, cap));
             if (current <= cap) {
+                logAvailability(kind, true, "available");
                 return new Result(true, false, current, current, "within_stream_ceiling");
             }
             audio.setStreamVolume(stream, cap, 0);
+            logAvailability(kind, true, "available");
             return new Result(true, true, current, cap, "system_stream_cap");
         } catch (RuntimeException e) {
-            return new Result(false, false, -1, -1,
-                    "system_stream_unavailable:" + e.getClass().getSimpleName());
+            String reason = "system_stream_unavailable:" + e.getClass().getSimpleName();
+            logAvailability(kind, false, reason);
+            return new Result(false, false, -1, -1, reason);
         }
+    }
+
+    private static void logAvailability(SystemStreamPolicy.Kind kind, boolean supported, String reason) {
+        DiagnosticLog.transition("system_stream_unavailable",
+                kind.name() + ":" + supported + ":" + reason,
+                "kind=" + kind + " active=" + !supported + " reason=" + reason);
     }
 
     private static int streamFor(SystemStreamPolicy.Kind kind) {
