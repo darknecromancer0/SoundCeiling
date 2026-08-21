@@ -364,7 +364,7 @@ public class NormalizerService extends Service {
             }
             int applied = safeVolume.applyRequested(requested, current, safetySettings,
                     policyMaxIndex, effectiveProfile.autoMute && emergency, now, writeOrigin);
-            long reactionLatency = emergency && applied < current
+            long reactionLatency = applied < current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
             if (applied < current) {
                 lastChange = now;
