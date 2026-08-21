@@ -10,6 +10,7 @@ public final class V051RegressionPureTest {
         testGlobalMixedPcmCanRaiseWithoutExactSource();
         testQuietNowNeverRaises();
         testTargetChangesDesiredNormalizationGain();
+        testControlSettingsCannotContradictEachOther();
         System.out.println("V051RegressionPureTest: PASS");
     }
 
@@ -97,6 +98,16 @@ public final class V051RegressionPureTest {
                 new LoudnessControlPolicy.State());
         assertTrue(loud.desiredGainDb > quiet.desiredGainDb + 5f,
                 "raising Target must materially increase the normalizer's desired gain");
+    }
+
+    private static void testControlSettingsCannotContradictEachOther() {
+        ControlSettingConstraints.Result r = ControlSettingConstraints.normalize(
+                1, 15, 12, 30, 20, 14);
+        assertTrue(r.maxIndex >= r.minIndex, "Maximum must never end below Minimum");
+        assertTrue(r.safetyIndex >= r.minIndex, "Ceiling must never end below Minimum");
+        assertTrue(r.safetyIndex <= r.maxIndex, "Ceiling must never exceed Maximum");
+        assertTrue(r.quietIndex >= r.minIndex && r.quietIndex <= r.maxIndex,
+                "Quiet index must remain inside the valid Media range");
     }
 
     private static ControlProfile profileWithTarget(ControlProfile base, float target) {
