@@ -53,6 +53,7 @@ final class DrawerLayoutController {
 
         addNav("Простой режим", AppDestination.SIMPLE);
         addNav("Расширенный режим", AppDestination.ADVANCED);
+        addNav("Приложения и системные звуки", AppDestination.APPS_SYSTEM);
         addNav("Эквалайзер", AppDestination.EQ);
         addNav("Калибровка и тест", AppDestination.CALIBRATION);
         addNav("Диагностика", AppDestination.DIAGNOSTICS);
