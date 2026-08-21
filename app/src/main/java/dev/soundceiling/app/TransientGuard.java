@@ -20,6 +20,7 @@ final class TransientGuard {
     }
 
     private static final long REARM_MS = 250L;
+    private static final float SILENCE_RESET_DBFS = -60f;
     private final float warningDeltaDb;
     private final float emergencyDeltaDb;
     private boolean initialized;
@@ -33,6 +34,12 @@ final class TransientGuard {
 
     Event update(long nowMs, float fastLevelDb) {
         if (!Float.isFinite(fastLevelDb)) return new Event(Severity.NONE, 0f, baselineDb);
+        // Silence is not a meaningful transient baseline. Without this reset the first block of
+        // normal playback looked like a +70 dB emergency after an idle period.
+        if (fastLevelDb <= SILENCE_RESET_DBFS) {
+            reset();
+            return new Event(Severity.NONE, 0f, fastLevelDb);
+        }
         if (!initialized) {
             prime(fastLevelDb);
             return new Event(Severity.NONE, 0f, baselineDb);
@@ -44,10 +51,6 @@ final class TransientGuard {
         Severity emitted = raw != Severity.NONE && nowMs >= rearmAtMs ? raw : Severity.NONE;
         if (emitted != Severity.NONE) rearmAtMs = nowMs + REARM_MS;
 
-        // The v0.5.0 bug updated the baseline only for NONE. One loud edge therefore froze the
-        // baseline and every following 10 ms block looked like a new emergency forever. Adapt on
-        // every valid block. Rising edges adapt fast enough to settle; falling audio follows even
-        // faster so a later real transient can be detected again.
         float alpha;
         if (fastLevelDb < baselineDb) alpha = 0.24f;
         else if (raw == Severity.EMERGENCY) alpha = 0.25f;
@@ -65,7 +68,7 @@ final class TransientGuard {
     }
 
     void prime(float fastLevelDb) {
-        if (!Float.isFinite(fastLevelDb)) {
+        if (!Float.isFinite(fastLevelDb) || fastLevelDb <= SILENCE_RESET_DBFS) {
             reset();
             return;
         }
