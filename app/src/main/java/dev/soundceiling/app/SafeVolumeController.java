@@ -12,14 +12,25 @@ final class SafeVolumeController {
 
     int applyRequested(int requestedIndex, int currentIndex, SafetySettings settings,
                        int effectiveMax, long nowMs) {
-        return applyRequested(requestedIndex, currentIndex, settings, effectiveMax, false, nowMs);
+        return applyRequested(requestedIndex, currentIndex, settings, effectiveMax, false, nowMs,
+                VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN);
     }
 
     int applyRequested(int requestedIndex, int currentIndex, SafetySettings settings,
                        int effectiveMax, boolean allowBelowMinimum, long nowMs) {
+        return applyRequested(requestedIndex, currentIndex, settings, effectiveMax,
+                allowBelowMinimum, nowMs, VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN);
+    }
+
+    int applyRequested(int requestedIndex, int currentIndex, SafetySettings settings,
+                       int effectiveMax, boolean allowBelowMinimum, long nowMs,
+                       VolumeWriteTracker.WriteOrigin origin) {
         int current = Math.max(0, currentIndex);
-        boolean quietCommand = requestedIndex == settings.quietIndex
-                && effectiveMax == settings.quietIndex;
+        boolean quietCommand = origin == VolumeWriteTracker.WriteOrigin.QUIET_NOW
+                || (requestedIndex == settings.quietIndex && effectiveMax == settings.quietIndex);
+        VolumeWriteTracker.WriteOrigin actualOrigin = quietCommand
+                ? VolumeWriteTracker.WriteOrigin.QUIET_NOW
+                : origin == null ? VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN : origin;
         int requested = quietCommand
                 ? QuietNowPolicy.targetIndex(current, requestedIndex,
                         Math.min(settings.minIndex, current), settings.hardMax())
@@ -34,9 +45,9 @@ final class SafeVolumeController {
             }
             return current;
         }
-        writeTracker.noteAppWrite(guarded, nowMs);
+        writeTracker.noteAppWrite(actualOrigin, current, guarded, nowMs);
         int applied = applier.applyIndex(guarded, current);
-        DiagnosticLog.event("volume_change", "origin=" + (quietCommand ? "quiet_now" : "controller")
+        DiagnosticLog.event("volume_change", "origin=" + actualOrigin
                 + " current=" + current + " requested=" + requestedIndex
                 + " guarded=" + guarded + " applied=" + applied
                 + " min=" + settings.minIndex + " effectiveMax=" + effectiveMax
@@ -49,9 +60,10 @@ final class SafeVolumeController {
         int guarded = SafetyGuard.clampAutomatic(
                 current, current, settings, settings.hardMax(), false);
         if (guarded == current) return current;
-        writeTracker.noteAppWrite(guarded, nowMs);
+        VolumeWriteTracker.WriteOrigin origin = VolumeWriteTracker.WriteOrigin.HARD_CAP;
+        writeTracker.noteAppWrite(origin, current, guarded, nowMs);
         int applied = applier.applyIndex(guarded, current);
-        DiagnosticLog.event("volume_change", "origin=hard_cap current=" + current
+        DiagnosticLog.event("volume_change", "origin=" + origin + " current=" + current
                 + " requested=" + current + " guarded=" + guarded + " applied=" + applied
                 + " min=" + settings.minIndex + " hardMax=" + settings.hardMax());
         return applied;
