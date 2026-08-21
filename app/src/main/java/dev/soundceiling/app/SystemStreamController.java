@@ -56,7 +56,11 @@ final class SystemStreamController {
                 return new Result(true, false, current, current, "within_stream_ceiling");
             }
             audio.setStreamVolume(stream, cap, 0);
-            return new Result(true, true, current, cap, "system_stream_cap");
+            int verified = audio.getStreamVolume(stream);
+            if (verified > cap) {
+                return markUnsupported(kind, "system_stream_unavailable:stream_write_not_applied");
+            }
+            return new Result(true, verified != current, current, verified, "system_stream_cap");
         } catch (RuntimeException e) {
             return markUnsupported(kind,
                     "system_stream_unavailable:" + e.getClass().getSimpleName());
