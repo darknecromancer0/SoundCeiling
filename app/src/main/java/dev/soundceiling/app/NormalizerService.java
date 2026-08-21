@@ -622,12 +622,6 @@ public class NormalizerService extends Service {
                     controlProfile.sourcePeakThresholdDbfs,
                     manualThreshold.effectiveThreshold(controlProfile.sourcePeakThresholdDbfs),
                     manualThreshold.offsetDb());
-        } else if (controlProfile != null) {
-            out.thresholds(controlProfile.targetLoudness,
-                    manualThreshold.effectiveThreshold(controlProfile.targetLoudness),
-                    controlProfile.sourcePeakThresholdDbfs,
-                    manualThreshold.effectiveThreshold(controlProfile.sourcePeakThresholdDbfs),
-                    manualThreshold.offsetDb());
         }
         return out;
     }
@@ -691,7 +685,7 @@ public class NormalizerService extends Service {
     private void openLogger() throws IOException {
         MeasurementVolumeCurve.Snapshot m = measurementCurve.snapshot(currentDeviceType);
         String header = String.format(Locale.US,
-                "HEADER version=0.5.0 manufacturer=%s model=%s sdk=%d route=%s backend=%s min=%d max=%d current=%d safetyLock=%s safetyIndex=%d quiet=%d preset=%s targetLoudness=%.1f tolerance=%.1f peakThreshold=%.1f manualOffsetDb=%.2f splMode=%s targetSpl=%.1f splCeiling=%.1f rawCurve=%s measuredCurve=%s controlCurve=%s",
+                "HEADER version=0.6.0 manufacturer=%s model=%s sdk=%d route=%s backend=%s min=%d max=%d current=%d safetyLock=%s safetyIndex=%d quiet=%d preset=%s targetLoudness=%.1f tolerance=%.1f peakThreshold=%.1f manualOffsetDb=%.2f splMode=%s targetSpl=%.1f splCeiling=%.1f rawCurve=%s measuredCurve=%s controlCurve=%s",
                 clean(Build.MANUFACTURER), clean(Build.MODEL), Build.VERSION.SDK_INT,
                 clean(DeviceDetector.label(currentDevice)), clean(backendStatus.label()),
                 safetySettings.minIndex, safetySettings.maxIndex,
@@ -800,7 +794,7 @@ public class NormalizerService extends Service {
                 new Intent(this, NormalizerService.class).setAction(ACTION_STOP), pendingFlags);
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_sound_ceiling_notification)
-                .setContentTitle("Sound Ceiling v0.5.0")
+                .setContentTitle("Sound Ceiling v" + BuildConfig.VERSION_NAME)
                 .setContentText(text)
                 .setOngoing(state.running)
                 .addAction(R.drawable.ic_sound_ceiling_notification, "Quiet now", quiet)
