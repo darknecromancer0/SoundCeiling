@@ -207,18 +207,7 @@ public class MainActivity extends Activity {
 
     private void quietNow() {
         Intent intent = new Intent(this, NormalizerService.class).setAction(NormalizerService.ACTION_QUIET);
-        if (RuntimeStateStore.get().running) startService(intent);
-        else {
-            int min = audio.getStreamMinVolume(AudioManager.STREAM_MUSIC);
-            int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-            int quiet = Math.max(min, Math.min(Prefs.quietIndex(this), max));
-            try {
-                audio.setStreamVolume(AudioManager.STREAM_MUSIC, quiet, 0);
-                Toast.makeText(this, "Media снижена до " + quiet + ". При запуске safety-пауза будет учтена.", Toast.LENGTH_SHORT).show();
-            } catch (RuntimeException e) {
-                Toast.makeText(this, "Не удалось изменить Media-громкость", Toast.LENGTH_SHORT).show();
-            }
-        }
+        startService(intent);
     }
 
     private void playTone(ToneController.Kind kind) {
