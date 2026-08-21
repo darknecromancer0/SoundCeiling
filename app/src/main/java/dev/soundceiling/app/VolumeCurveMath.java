@@ -1,95 +1,10 @@
 package dev.soundceiling.app;
 
-/** Pure validation and lookup for vendor-provided Android media-volume curves. */
 final class VolumeCurveMath {
-    private static final float MUTED_GAIN_DB = -80f;
-    private static final float MONOTONIC_TOLERANCE_DB = 0.5f;
-    private static final float LOOKUP_TOLERANCE_DB = 0.20f;
-
-    static float[] validatedGains(float[] platformGains, int minIndex, int maxIndex) {
-        int count = maxIndex - minIndex + 1;
-        if (count <= 0 || platformGains == null || platformGains.length != count) {
-            return fallbackGains(minIndex, maxIndex);
-        }
-
-        float[] gains = new float[count];
-        boolean usable = true;
-        boolean hasDifferentFiniteGains = false;
-        float firstFiniteGain = Float.NaN;
-        float previousComparableGain = Float.NEGATIVE_INFINITY;
-
-        for (int offset = 0; offset < count; offset++) {
-            float raw = platformGains[offset];
-            float gain;
-            float comparableGain;
-            if (raw == Float.NEGATIVE_INFINITY) {
-                gain = MUTED_GAIN_DB;
-                comparableGain = Float.NEGATIVE_INFINITY;
-            } else if (!Float.isFinite(raw)) {
-                usable = false;
-                gain = MUTED_GAIN_DB;
-                comparableGain = previousComparableGain;
-            } else {
-                gain = raw;
-                comparableGain = raw;
-                if (Float.isNaN(firstFiniteGain)) {
-                    firstFiniteGain = raw;
-                } else if (raw != firstFiniteGain) {
-                    hasDifferentFiniteGains = true;
-                }
-            }
-
-            if (offset > 0
-                    && comparableGain + MONOTONIC_TOLERANCE_DB < previousComparableGain) {
-                usable = false;
-            }
-            gains[offset] = gain;
-            previousComparableGain = comparableGain;
-        }
-
-        // A mute/full-scale-only or completely flat table cannot map a dB target to
-        // Android's intermediate volume steps, even though every individual value is legal.
-        if (!hasDifferentFiniteGains) usable = false;
-
-        return usable ? gains : fallbackGains(minIndex, maxIndex);
-    }
-
-    static int bestIndexAtOrBelowGain(
-            float[] gains,
-            int minIndex,
-            int capIndex,
-            float desiredGainDb) {
-        int maxIndex = minIndex + gains.length - 1;
-        capIndex = DbMath.clamp(capIndex, minIndex, maxIndex);
-        int bestIndex = minIndex;
-        float bestError = Float.MAX_VALUE;
-
-        for (int index = minIndex; index <= capIndex; index++) {
-            float gain = gains[index - minIndex];
-            if (gain <= desiredGainDb + LOOKUP_TOLERANCE_DB) {
-                float error = Math.abs(desiredGainDb - gain);
-                if (error < bestError) {
-                    bestError = error;
-                    bestIndex = index;
-                }
-            }
-        }
-        return bestIndex;
-    }
-
-    private static float[] fallbackGains(int minIndex, int maxIndex) {
-        int count = Math.max(0, maxIndex - minIndex + 1);
-        float[] gains = new float[count];
-        for (int offset = 0; offset < count; offset++) {
-            if (offset == 0) {
-                gains[offset] = MUTED_GAIN_DB;
-            } else {
-                float normalized = offset / (float) Math.max(1, count - 1);
-                gains[offset] = (float) (20.0 * Math.log10(normalized));
-            }
-        }
-        return gains;
-    }
-
-    private VolumeCurveMath() {}
+    private static final float MUTED=-80f,TOL=.5f,LOOKUP=.20f;
+    static final class ValidationResult{final float[] gains;final boolean fallbackUsed;final String reason;ValidationResult(float[] g,boolean f,String r){gains=g.clone();fallbackUsed=f;reason=r;}}
+    static ValidationResult validate(float[] raw,int min,int max){int count=max-min+1;if(count<=0||raw==null||raw.length!=count)return new ValidationResult(fallback(min,max),true,"shape_mismatch");float[] g=new float[count];boolean nonFinite=false,nonMono=false,different=false;float first=Float.NaN,prev=Float.NEGATIVE_INFINITY;for(int o=0;o<count;o++){float r=raw[o],comp;if(r==Float.NEGATIVE_INFINITY){g[o]=MUTED;comp=Float.NEGATIVE_INFINITY;}else if(!Float.isFinite(r)){nonFinite=true;g[o]=MUTED;comp=prev;}else{g[o]=r;comp=r;if(Float.isNaN(first))first=r;else if(r!=first)different=true;}if(o>0&&comp+TOL<prev)nonMono=true;prev=comp;}if(nonFinite)return new ValidationResult(fallback(min,max),true,"non_finite");if(nonMono)return new ValidationResult(fallback(min,max),true,"non_monotonic");if(!different)return new ValidationResult(fallback(min,max),true,"flat_or_single_finite");return new ValidationResult(g,false,"valid");}
+    static float[] validatedGains(float[] raw,int min,int max){return validate(raw,min,max).gains.clone();}
+    static int bestIndexAtOrBelowGain(float[] gains,int min,int cap,float desired){int max=min+gains.length-1;cap=DbMath.clamp(cap,min,max);int best=min;float err=Float.MAX_VALUE;for(int i=min;i<=cap;i++){float g=gains[i-min];if(g<=desired+LOOKUP){float e=Math.abs(desired-g);if(e<err){err=e;best=i;}}}return best;}
+    private static float[] fallback(int min,int max){int count=Math.max(0,max-min+1);float[] g=new float[count];for(int o=0;o<count;o++)g[o]=o==0?MUTED:(float)(20.0*Math.log10(o/(float)Math.max(1,count-1)));return g;}private VolumeCurveMath(){}
 }
