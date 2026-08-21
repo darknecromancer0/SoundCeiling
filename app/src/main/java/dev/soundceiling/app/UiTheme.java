@@ -22,6 +22,38 @@ final class UiTheme {
     static int primaryText(Context context) { return isDark(context) ? Color.WHITE : Color.rgb(25,27,31); }
     static int secondaryText(Context context) { return isDark(context) ? Color.rgb(185,190,203) : Color.rgb(82,87,98); }
 
+    static int successSurface(Context context) {
+        return isDark(context) ? Color.rgb(24,64,42) : Color.rgb(225,246,233);
+    }
+
+    static int successText(Context context) {
+        return isDark(context) ? Color.rgb(190,245,210) : Color.rgb(24,94,52);
+    }
+
+    static int warningSurface(Context context) {
+        return isDark(context) ? Color.rgb(82,66,25) : Color.rgb(255,245,211);
+    }
+
+    static int warningText(Context context) {
+        return isDark(context) ? Color.rgb(255,226,145) : Color.rgb(111,78,0);
+    }
+
+    static int errorSurface(Context context) {
+        return isDark(context) ? Color.rgb(84,34,37) : Color.rgb(253,232,232);
+    }
+
+    static int errorText(Context context) {
+        return isDark(context) ? Color.rgb(255,198,200) : Color.rgb(150,35,40);
+    }
+
+    static int neutralStatusSurface(Context context) {
+        return isDark(context) ? Color.rgb(48,51,58) : Color.rgb(232,235,240);
+    }
+
+    static int neutralStatusText(Context context) {
+        return isDark(context) ? Color.rgb(235,238,245) : Color.rgb(42,46,54);
+    }
+
     static void applyActivityTheme(Activity activity) {
         boolean dark = isDark(activity);
         activity.setTheme(dark ? android.R.style.Theme_Material_NoActionBar : android.R.style.Theme_Material_Light_NoActionBar);
@@ -33,7 +65,6 @@ final class UiTheme {
     static void applyToTree(View view) {
         Context context = view.getContext();
         if (view instanceof ViewGroup) {
-            view.setBackgroundColor(background(context));
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) applyToTree(group.getChildAt(i));
         }
