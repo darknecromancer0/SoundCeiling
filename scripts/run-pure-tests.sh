@@ -23,5 +23,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFormatter.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFilePolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AppDestination.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/SafetySettings.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/SafetyGuard.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ManualSafetyController.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
  "$ROOT/tests/PureLogicTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
