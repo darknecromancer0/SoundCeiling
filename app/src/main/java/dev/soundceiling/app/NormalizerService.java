@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -36,7 +37,7 @@ public class NormalizerService extends Service {
     private static final int NOTIFICATION_ID = 41;
     private static final int SAMPLE_RATE = 48_000;
     private static final int CHANNELS = 2;
-    private static final int CAPTURE_BLOCK_SHORTS = 960; // ~10 ms stereo at 48 kHz
+    private static final int CAPTURE_BLOCK_SHORTS = 960;
 
     private final AtomicBoolean workerRunning = new AtomicBoolean();
     private final AtomicBoolean stopping = new AtomicBoolean();
@@ -117,7 +118,7 @@ public class NormalizerService extends Service {
         updateNotification(starting);
 
         stopping.set(false);
-        optionalDsp.probe(); // fail-closed until a relevant global path can be verified.
+        optionalDsp.probe();
         boolean visualizerReady = visualizer.open();
 
         if (fastOnlyMode) {
@@ -590,10 +591,19 @@ public class NormalizerService extends Service {
         else level = "Контроль громкости";
         String text = level + " · " + StatusText.controller(state).replace("Регулятор: ", "")
                 + " · " + StatusText.media(state);
+        int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent quiet = PendingIntent.getService(this, 4101,
+                new Intent(this, NormalizerService.class).setAction(ACTION_QUIET), pendingFlags);
+        PendingIntent stop = PendingIntent.getService(this, 4102,
+                new Intent(this, NormalizerService.class).setAction(ACTION_STOP), pendingFlags);
         return new Notification.Builder(this, CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
+                .setSmallIcon(R.drawable.ic_sound_ceiling_notification)
                 .setContentTitle("Sound Ceiling v0.4.0")
-                .setContentText(text).setOngoing(state.running).build();
+                .setContentText(text)
+                .setOngoing(state.running)
+                .addAction(R.drawable.ic_sound_ceiling_notification, "Quiet now", quiet)
+                .addAction(R.drawable.ic_sound_ceiling_notification, "Stop", stop)
+                .build();
     }
 
     private void startForegroundWithNotification(Notification notification) {
