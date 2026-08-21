@@ -29,7 +29,7 @@ require "$PKG/AppsSystemView.java" "Assistant"
 require "$PKG/AppsSystemView.java" "ceilingPercent"
 
 # Task 13: Device Profiles 2.0 and truthful hybrid-engine status surfaces.
-# v0.6 keeps these surfaces while replacing the obsolete auto-raise wording.
+# v0.6 keeps these surfaces while replacing obsolete auto-raise wording and duplicate Main status text.
 require "$PKG/AppDestination.java" "DEVICE_PROFILES"
 require "$PKG/DrawerLayoutController.java" "Профили устройств"
 require "$PKG/MainActivity.java" "DeviceProfilesView"
@@ -38,7 +38,7 @@ require "$PKG/DeviceProfilesView.java" "Калибровка"
 require "$PKG/DeviceProfilesView.java" "Media ceiling"
 require "$PKG/DeviceProfilesView.java" "Fallback ceiling"
 require "$PKG/DeviceProfilesView.java" "App overrides"
-require "$PKG/SimpleModeView.java" "StatusText.engine"
+require "$PKG/SimpleModeView.java" "StatusCardView"
 require "$PKG/StatusText.java" "Smart PCM"
 require "$PKG/StatusText.java" "PCM blocked - safe fallback"
 require "$PKG/StatusText.java" "Mixed apps · shared down-only control"
