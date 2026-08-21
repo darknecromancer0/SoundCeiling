@@ -47,6 +47,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AppRule.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AppPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AppClassifier.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/SystemStreamPolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/SystemStreamPolicies.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
