@@ -22,9 +22,9 @@ final class ManualSafetyController {
         int safe = clamp(index, 0, configuredMax);
         if (lastUserIndex < 0) {
             lastUserIndex = safe;
-            effectiveMax = Math.min(configuredMax, safe);
             manualSafetyPause = safe <= minIndex;
             pausedForRaise = manualSafetyPause;
+            if (manualSafetyPause) effectiveMax = safe;
             lastRecoveryAtMs = nowMs;
             return;
         }
@@ -48,6 +48,12 @@ final class ManualSafetyController {
         effectiveMax = Math.min(configuredMax, effectiveMax + 1);
         lastRecoveryAtMs = nowMs;
         if (effectiveMax >= configuredMax) pausedForRaise = false;
+    }
+
+    void shrinkEffectiveMax(int index, long nowMs) {
+        effectiveMax = Math.min(effectiveMax, clamp(index, minIndex, configuredMax));
+        pausedForRaise = effectiveMax < configuredMax;
+        lastRecoveryAtMs = nowMs;
     }
 
     void quietNow(int quietIndex, long nowMs) {
