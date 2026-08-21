@@ -5,7 +5,7 @@ PKG="$ROOT/app/src/main/java/dev/soundceiling/app"
 mapfile -t files < <(grep -RIl 'setStreamVolume(' "$PKG" || true)
 for file in "${files[@]}"; do
   case "$(basename "$file")" in
-    VolumeApplier.java|ToneController.java) ;;
+    VolumeApplier.java|ToneController.java|SystemStreamController.java) ;;
     *) echo "Unexpected setStreamVolume call: $file" >&2; exit 1 ;;
   esac
 done
@@ -24,6 +24,13 @@ for file in "${direct_apply_index[@]}"; do
     echo "VolumeApplier.applyIndex bypass outside SafeVolumeController: $file" >&2; exit 1;
   }
 done
+if [[ -f "$PKG/SystemStreamController.java" ]]; then
+  grep -q 'policy.enabled' "$PKG/SystemStreamController.java" || {
+    echo "System stream writes must be explicitly enabled" >&2; exit 1; }
+  if grep -q 'STREAM_MUSIC' "$PKG/SystemStreamController.java"; then
+    echo "SystemStreamController must not write Media stream" >&2; exit 1
+  fi
+fi
 for token in 'PeakSafetyDetector' 'TransientGuard' 'ManualSafetyController' 'VolumeWriteTracker' 'LoudnessMeter' 'ACTION_QUIET' 'safeVolume'; do
   grep -q "$token" "$PKG/NormalizerService.java" || { echo "NormalizerService missing v0.4 integration: $token" >&2; exit 1; }
 done
