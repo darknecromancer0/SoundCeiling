@@ -13,7 +13,7 @@ final class LoudnessTracker {
 
     Reading update(double blockMeanSquare, float blockPeakDb, double seconds) {
         seconds = Math.max(0.005, Math.min(0.25, seconds));
-        double fastAlpha = 1.0 - Math.exp(-seconds / 0.25);   // ~250 ms
+        double fastAlpha = 1.0 - Math.exp(-seconds / 0.25);   // ~250 ms normalizer signal
         double shortAlpha = 1.0 - Math.exp(-seconds / 2.5);  // ~2.5 s
 
         if (!initialized) {
@@ -31,11 +31,8 @@ final class LoudnessTracker {
 
         float fastDb = DbMath.powerToDb(fastPower);
         float shortDb = DbMath.powerToDb(shortPower);
-
-        // Loud attacks should win quickly; the slow estimate prevents speech gaps from
-        // instantly cranking volume upward.
         float controlDb = Math.max(fastDb, shortDb - 1.5f);
-        return new Reading(fastDb, shortDb, controlDb, peakHoldDb);
+        return new Reading(fastDb, shortDb, controlDb, peakHoldDb, blockPeakDb);
     }
 
     static final class Reading {
@@ -43,12 +40,15 @@ final class LoudnessTracker {
         final float shortRmsDb;
         final float controlRmsDb;
         final float peakHoldDb;
+        final float rawBlockPeakDb;
 
-        Reading(float fastRmsDb, float shortRmsDb, float controlRmsDb, float peakHoldDb) {
+        Reading(float fastRmsDb, float shortRmsDb, float controlRmsDb,
+                float peakHoldDb, float rawBlockPeakDb) {
             this.fastRmsDb = fastRmsDb;
             this.shortRmsDb = shortRmsDb;
             this.controlRmsDb = controlRmsDb;
             this.peakHoldDb = peakHoldDb;
+            this.rawBlockPeakDb = rawBlockPeakDb;
         }
     }
 }
