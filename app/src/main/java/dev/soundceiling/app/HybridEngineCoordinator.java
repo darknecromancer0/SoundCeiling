@@ -25,10 +25,10 @@ final class HybridEngineCoordinator {
         int max = Math.max(0, effectiveMaxIndex);
         int current = Math.max(0, currentIndex);
 
-        // Explicit source/app OFF precedes source-specific analysis. Global Safety Lock is
-        // enforced independently by SafeVolumeController outside this coordinator.
+        // Explicit source/app OFF precedes all source-specific analysis. The global Safety Lock
+        // is enforced independently before this coordinator, so OFF means true hold here.
         if (!policy.sourceControlEnabled) {
-            return new ControlPlan(Math.min(current, max), comfortTargetIndex > current,
+            return new ControlPlan(current, comfortTargetIndex > current,
                     policy.raiseBlockReason.isEmpty() ? "source_control_disabled" : policy.raiseBlockReason);
         }
 
@@ -43,10 +43,10 @@ final class HybridEngineCoordinator {
         }
         if (comfort > current) {
             if (manualPause) {
-                return new ControlPlan(Math.min(current, max), true, "manual_safety_pause");
+                return new ControlPlan(current, true, "manual_safety_pause");
             }
             if (!policy.allowAutomaticRaise) {
-                return new ControlPlan(Math.min(current, max), true,
+                return new ControlPlan(current, true,
                         policy.raiseBlockReason.isEmpty() ? "raise_blocked_policy" : policy.raiseBlockReason);
             }
             return new ControlPlan(comfort, false, "comfort_upward");
