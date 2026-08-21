@@ -23,23 +23,30 @@ require "$PKG/HybridEngineCoordinator.java" 'adaptive_recovery'
 require "$PKG/HybridEngineCoordinator.java" 'return new ControlPlan(current, true'
 
 # Write provenance and zero attribution introduced in v0.6 must never regress.
+# v0.7 strengthens this with queued writes and stale-ACK quarantine.
 require "$PKG/VolumeWriteTracker.java" 'enum WriteOrigin'
 require "$PKG/VolumeWriteTracker.java" 'APP_WRITE_ACK'
+require "$PKG/VolumeWriteTracker.java" 'APP_WRITE_STALE'
 require "$PKG/VolumeWriteTracker.java" 'APP_WRITE_MISMATCH'
 require "$PKG/SafeVolumeController.java" 'VolumeWriteTracker.WriteOrigin'
 require "$PKG/NormalizerService.java" 'writeTracker.observe(current, now)'
 reject "$PKG/NormalizerService.java" 'writeTracker.classifyObserved(current, now)'
 require "$PKG/NormalizerService.java" 'VolumeWriteTracker.ObservationKind.USER_CHANGE'
 require "$PKG/NormalizerService.java" 'APP_WRITE_ACK'
+require "$PKG/NormalizerService.java" 'APP_WRITE_STALE'
 require "$PKG/NormalizerService.java" 'APP_WRITE_MISMATCH'
 require "$PKG/NormalizerService.java" 'external_zero_detected'
 
-# Preserve manual dB-threshold behavior until v0.7 service wiring replaces it deliberately.
+# Preserve the v0.6 manual dB follower behavior, but v0.7 AdaptiveVolumeEnvelope is the runtime authority.
 require "$PKG/ManualThresholdFollower.java" 'DECREASE_TAU_MS = 120L'
 require "$PKG/ManualThresholdFollower.java" 'RESTORE_TAU_MS = 650L'
-require "$PKG/NormalizerService.java" 'ManualThresholdFollower manualThreshold'
-require "$PKG/NormalizerService.java" 'manualThreshold.onUserChange'
-require "$PKG/NormalizerService.java" 'manualThreshold.effectiveThreshold(p.targetLoudness)'
+require "$PKG/AdaptiveVolumeEnvelope.java" 'MANUAL_DOWN_TAU_MS = 120L'
+require "$PKG/AdaptiveVolumeEnvelope.java" 'MANUAL_RESTORE_TAU_MS = 650L'
+require "$PKG/NormalizerService.java" 'AdaptiveVolumeEnvelope volumeEnvelope'
+require "$PKG/NormalizerService.java" 'volumeEnvelope.onUserChange'
+require "$PKG/NormalizerService.java" 'volumeEnvelope.onProvenanceUncertain'
+require "$PKG/NormalizerService.java" 'volumeEnvelope.effectiveThreshold(p.targetLoudness)'
+require "$PKG/NormalizerService.java" 'volumeEnvelope.recoverableCeilingIndex'
 reject "$PKG/NormalizerService.java" 'manualSafety.effectiveMax()'
 reject "$PKG/NormalizerService.java" 'manualSafety.isManualSafetyPause()'
 
@@ -50,10 +57,10 @@ require "$PKG/NormalizerService.java" 'loud.controlLoudnessDb'
 require "$PKG/TransientAttenuationPolicy.java" 'safeTarget'
 require "$PKG/NormalizerService.java" 'TransientAttenuationPolicy.safeTarget'
 reject "$PKG/NormalizerService.java" 'int extraSteps = Math.max(2,'
-require "$PKG/NormalizerService.java" 'long reactionLatency = applied < current'
+require "$PKG/NormalizerService.java" 'long reactionLatency = applied != current'
 require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
 
-# Main/Advanced remain two surfaces of one engine. v0.7 may restore recovery controls and copy.
+# Main/Advanced remain two surfaces of one engine. v0.7 may restore bounded recovery controls and copy.
 require "$PKG/DrawerLayoutController.java" 'addNav("Основное", AppDestination.SIMPLE)'
 require "$PKG/DrawerLayoutController.java" 'addNav("Расширенные", AppDestination.ADVANCED)'
 reject "$PKG/DrawerLayoutController.java" 'Простой режим'
@@ -79,7 +86,7 @@ reject "$PKG/StatusCardView.java" 'setTextColor(Color.WHITE)'
 require "$PKG/DiagnosticsView.java" 'UiTheme.successText(activity)'
 reject "$PKG/DiagnosticsView.java" 'Color.rgb(70,190,105)'
 
-# Calibration stays deterministic and volume-neutral.
+# Calibration stays deterministic and volume-neutral. v0.7 will additionally restore protection.
 require "$PKG/CalibrationToneStateMachine.java" 'WAITING_STOPPED'
 require "$PKG/CalibrationToneStateMachine.java" 'STOP_TIMEOUT_MS'
 reject "$PKG/ToneController.java" 'setStreamVolume('
