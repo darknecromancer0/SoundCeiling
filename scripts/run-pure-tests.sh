@@ -58,6 +58,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CapabilityResolver.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/MultiSourceResolver.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PolicyResolver.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/HybridEngineCoordinator.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
