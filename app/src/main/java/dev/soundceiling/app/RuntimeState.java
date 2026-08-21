@@ -4,7 +4,7 @@ import java.util.List;
 
 final class RuntimeState {
     enum CaptureStatus { STOPPED, STARTING, RUNNING, WAITING_SIGNAL, ERROR }
-    enum ControlActivity { IDLE, HOLDING, DECREASING, MINIMUM_LIMIT, MAXIMUM_LIMIT, ERROR }
+    enum ControlActivity { IDLE, HOLDING, DECREASING, RECOVERING, MINIMUM_LIMIT, MAXIMUM_LIMIT, ERROR }
 
     final boolean running;
     final CaptureStatus captureStatus;
@@ -17,14 +17,18 @@ final class RuntimeState {
     final long lastVolumeChangeElapsedMs, lastReactionLatencyMs;
     final ControlDecision lastDecision;
 
-    // v0.6 controller telemetry. Configured values come from resolved policy before the manual
-    // threshold follower; effective values include the current non-positive manual dB offset.
+    // Controller telemetry. Configured values come from resolved policy; effective values include
+    // the current non-positive manual dB offset from the user-authority envelope.
     final float configuredTargetLoudness, effectiveTargetLoudness;
     final float configuredPeakThresholdDbfs, effectivePeakThresholdDbfs;
     final float manualThresholdOffsetDb;
     final long meterAgeMs, lastEmergencyLatencyMs;
     final String lastControllerAction, lastControllerReason;
     final boolean unexpectedZero;
+
+    // v0.7 adaptive-envelope authority telemetry.
+    final int userCeilingIndex, safetyCeilingIndex, recoverableCeilingIndex;
+    final float automaticAttenuationDb;
 
     // v0.5 independent Hybrid Engine dimensions. Defaults deliberately describe uncertainty.
     final PcmAvailabilityState pcmState;
@@ -58,6 +62,10 @@ final class RuntimeState {
         lastControllerAction=n(b.lastControllerAction);
         lastControllerReason=n(b.lastControllerReason);
         unexpectedZero=b.unexpectedZero;
+        userCeilingIndex=Math.max(0,b.userCeilingIndex);
+        safetyCeilingIndex=Math.max(0,b.safetyCeilingIndex);
+        recoverableCeilingIndex=Math.max(0,b.recoverableCeilingIndex);
+        automaticAttenuationDb=Math.min(0f,b.automaticAttenuationDb);
         pcmState=b.pcmState; sourceConfidence=b.sourceConfidence;
         meteringCapability=b.meteringCapability; volumeControlCapability=b.volumeControlCapability;
         dspTransportCapability=b.dspTransportCapability; sourcePackage=n(b.sourcePackage);
@@ -88,6 +96,8 @@ final class RuntimeState {
                 .lastVolumeChangeElapsedMs(lastVolumeChangeElapsedMs).lastDecision(lastDecision)
                 .thresholds(configuredTargetLoudness, effectiveTargetLoudness,
                         configuredPeakThresholdDbfs, effectivePeakThresholdDbfs, manualThresholdOffsetDb)
+                .envelope(userCeilingIndex, safetyCeilingIndex, recoverableCeilingIndex,
+                        automaticAttenuationDb)
                 .controller(lastControllerAction, lastControllerReason,
                         lastReactionLatencyMs, lastEmergencyLatencyMs)
                 .meterAgeMs(currentMeterAgeMs).unexpectedZero(unexpectedZero)
@@ -121,6 +131,8 @@ final class RuntimeState {
         long meterAgeMs, lastEmergencyLatencyMs=-1L;
         String lastControllerAction="", lastControllerReason="";
         boolean unexpectedZero;
+        int userCeilingIndex, safetyCeilingIndex, recoverableCeilingIndex;
+        float automaticAttenuationDb;
         PcmAvailabilityState pcmState=PcmAvailabilityState.IDLE;
         EngineCapabilities.SourceIdentityConfidence sourceConfidence=EngineCapabilities.SourceIdentityConfidence.UNKNOWN;
         EngineCapabilities.MeteringCapability meteringCapability=EngineCapabilities.MeteringCapability.NONE;
@@ -151,6 +163,14 @@ final class RuntimeState {
             configuredTargetLoudness=configuredTarget; effectiveTargetLoudness=effectiveTarget;
             configuredPeakThresholdDbfs=configuredPeak; effectivePeakThresholdDbfs=effectivePeak;
             manualThresholdOffsetDb=Math.min(0f, manualOffset); return this;
+        }
+        Builder envelope(int userCeiling, int safetyCeiling, int recoverableCeiling,
+                         float autoAttenuationDb) {
+            userCeilingIndex=Math.max(0,userCeiling);
+            safetyCeilingIndex=Math.max(0,safetyCeiling);
+            recoverableCeilingIndex=Math.max(0,recoverableCeiling);
+            automaticAttenuationDb=Math.min(0f,autoAttenuationDb);
+            return this;
         }
         Builder controller(String action, String reason, long reactionLatency, long emergencyLatency) {
             lastControllerAction=action; lastControllerReason=reason;
