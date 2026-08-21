@@ -1,0 +1,41 @@
+name: One-shot v0.6 Normalizer dedupe
+on:
+  push:
+    branches: [ "feature/v0.6-one-way-adaptive" ]
+    paths: [ ".github/workflows/v06-once-dedupe.yml" ]
+permissions:
+  contents: write
+jobs:
+  dedupe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/v0.6-one-way-adaptive
+          fetch-depth: 0
+      - name: Remove exact duplicated Task 6 insertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/dev/soundceiling/app/NormalizerService.java')
+          t = p.read_text(encoding='utf-8')
+          pairs = [
+              ('    private boolean unexpectedZeroThisPoll;\n    private boolean unexpectedZeroThisPoll;\n',
+               '    private boolean unexpectedZeroThisPoll;\n'),
+              ('        if (initial > controlCurve.minIndex()) lastAppliedNonzero = initial;\n        if (initial > controlCurve.minIndex()) lastAppliedNonzero = initial;\n',
+               '        if (initial > controlCurve.minIndex()) lastAppliedNonzero = initial;\n'),
+          ]
+          for old, new in pairs:
+              if t.count(old) != 1:
+                  raise SystemExit(f'expected exactly one duplicate block, found {t.count(old)}')
+              t = t.replace(old, new, 1)
+          p.write_text(t, encoding='utf-8')
+          PY
+      - name: Commit source fix
+        run: |
+          git config user.name "soundceiling-dev-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/dev/soundceiling/app/NormalizerService.java
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: remove duplicated Task 6 service insertions"
+          git push origin HEAD:feature/v0.6-one-way-adaptive
