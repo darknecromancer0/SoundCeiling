@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PKG="$ROOT/app/src/main/java/dev/soundceiling/app"
+require(){ local file="$1"; local needle="$2"; grep -Fq "$needle" "$file" || { echo "Missing v0.4 UI contract: $(basename "$file") -> $needle" >&2; exit 1; }; }
+require "$PKG/SimpleModeView.java" "Минимальная Media-громкость"
+require "$PKG/SimpleModeView.java" "Максимальная безопасная громкость"
+require "$PKG/SimpleModeView.java" "Quiet now"
+require "$PKG/SimpleModeView.java" "Выравнивание"
+require "$PKG/AdvancedModeView.java" "Safety Lock"
+require "$PKG/AdvancedModeView.java" "Пики и транзиенты"
+require "$PKG/AdvancedModeView.java" "Нормализация"
+require "$PKG/AdvancedModeView.java" "Поведение"
+require "$PKG/AdvancedModeView.java" "Живые показатели"
+require "$PKG/AdvancedModeView.java" "Профили"
+require "$PKG/AdvancedModeView.java" "Сбросить к Medium"
+require "$PKG/HelpText.java" "MIN_MEDIA"
+require "$PKG/HelpText.java" "SOURCE_PEAK"
+require "$PKG/HelpText.java" "NORMALIZATION_STRENGTH"
+echo "v0.4 UI contract: PASS"
