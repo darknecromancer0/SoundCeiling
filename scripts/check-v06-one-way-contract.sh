@@ -35,6 +35,11 @@ require "$PKG/NormalizerService.java" 'manualThreshold.ordinaryNormalizationPaus
 reject "$PKG/NormalizerService.java" 'manualSafety.effectiveMax()'
 reject "$PKG/NormalizerService.java" 'manualSafety.isManualSafetyPause()'
 
+# Task 5: control measurements react on ~70 ms while the display LUFS-like meter remains slower.
+require "$PKG/LoudnessMeter.java" 'CONTROL_TAU_SECONDS = 0.070'
+require "$PKG/LoudnessTracker.java" 'FAST_TAU_SECONDS = 0.070'
+require "$PKG/NormalizerService.java" 'loud.controlLoudnessDb'
+
 require "$PKG/LoudnessControlPolicy.java" 'below_target_hold'
 require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
 
