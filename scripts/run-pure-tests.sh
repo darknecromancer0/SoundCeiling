@@ -24,7 +24,6 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ToneSamples.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/FrequencyBandTracker.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/RuntimeState.java" \
- "$ROOT/app/src/main/java/dev/soundceiling/app/RuntimeStateStore.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/StatusText.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFormatter.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFilePolicy.java" \
