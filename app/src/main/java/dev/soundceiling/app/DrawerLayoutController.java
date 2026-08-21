@@ -51,8 +51,8 @@ final class DrawerLayoutController {
         title.setPadding(dp(8), 0, dp(8), dp(16));
         panel.addView(title);
 
-        addNav("Простой режим", AppDestination.SIMPLE);
-        addNav("Расширенный режим", AppDestination.ADVANCED);
+        addNav("Основное", AppDestination.SIMPLE);
+        addNav("Расширенные", AppDestination.ADVANCED);
         addNav("Приложения и системные звуки", AppDestination.APPS_SYSTEM);
         addNav("Профили устройств", AppDestination.DEVICE_PROFILES);
         addNav("Эквалайзер", AppDestination.EQ);

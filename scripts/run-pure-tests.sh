@@ -39,6 +39,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ManualThresholdFollower.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/UnexpectedZeroPolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/UnexpectedZeroPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PeakSafetyDetector.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TransientGuard.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TransientAttenuationPolicy.java" \

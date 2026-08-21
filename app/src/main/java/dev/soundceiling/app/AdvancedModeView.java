@@ -33,8 +33,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private final FrequencyMeterView frequencyMeter;
     private final SeekBar minMedia, maxMedia, safetyPercent, quietIndex, peakThreshold,
             transientWarning, transientEmergency, targetLoudness, tolerance, strength,
-            downAttack, upRelease, holdAfterLoud, maxDownSteps, maxUpSteps, recovery,
-            targetSpl, splCeiling;
+            downAttack, maxDownSteps, targetSpl, splCeiling;
     private final Switch safetyLock, autoMute, splSwitch;
     private final RadioGroup normalizationGroup, speedGroup;
     private boolean loading;
@@ -53,13 +52,28 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         root.setBackgroundColor(UiTheme.background(context));
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("Расширенный режим", 28, true); root.addView(title);
+        TextView title = text("Расширенные", 28, true); root.addView(title);
         modeInfo = secondary("", 14); modeInfo.setPadding(0, dp(6), 0, dp(10)); root.addView(modeInfo);
         statusCard = new StatusCardView(context); root.addView(statusCard,
                 new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
+        section("Профили");
+        profileInfo = secondary("", 14); root.addView(profileInfo); addPresetButtons();
+        LinearLayout profileRow = horizontal(); Button save = button("Сохранить профиль"); Button load = button("Загрузить");
+        profileRow.addView(save, weight()); profileRow.addView(load, weight()); root.addView(profileRow);
+        Button reset = button("По умолчанию"); root.addView(reset, fullButton());
+        save.setOnClickListener(v -> promptSaveProfile()); load.setOnClickListener(v -> promptLoadProfile());
+        reset.setOnClickListener(v -> applyBuiltIn("Balanced", BuiltInProfiles.balanced()));
+
+        startStop = button("Запустить"); startStop.setOnClickListener(v -> listener.onStartStop()); root.addView(startStop, fullButton());
+        LinearLayout quietRow = horizontal();
+        Button quiet = button("Quiet Now"); quiet.setOnClickListener(v -> listener.onQuietNow());
+        Button quietHelp = button("?"); quietHelp.setOnClickListener(v -> showHelp(HelpText.QUIET_NOW));
+        quietRow.addView(quiet, weight()); quietRow.addView(quietHelp, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        root.addView(quietRow);
+
         section("Главное");
-        root.addView(secondary("Сначала Target и Normalization, затем границы. Minimum не является рабочей громкостью: это только нижний предел.", 13));
+        root.addView(secondary("Target — верхняя цель: тихий материал ниже неё не усиливается. Здесь настраиваются только удержание и снижение Media.", 13));
         normalizationGroup = new RadioGroup(context); normalizationGroup.setOrientation(RadioGroup.HORIZONTAL);
         addNormalization("Off", NormalizationPreset.OFF); addNormalization("Light", NormalizationPreset.LIGHT);
         addNormalization("Medium", NormalizationPreset.MEDIUM); addNormalization("Strict", NormalizationPreset.STRICT);
@@ -86,9 +100,6 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         quietIndex = addSlider("Quiet Now level", HelpText.MIN_MEDIA, streamMin, streamMax,
                 Prefs.quietIndex(context), p -> p + "/" + streamMax, p -> editBound(Prefs.QUIET_INDEX, p));
 
-        Button quiet = button("Quiet Now · только понизить"); quiet.setOnClickListener(v -> listener.onQuietNow()); root.addView(quiet, fullButton());
-        startStop = button("Запустить"); startStop.setOnClickListener(v -> listener.onStartStop()); root.addView(startStop, fullButton());
-
         section("Peak и transient protection");
         peakThreshold = addSlider("Projected peak ceiling", HelpText.SOURCE_PEAK, 0, 12,
                 Math.round(Prefs.sourcePeakThreshold(context) + 12f),
@@ -98,22 +109,14 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         transientEmergency = addSlider("Transient emergency", HelpText.TRANSIENT_EMERGENCY, 0, 18,
                 Math.round(Prefs.transientEmergency(context)), p -> p + " dB", p -> edit(Prefs.TRANSIENT_EMERGENCY, (float) p));
 
-        section("Поведение");
+        section("Поведение · только снижение");
         speedGroup = new RadioGroup(context); speedGroup.setOrientation(RadioGroup.HORIZONTAL);
         addSpeed("Быстро", SpeedPreset.FAST); addSpeed("Баланс", SpeedPreset.BALANCED);
         addSpeed("Мягко", SpeedPreset.GENTLE); addSpeed("Custom", SpeedPreset.CUSTOM); root.addView(speedGroup);
         downAttack = addSlider("Downward attack", HelpText.DOWN_ATTACK, 0, 500,
                 Prefs.downwardAttackMs(context), p -> p + " ms", p -> editBehavior(Prefs.DOWNWARD_ATTACK_MS, p));
-        upRelease = addSlider("Upward release", HelpText.UP_RELEASE, 100, 3000,
-                Prefs.upwardReleaseMs(context), p -> p + " ms", p -> editBehavior(Prefs.UPWARD_RELEASE_MS, p));
-        holdAfterLoud = addSlider("Hold after loud", HelpText.HOLD, 0, 3000,
-                Prefs.holdAfterLoudMs(context), p -> p + " ms", p -> editBehavior(Prefs.HOLD_AFTER_LOUD_MS, p));
         maxDownSteps = addSlider("Max down steps", HelpText.DOWN_ATTACK, 0, 5,
                 Prefs.maxDownSteps(context), Integer::toString, p -> editBehavior(Prefs.MAX_DOWN_STEPS, p));
-        maxUpSteps = addSlider("Max up steps", HelpText.UP_RELEASE, 0, 3,
-                Prefs.maxUpSteps(context), Integer::toString, p -> editBehavior(Prefs.MAX_UP_STEPS, p));
-        recovery = addSlider("Manual recovery", HelpText.RECOVERY, 100, 3000,
-                (int) Prefs.recoveryIntervalMs(context), p -> p + " ms", p -> edit(Prefs.RECOVERY_INTERVAL_MS, (long) p));
         autoMute = addSwitch("Разрешать автоматический mute (0)", HelpText.AUTO_MUTE,
                 Prefs.allowAutoMute(context), v -> edit(Prefs.ALLOW_AUTO_MUTE, v));
 
@@ -129,14 +132,6 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                 p -> p + " dB SPL", p -> edit(Prefs.TARGET_SPL, (float) p));
         splCeiling = addSlider("SPL ceiling", HelpText.DBSPL, 60, 100, Math.round(Prefs.splCeiling(context)),
                 p -> p + " dB SPL", p -> edit(Prefs.SPL_CEILING, (float) p));
-
-        section("Профили");
-        profileInfo = secondary("", 14); root.addView(profileInfo); addPresetButtons();
-        LinearLayout profileRow = horizontal(); Button save = button("Сохранить профиль"); Button load = button("Загрузить");
-        profileRow.addView(save, weight()); profileRow.addView(load, weight()); root.addView(profileRow);
-        Button reset = button("По умолчанию"); root.addView(reset, fullButton());
-        save.setOnClickListener(v -> promptSaveProfile()); load.setOnClickListener(v -> promptLoadProfile());
-        reset.setOnClickListener(v -> applyBuiltIn("Balanced", BuiltInProfiles.balanced()));
 
         section("Живые показатели");
         liveDetails = secondary("", 13); root.addView(liveDetails);
@@ -209,8 +204,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         transientWarning.setProgress(Math.round(Prefs.transientWarning(getContext()))); transientEmergency.setProgress(Math.round(Prefs.transientEmergency(getContext())));
         targetLoudness.setProgress(Math.round(Prefs.targetLoudness(getContext()) + 30f)); tolerance.setProgress(Math.round(Prefs.loudnessTolerance(getContext()) * 10f));
         strength.setProgress(Math.round(Prefs.normalizationStrength(getContext()) * 100f)); downAttack.setProgress(Prefs.downwardAttackMs(getContext()));
-        upRelease.setProgress(Prefs.upwardReleaseMs(getContext())); holdAfterLoud.setProgress(Prefs.holdAfterLoudMs(getContext()));
-        maxDownSteps.setProgress(Prefs.maxDownSteps(getContext())); maxUpSteps.setProgress(Prefs.maxUpSteps(getContext())); recovery.setProgress((int) Prefs.recoveryIntervalMs(getContext()));
+        maxDownSteps.setProgress(Prefs.maxDownSteps(getContext()));
         autoMute.setChecked(Prefs.allowAutoMute(getContext())); splSwitch.setChecked(Prefs.splMode(getContext())); targetSpl.setProgress(Math.round(Prefs.targetSpl(getContext()))); splCeiling.setProgress(Math.round(Prefs.splCeiling(getContext())));
         checkTag(normalizationGroup, Prefs.normalizationPreset(getContext())); checkTag(speedGroup, Prefs.speedPreset(getContext()));
         profileInfo.setText("Профиль: " + (Prefs.activeProfile(getContext()).isEmpty() ? "Custom" : Prefs.activeProfile(getContext())));
