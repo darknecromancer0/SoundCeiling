@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# This file is intentionally tracked by the temporary dev workflow so a touch can rerun cleanup.
 TEST = Path("tests/V060OneWayPureTest.java")
 text = TEST.read_text(encoding="utf-8")
 
