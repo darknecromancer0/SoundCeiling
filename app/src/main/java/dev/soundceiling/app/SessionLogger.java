@@ -50,7 +50,9 @@ final class SessionLogger implements AutoCloseable {
     }
 
     synchronized void event(String code, String detail) {
-        write(LogFormatter.formatEvent(SystemClock.elapsedRealtime(), code, detail));
+        String line = LogFormatter.formatEvent(SystemClock.elapsedRealtime(), code, detail);
+        decisionContext.add(line);
+        write(line);
     }
 
     synchronized void anomaly(List<DiagnosticItem> items) {
