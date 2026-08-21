@@ -17,6 +17,8 @@ jobs:
           java-version: '17'
       - name: Run pure logic tests
         run: ./scripts/run-pure-tests.sh
+      - name: Check v0.4 storage contract
+        run: bash ./scripts/check-v04-storage-contract.sh
       - name: Check source invariants
         run: ./scripts/check-source-invariants.sh
       - name: Check Task 9 UI contract
