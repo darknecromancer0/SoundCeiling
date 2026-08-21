@@ -21,6 +21,7 @@ import android.os.IBinder;
 import android.os.SystemClock;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -50,6 +51,7 @@ public class NormalizerService extends Service {
     private long loudHold;
     private long lastChange;
     private long lastRouteCheck;
+    private long lastNotificationUpdate;
     private int lastAppliedNonzero = -1;
 
     @Override public void onCreate() {
@@ -72,11 +74,13 @@ public class NormalizerService extends Service {
             return START_NOT_STICKY;
         }
         startForegroundNow();
-        RuntimeStateStore.publish(new RuntimeState.Builder()
+        RuntimeState starting = new RuntimeState.Builder()
                 .running(true).captureStatus(RuntimeState.CaptureStatus.STARTING)
                 .controlActivity(RuntimeState.ControlActivity.IDLE)
                 .volume(audio.getStreamVolume(AudioManager.STREAM_MUSIC), controlCurve.maxIndex())
-                .routeLabel(DeviceDetector.label(currentDevice)).message("Запуск захвата…").build());
+                .routeLabel(DeviceDetector.label(currentDevice)).message("Запуск захвата…").build();
+        RuntimeStateStore.publish(starting);
+        updateNotification(starting);
         if (workerRunning.get()) return START_NOT_STICKY;
         if (intent == null) {
             stopSafe("Нет разрешения MediaProjection", true);
@@ -135,14 +139,15 @@ public class NormalizerService extends Service {
     private void openLogger() throws IOException {
         MeasurementVolumeCurve.Snapshot m = measurementCurve.snapshot(currentDeviceType);
         String header = String.format(Locale.US,
-                "HEADER version=0.3.0 manufacturer=%s model=%s sdk=%d route=%s min=%d max=%d current=%d targetRms=%.1f peakCeiling=%.1f targetSpl=%.1f splCeiling=%.1f maxPercent=%d normalize=%s splMode=%s strength=%d ui=%s speed=%s autoMute=%s measurementFallback=%s measurementReason=%s",
+                "HEADER version=0.3.0 manufacturer=%s model=%s sdk=%d route=%s min=%d max=%d current=%d targetRms=%.1f peakCeiling=%.1f targetSpl=%.1f splCeiling=%.1f maxPercent=%d normalize=%s splMode=%s strength=%d ui=%s speed=%s autoMute=%s measurementFallback=%s measurementReason=%s rawCurve=%s measuredCurve=%s controlCurve=%s",
                 clean(Build.MANUFACTURER), clean(Build.MODEL), Build.VERSION.SDK_INT,
                 clean(DeviceDetector.label(currentDevice)), controlCurve.minIndex(), controlCurve.maxIndex(),
                 audio.getStreamVolume(AudioManager.STREAM_MUSIC), Prefs.targetRms(this), Prefs.peakCeiling(this),
                 Prefs.targetSpl(this), Prefs.splCeiling(this), Prefs.maxVolumePercent(this),
                 Prefs.normalize(this), Prefs.splMode(this), Prefs.compressionPercent(this),
                 Prefs.uiMode(this), Prefs.speedPreset(this).key, Prefs.allowAutoMute(this),
-                m.fallbackUsed, clean(m.validationReason));
+                m.fallbackUsed, clean(m.validationReason), Arrays.toString(m.rawGains),
+                Arrays.toString(m.measuredGains), Arrays.toString(controlCurve.snapshot()));
         logger = SessionLogger.start(this, header);
         DiagnosticLog.attach(logger);
     }
@@ -195,13 +200,18 @@ public class NormalizerService extends Service {
                         "previous=" + lastAppliedNonzero + " current=" + current);
             }
 
+            boolean missingSplProfile = Prefs.splMode(this) && currentProfile == null;
             ControlDecision decision;
-            if (Prefs.splMode(this) && currentProfile == null) {
-                DecisionEngine.Input input = DecisionEngine.Input.dbfs(now, r.controlRmsDb, r.peakHoldDb,
-                        false, current, Prefs.targetRms(this), Prefs.peakCeiling(this),
-                        false, 0f, Prefs.maxVolumePercent(this), Prefs.allowAutoMute(this),
-                        Prefs.speedPreset(this), lastRaise, lastDecrease, loudHold);
-                decision = DecisionEngine.decide(input, controlCurve);
+            if (missingSplProfile) {
+                int capIndex = controlCurve.capIndexFromPercent(Prefs.maxVolumePercent(this));
+                float currentGain = controlCurve.gainDbForIndex(current);
+                decision = new ControlDecision(now, ControlDecision.Mode.SPL,
+                        r.controlRmsDb, r.peakHoldDb, signal, Prefs.allowAutoMute(this),
+                        current, currentGain, Prefs.targetSpl(this), Prefs.splCeiling(this),
+                        Prefs.maxVolumePercent(this), capIndex, currentGain, current, current,
+                        false, ControlDecision.Action.HOLD, ControlDecision.SafetyReason.NONE,
+                        "missing_spl_profile", current, current);
+                DiagnosticLog.event("missing_spl_profile", "route=" + DeviceDetector.label(currentDevice));
             } else {
                 DecisionEngine.Input input;
                 if (Prefs.splMode(this)) {
@@ -220,7 +230,7 @@ public class NormalizerService extends Service {
                 decision = DecisionEngine.decide(input, controlCurve);
             }
 
-            int applied = decision.requestedIndex == current ? current
+            int applied = missingSplProfile || decision.requestedIndex == current ? current
                     : applier.apply(decision, controlCurve.minIndex(), controlCurve.maxIndex());
             decision = decision.withAppliedIndex(applied);
             if (logger != null) logger.decision(decision);
@@ -232,7 +242,7 @@ public class NormalizerService extends Service {
                 loudHold = now + 650L;
             }
 
-            boolean rejectedFloor = signal && !Prefs.allowAutoMute(this)
+            boolean rejectedFloor = !missingSplProfile && signal && !Prefs.allowAutoMute(this)
                     && applied == controlCurve.minIndex();
             float estRms = Float.NaN;
             float estPeak = Float.NaN;
@@ -249,13 +259,13 @@ public class NormalizerService extends Service {
                     : decision.action == ControlDecision.Action.CAP ? RuntimeState.ControlActivity.MAXIMUM_LIMIT
                     : RuntimeState.ControlActivity.HOLDING;
             String message = rejectedFloor ? "Media снова сброшена внешней системой"
-                    : Prefs.splMode(this) && currentProfile == null
-                    ? "Нет SPL-калибровки для текущего выхода"
+                    : missingSplProfile ? "Нет SPL-калибровки для текущего выхода"
                     : signal ? (Prefs.splMode(this) ? "Работает · dB SPL" : "Работает · dBFS")
                     : "Ожидание звука";
-            RuntimeStateStore.publish(new RuntimeState.Builder()
+            RuntimeState state = new RuntimeState.Builder()
                     .running(true)
                     .captureStatus(rejectedFloor ? RuntimeState.CaptureStatus.ERROR
+                            : missingSplProfile ? RuntimeState.CaptureStatus.WAITING_SIGNAL
                             : signal ? RuntimeState.CaptureStatus.RUNNING : RuntimeState.CaptureStatus.WAITING_SIGNAL)
                     .controlActivity(activity).signalPresent(signal)
                     .levels(r.controlRmsDb, r.peakHoldDb, estRms, estPeak)
@@ -264,7 +274,9 @@ public class NormalizerService extends Service {
                     .profileName(currentProfile == null ? "" : currentProfile.name)
                     .logStatus(logger == null ? "" : logger.status())
                     .message(message).lastVolumeChangeElapsedMs(lastChange)
-                    .lastDecision(decision).bandLevels(bands.update(buffer, n)).build());
+                    .lastDecision(decision).bandLevels(bands.update(buffer, n)).build();
+            RuntimeStateStore.publish(state);
+            updateNotification(state);
         }
         stopSafe(stopReason, stopError);
     }
@@ -287,15 +299,40 @@ public class NormalizerService extends Service {
     }
 
     private void startForegroundNow() {
-        RuntimeState s = RuntimeStateStore.get();
-        String text = s.running ? StatusText.capture(s) + " · " + StatusText.media(s) : "Контроль громкости";
-        Notification n = new Notification.Builder(this, CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
-                .setContentTitle("Sound Ceiling v0.3.0").setContentText(text).setOngoing(true).build();
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+        RuntimeState state = RuntimeStateStore.get();
+        startForegroundWithNotification(buildNotification(state));
+    }
+
+    private void updateNotification(RuntimeState state) {
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastNotificationUpdate < 1_000L) return;
+        lastNotificationUpdate = now;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        manager.notify(NOTIFICATION_ID, buildNotification(state));
+    }
+
+    private Notification buildNotification(RuntimeState state) {
+        String level;
+        if (Float.isFinite(state.estimatedRmsSpl)) {
+            level = String.format(Locale.US, "~%.1f dB SPL", state.estimatedRmsSpl);
+        } else if (state.running) {
+            level = String.format(Locale.US, "RMS %.1f dBFS", state.rmsDbfs);
         } else {
-            startForeground(NOTIFICATION_ID, n);
+            level = "Контроль громкости";
+        }
+        String text = level + " · " + StatusText.controller(state).replace("Регулятор: ", "")
+                + " · " + StatusText.media(state);
+        return new Notification.Builder(this, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
+                .setContentTitle("Sound Ceiling v0.3.0")
+                .setContentText(text).setOngoing(state.running).build();
+    }
+
+    private void startForegroundWithNotification(Notification notification) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
         }
     }
 
