@@ -18,8 +18,9 @@ final class AnomalyDetector {
         if (input.running && input.captureAgeMs > STALLED_CAPTURE_MS) {
             out.add(DiagnosticItem.red("stalled_capture", "Audio measurements stopped updating while the engine is running"));
         }
-        // The service only records reactionLatencyMs for an emergency peak that actually requested a reduction.
-        // Therefore latency itself is the reliable trigger, even if the user configured a non-default peak threshold.
+        // v0.6 records reactionLatencyMs only when a real automatic downward Media write occurs.
+        // Latency itself is therefore the reliable trigger regardless of whether the write came from
+        // ordinary loudness correction, raw peak protection or transient protection.
         if (input.reactionLatencyMs > SLOW_PEAK_REACTION_MS) {
             out.add(DiagnosticItem.red("slow_peak_reaction", "Peak protection reacted slower than the safety target"));
         }

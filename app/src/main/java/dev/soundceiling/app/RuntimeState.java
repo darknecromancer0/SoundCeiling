@@ -4,7 +4,7 @@ import java.util.List;
 
 final class RuntimeState {
     enum CaptureStatus { STOPPED, STARTING, RUNNING, WAITING_SIGNAL, ERROR }
-    enum ControlActivity { IDLE, HOLDING, DECREASING, RAISING, MINIMUM_LIMIT, MAXIMUM_LIMIT, ERROR }
+    enum ControlActivity { IDLE, HOLDING, DECREASING, MINIMUM_LIMIT, MAXIMUM_LIMIT, ERROR }
 
     final boolean running;
     final CaptureStatus captureStatus;

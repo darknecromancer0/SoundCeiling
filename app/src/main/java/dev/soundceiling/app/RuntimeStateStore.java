@@ -21,7 +21,7 @@ final class RuntimeStateStore {
         if (!state.running) return state;
         long ageMs = Math.max(0L, (System.nanoTime() - lastPublishNanos) / 1_000_000L);
         if (ageMs <= AnomalyDetector.STALLED_CAPTURE_MS) return state;
-        RuntimeState enriched = diagnose(state, ageMs, false, oscillations);
+        RuntimeState enriched = diagnose(state, ageMs, state.unexpectedZero, oscillations);
         CURRENT.set(enriched);
         return enriched;
     }
@@ -29,15 +29,13 @@ final class RuntimeStateStore {
     static synchronized void publish(RuntimeState state) {
         RuntimeState next = Objects.requireNonNull(state);
         long now = System.nanoTime();
-        boolean unexpectedZero = lastRunning && next.running && lastVolume > 0 && next.volumeIndex == 0
-                && next.controlActivity != RuntimeState.ControlActivity.MINIMUM_LIMIT;
         if (next.running) updateOscillation(next.volumeIndex, now);
         else resetOscillation(now);
         lastPublishNanos = now;
         lastVolume = next.volumeIndex;
         lastRunning = next.running;
         logTransitions(next);
-        next = diagnose(next, 0L, unexpectedZero, oscillations);
+        next = diagnose(next, 0L, next.unexpectedZero, oscillations);
         CURRENT.set(next);
     }
 
@@ -113,7 +111,7 @@ final class RuntimeStateStore {
                 .logFailed(DiagnosticLog.hasWriteFailure())
                 .build());
         maybeLog(diagnostics);
-        return state.withDiagnostics(diagnostics);
+        return state.withDiagnostics(diagnostics, captureAgeMs);
     }
 
     private static void updateOscillation(int volume, long nowNanos) {

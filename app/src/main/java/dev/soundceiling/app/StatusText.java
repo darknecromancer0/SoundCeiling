@@ -19,7 +19,6 @@ final class StatusText {
         return switch (s.controlActivity) {
             case HOLDING -> "Регулятор: удерживает";
             case DECREASING -> "Регулятор: снижает";
-            case RAISING -> "Регулятор: повышает";
             case MINIMUM_LIMIT -> "Регулятор: ограничен слышимым минимумом";
             case MAXIMUM_LIMIT -> "Регулятор: ограничен максимумом";
             case ERROR -> "Регулятор: ошибка";
@@ -38,11 +37,11 @@ final class StatusText {
             return "DSP active";
         }
         if (s.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.MIXED) {
-            return "Mixed apps - raise paused";
+            return "Mixed apps · shared down-only control";
         }
         if (s.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.LIKELY
                 || s.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.UNKNOWN) {
-            return "Source uncertain - raise paused";
+            return "Source uncertain · Global down-only control";
         }
         if (s.pcmState == PcmAvailabilityState.BLOCKED) {
             return "PCM blocked - safe fallback";

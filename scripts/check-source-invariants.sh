@@ -94,4 +94,19 @@ grep -Fq 'system_stream_unavailable' "$PKG/DiagnosticLog.java" || {
   echo "system_stream_unavailable must use compact transition logging" >&2; exit 1;
 }
 
+# v0.6 runtime has no upward Media controller state at all.
+if grep -Fq 'RAISING' "$PKG/RuntimeState.java" "$PKG/StatusText.java" "$PKG/NormalizerService.java"; then
+  echo "v0.6 production runtime must not define or publish RAISING" >&2; exit 1
+fi
+# Zero attribution must come from write provenance rather than a bare index transition heuristic.
+grep -Fq 'UnexpectedZeroPolicy.isUnexpectedZero' "$PKG/NormalizerService.java" || {
+  echo "NormalizerService must classify zero through write provenance" >&2; exit 1;
+}
+grep -Fq 'next.unexpectedZero' "$PKG/RuntimeStateStore.java" || {
+  echo "RuntimeStateStore must trust explicit zero provenance" >&2; exit 1;
+}
+if grep -Fq 'lastVolume > 0 && next.volumeIndex == 0' "$PKG/RuntimeStateStore.java"; then
+  echo "RuntimeStateStore must not infer unexpected zero from index transition alone" >&2; exit 1
+fi
+
 echo "Source invariants: PASS"
