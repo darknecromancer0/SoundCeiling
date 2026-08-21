@@ -8,12 +8,17 @@ public final class HybridEnginePureTest {
         testSourceConfidence();
         testIndependentCapabilities();
         testExactSourceDoesNotImplyPerAppControl();
+        testPcmBlockedRequiresCorroboration();
+        testNoConfidenceNoRaise();
         System.out.println("HybridEnginePureTest: PASS");
     }
 
+    private static SourceDescriptor youtube() {
+        return new SourceDescriptor("com.google.android.youtube", 10123, "YouTube", false, false);
+    }
+
     private static void testSourceConfidence() {
-        SourceDescriptor youtube = new SourceDescriptor(
-                "com.google.android.youtube", 10123, "YouTube", false, false);
+        SourceDescriptor youtube = youtube();
         SourceDescriptor game = new SourceDescriptor(
                 "com.example.game", 10124, "Game", false, false);
 
@@ -38,14 +43,7 @@ public final class HybridEnginePureTest {
     }
 
     private static void testIndependentCapabilities() {
-        EngineCapabilities c = new EngineCapabilities(
-                EngineCapabilities.PlaybackObservationCapability.AVAILABLE,
-                EngineCapabilities.SourceIdentityConfidence.EXACT,
-                EngineCapabilities.MeteringCapability.PCM_EXACT,
-                EngineCapabilities.VolumeControlCapability.STREAM_MEDIA,
-                EngineCapabilities.DspTransportCapability.UNAVAILABLE,
-                true,
-                "pcm_exact_but_no_dsp");
+        EngineCapabilities c = exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, true);
         assertEquals(EngineCapabilities.MeteringCapability.PCM_EXACT, c.metering, "pcm metering");
         assertEquals(EngineCapabilities.VolumeControlCapability.STREAM_MEDIA, c.volumeControl, "stream control");
         assertEquals(EngineCapabilities.DspTransportCapability.UNAVAILABLE, c.dspTransport, "dsp independent");
@@ -53,17 +51,91 @@ public final class HybridEnginePureTest {
     }
 
     private static void testExactSourceDoesNotImplyPerAppControl() {
-        EngineCapabilities c = new EngineCapabilities(
-                EngineCapabilities.PlaybackObservationCapability.AVAILABLE,
-                EngineCapabilities.SourceIdentityConfidence.EXACT,
-                EngineCapabilities.MeteringCapability.PCM_EXACT,
-                EngineCapabilities.VolumeControlCapability.STREAM_MEDIA,
-                EngineCapabilities.DspTransportCapability.UNAVAILABLE,
-                true,
-                "targeted_pcm_only");
+        EngineCapabilities c = exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, true);
         if (c.volumeControl == EngineCapabilities.VolumeControlCapability.PER_APP_VERIFIED) {
             throw new AssertionError("exact identity must not imply verified per-app volume control");
         }
+    }
+
+    private static void testPcmBlockedRequiresCorroboration() {
+        PcmStateResolver.Input blockedInput = new PcmStateResolver.Input.Builder()
+                .playbackActive(true).captureRequested(true).captureHealthy(true)
+                .sourceEligible(true).validPcm(false).signalPresent(false)
+                .independentAudioEvidence(true).noValidPcmMs(PcmStateResolver.BLOCKED_AFTER_MS + 1)
+                .build();
+        assertEquals(PcmAvailabilityState.BLOCKED, PcmStateResolver.resolve(blockedInput).state,
+                "corroborated active playback with missing pcm becomes blocked");
+
+        PcmStateResolver.Input uncertain = new PcmStateResolver.Input.Builder()
+                .playbackActive(true).captureRequested(true).captureHealthy(true)
+                .sourceEligible(true).validPcm(false).signalPresent(false)
+                .independentAudioEvidence(false).noValidPcmMs(PcmStateResolver.BLOCKED_AFTER_MS + 1)
+                .build();
+        assertEquals(PcmAvailabilityState.UNCERTAIN, PcmStateResolver.resolve(uncertain).state,
+                "no independent activity evidence must not claim blocked");
+
+        PcmStateResolver.Input silent = new PcmStateResolver.Input.Builder()
+                .playbackActive(true).captureRequested(true).captureHealthy(true)
+                .sourceEligible(true).validPcm(true).signalPresent(false)
+                .independentAudioEvidence(false).noValidPcmMs(0).build();
+        assertEquals(PcmAvailabilityState.SILENT_SOURCE, PcmStateResolver.resolve(silent).state,
+                "healthy arriving silent pcm is not blocked");
+    }
+
+    private static void testNoConfidenceNoRaise() {
+        SourceSet exact = new SourceSet(Collections.singletonList(youtube()),
+                EngineCapabilities.SourceIdentityConfidence.EXACT, "targeted_pcm");
+        ConfidenceGate.Result allowed = ConfidenceGate.evaluate(exact,
+                exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, true),
+                PcmAvailabilityState.ACTIVE);
+        if (!allowed.allowed) throw new AssertionError("exact active pcm should allow raise: " + allowed.reason);
+
+        EngineCapabilities.SourceIdentityConfidence[] deniedConfidence = {
+                EngineCapabilities.SourceIdentityConfidence.LIKELY,
+                EngineCapabilities.SourceIdentityConfidence.MIXED,
+                EngineCapabilities.SourceIdentityConfidence.UNKNOWN
+        };
+        for (EngineCapabilities.SourceIdentityConfidence confidence : deniedConfidence) {
+            SourceSet set = confidence == EngineCapabilities.SourceIdentityConfidence.UNKNOWN
+                    ? new SourceSet(Collections.emptyList(), confidence, "test")
+                    : new SourceSet(Collections.singletonList(youtube()), confidence, "test");
+            ConfidenceGate.Result denied = ConfidenceGate.evaluate(set,
+                    exactPcmCapabilities(confidence, true), PcmAvailabilityState.ACTIVE);
+            if (denied.allowed) throw new AssertionError(confidence + " must block auto-raise");
+        }
+
+        PcmAvailabilityState[] deniedStates = {
+                PcmAvailabilityState.BLOCKED,
+                PcmAvailabilityState.UNCERTAIN,
+                PcmAvailabilityState.ERROR,
+                PcmAvailabilityState.IDLE,
+                PcmAvailabilityState.STARTING,
+                PcmAvailabilityState.SILENT_SOURCE
+        };
+        for (PcmAvailabilityState state : deniedStates) {
+            if (ConfidenceGate.evaluate(exact,
+                    exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, true), state).allowed) {
+                throw new AssertionError(state + " must block auto-raise");
+            }
+        }
+
+        if (ConfidenceGate.evaluate(exact,
+                exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, false),
+                PcmAvailabilityState.ACTIVE).allowed) {
+            throw new AssertionError("unhealthy capabilities must block auto-raise");
+        }
+    }
+
+    private static EngineCapabilities exactPcmCapabilities(
+            EngineCapabilities.SourceIdentityConfidence confidence, boolean healthy) {
+        return new EngineCapabilities(
+                EngineCapabilities.PlaybackObservationCapability.AVAILABLE,
+                confidence,
+                EngineCapabilities.MeteringCapability.PCM_EXACT,
+                EngineCapabilities.VolumeControlCapability.STREAM_MEDIA,
+                EngineCapabilities.DspTransportCapability.UNAVAILABLE,
+                healthy,
+                healthy ? "ok" : "backend_unhealthy");
     }
 
     private static void assertEquals(Object expected, Object actual, String message) {
