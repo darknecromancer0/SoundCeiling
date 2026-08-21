@@ -5,7 +5,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.projection.MediaProjectionManager;
@@ -46,6 +45,7 @@ public class MainActivity extends Activity {
     };
 
     @Override protected void onCreate(Bundle savedInstanceState) {
+        UiTheme.applyActivityTheme(this);
         super.onCreate(savedInstanceState);
         audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         measurementCurve = new MeasurementVolumeCurve(audio);
@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
     private View buildShell() {
         LinearLayout main = new LinearLayout(this);
         main.setOrientation(LinearLayout.VERTICAL);
-        main.setBackgroundColor(Color.rgb(16, 17, 20));
+        main.setBackgroundColor(UiTheme.background(this));
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
@@ -70,8 +70,8 @@ public class MainActivity extends Activity {
         menu.setTextSize(22);
         top.addView(menu, new LinearLayout.LayoutParams(dp(56), dp(48)));
         TextView title = new TextView(this);
-        title.setText("Sound Ceiling v0.3.0");
-        title.setTextColor(Color.WHITE);
+        title.setText("Sound Ceiling v0.4.0");
+        title.setTextColor(UiTheme.primaryText(this));
         title.setTextSize(19);
         title.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, dp(48), 1f);
@@ -100,12 +100,22 @@ public class MainActivity extends Activity {
         calibrationView = null;
         View screen;
         switch (destination) {
-            case ADVANCED:
-                AdvancedModeView advanced = new AdvancedModeView(this, this::startStop);
+            case ADVANCED: {
+                AdvancedModeView advanced = new AdvancedModeView(this, new AdvancedModeView.Listener() {
+                    @Override public void onStartStop() { startStop(); }
+                    @Override public void onQuietNow() { quietNow(); }
+                });
                 activeScreen = advanced;
                 screen = advanced;
                 break;
-            case CALIBRATION:
+            }
+            case EQ: {
+                EqView eq = new EqView(this);
+                activeScreen = eq;
+                screen = eq;
+                break;
+            }
+            case CALIBRATION: {
                 calibrationView = new CalibrationView(this, new CalibrationView.Listener() {
                     @Override public void onStopForTone(ToneController.Kind kind) {
                         if (RuntimeStateStore.get().running) {
@@ -122,15 +132,32 @@ public class MainActivity extends Activity {
                 activeScreen = calibrationView;
                 screen = calibrationView;
                 break;
+            }
+            case DIAGNOSTICS: {
+                DiagnosticsView diagnostics = new DiagnosticsView(this);
+                activeScreen = diagnostics;
+                screen = diagnostics;
+                break;
+            }
+            case APPEARANCE: {
+                AppearanceView appearance = new AppearanceView(this);
+                activeScreen = appearance;
+                screen = appearance;
+                break;
+            }
             case ABOUT:
                 screen = buildAboutView();
                 break;
             case SIMPLE:
-            default:
-                SimpleModeView simple = new SimpleModeView(this, this::startStop);
+            default: {
+                SimpleModeView simple = new SimpleModeView(this, new SimpleModeView.Listener() {
+                    @Override public void onStartStop() { startStop(); }
+                    @Override public void onQuietNow() { quietNow(); }
+                });
                 activeScreen = simple;
                 screen = simple;
                 break;
+            }
         }
         screenHost.addView(screen, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -139,16 +166,16 @@ public class MainActivity extends Activity {
 
     private View buildAboutView() {
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.rgb(16, 17, 20));
+        scroll.setBackgroundColor(UiTheme.background(this));
         TextView text = new TextView(this);
-        text.setText("Sound Ceiling v0.3.0\n\n"
-                + "Логи: Download/SoundCeiling/Logs\n"
-                + "Логи не содержат и не отправляют аудио.\n\n"
-                + "Sound Ceiling анализирует разрешённый Android AudioPlaybackCapture и управляет Media-громкостью. "
-                + "Защищённый/DRM-звук и приложения, запретившие захват, могут быть недоступны для анализа.\n\n"
-                + "Ограничения: приложение не является системным EQ или посэмпловым brickwall limiter. "
-                + "Очень короткий первый пик может пройти до применения нового Media-шага.");
-        text.setTextColor(Color.WHITE);
+        text.setText("Sound Ceiling v0.4.0\n\n"
+                + "Safety path: raw peak / transient → manual envelope → Safety Lock → Media write.\n"
+                + "Precision mode: Android AudioPlaybackCapture + LUFS-like/RMS/Peak.\n"
+                + "Fallback: Visualizer/output-mix safety when доступно; иначе только системный Media guard без авто-повышения.\n\n"
+                + "Логи: Download/SoundCeiling/Logs · общий бюджет до 16 MiB. PCM-аудио в лог не сохраняется и автоматически никуда не отправляется.\n\n"
+                + "Эквалайзер — дополнительная экспериментальная возможность и не является частью критического safety-пути. "
+                + "Если OEM не разрешает глобальный эффект, EQ отключается, а ограничитель продолжает работать.");
+        text.setTextColor(UiTheme.primaryText(this));
         text.setTextSize(16);
         text.setLineSpacing(0, 1.12f);
         text.setPadding(dp(22), dp(24), dp(22), dp(32));
@@ -176,6 +203,22 @@ public class MainActivity extends Activity {
             return;
         }
         requestProjection();
+    }
+
+    private void quietNow() {
+        Intent intent = new Intent(this, NormalizerService.class).setAction(NormalizerService.ACTION_QUIET);
+        if (RuntimeStateStore.get().running) startService(intent);
+        else {
+            int min = audio.getStreamMinVolume(AudioManager.STREAM_MUSIC);
+            int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            int quiet = Math.max(min, Math.min(Prefs.quietIndex(this), max));
+            try {
+                audio.setStreamVolume(AudioManager.STREAM_MUSIC, quiet, 0);
+                Toast.makeText(this, "Media снижена до " + quiet + ". При запуске safety-пауза будет учтена.", Toast.LENGTH_SHORT).show();
+            } catch (RuntimeException e) {
+                Toast.makeText(this, "Не удалось изменить Media-громкость", Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void playTone(ToneController.Kind kind) {
@@ -235,21 +278,31 @@ public class MainActivity extends Activity {
         startActivityForResult(manager.createScreenCaptureIntent(), REQ_MEDIA_PROJECTION);
     }
 
+    private void startFastFallback() {
+        Intent service = new Intent(this, NormalizerService.class)
+                .putExtra(NormalizerService.EXTRA_FAST_ONLY, true);
+        startForegroundService(service);
+        Toast.makeText(this, "Точный PCM не запущен · пробую быстрый Safe fallback", Toast.LENGTH_LONG).show();
+    }
+
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQ_RECORD_AUDIO && grantResults.length > 0
-                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            requestProjection();
+        if (requestCode == REQ_RECORD_AUDIO && grantResults.length > 0) {
+            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) requestProjection();
+            else Toast.makeText(this, "Без разрешения Android не даёт Sound Ceiling читать playback-meter APIs.", Toast.LENGTH_LONG).show();
         }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_MEDIA_PROJECTION && resultCode == RESULT_OK && data != null) {
+        if (requestCode != REQ_MEDIA_PROJECTION) return;
+        if (resultCode == RESULT_OK && data != null) {
             Intent service = new Intent(this, NormalizerService.class)
                     .putExtra(NormalizerService.EXTRA_RESULT_CODE, resultCode)
                     .putExtra(NormalizerService.EXTRA_RESULT_DATA, data);
             startForegroundService(service);
+        } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            startFastFallback();
         }
     }
 
