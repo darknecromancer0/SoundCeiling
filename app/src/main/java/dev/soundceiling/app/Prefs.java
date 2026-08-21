@@ -79,6 +79,7 @@ final class Prefs {
     static float transientEmergency(Context c){return get(c).getFloat(TRANSIENT_EMERGENCY,ControlDefaults.TRANSIENT_EMERGENCY_DB);}
     static long recoveryIntervalMs(Context c){return get(c).getLong(RECOVERY_INTERVAL_MS,ControlDefaults.MANUAL_RECOVERY_INTERVAL_MS);}
     static String activeProfile(Context c){return get(c).getString(ACTIVE_PROFILE,"");}
+    static String activeProfileKey(Context c){return activeProfile(c);}
     static String themeMode(Context c){return get(c).getString(THEME_MODE,"system");}
 
     static ControlProfile currentControlProfile(Context c) {
