@@ -9,6 +9,9 @@ public final class V070AdaptiveEnvelopePureTest {
         normalizerUpAckDoesNotWidenAuthority();
         routeResetForgetsOldAutomaticDebt();
         manualThresholdOffsetMovesAndRestoresSmoothly();
+        ordinaryControllerRecoversOneOwnedStep();
+        recoveryStopsAtUserCeiling();
+        recoveryWaitsForHoldAndRelease();
         System.out.println("V070AdaptiveEnvelopePureTest: PASS");
     }
 
@@ -89,6 +92,48 @@ public final class V070AdaptiveEnvelopePureTest {
         }
     }
 
+    private static void ordinaryControllerRecoversOneOwnedStep() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        ControlProfile profile = recoveryProfile();
+        LoudnessControlPolicy.State state = new LoudnessControlPolicy.State();
+        LoudnessControlPolicy.Result result = LoudnessControlPolicy.decide(
+                1_000L, -20f, -20f, 5, 8, true, curve, profile, state);
+        assertEquals(6, result.requestedIndex, "recovery defaults to one Samsung step");
+        assertEquals("loudness_recover_up", result.reason, "recovery reason");
+    }
+
+    private static void recoveryStopsAtUserCeiling() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        LoudnessControlPolicy.Result result = LoudnessControlPolicy.decide(
+                1_000L, -20f, -20f, 5, 5, true, curve, recoveryProfile(),
+                new LoudnessControlPolicy.State());
+        assertEquals(5, result.requestedIndex, "recovery may not cross user envelope ceiling");
+    }
+
+    private static void recoveryWaitsForHoldAndRelease() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        ControlProfile profile = recoveryProfile();
+        LoudnessControlPolicy.State held = new LoudnessControlPolicy.State();
+        held.loudHoldUntilMs = 2_000L;
+        LoudnessControlPolicy.Result hold = LoudnessControlPolicy.decide(
+                1_000L, -20f, -20f, 5, 8, true, curve, profile, held);
+        assertEquals(5, hold.requestedIndex, "hold after loud blocks recovery");
+        assertEquals("recovery_hold", hold.reason, "hold reason");
+
+        LoudnessControlPolicy.State release = new LoudnessControlPolicy.State();
+        release.lastUpAtMs = 950L;
+        LoudnessControlPolicy.Result wait = LoudnessControlPolicy.decide(
+                1_000L, -20f, -20f, 5, 8, true, curve, profile, release);
+        assertEquals(5, wait.requestedIndex, "upward release interval rate-limits recovery");
+        assertEquals("up_release_wait", wait.reason, "release wait reason");
+    }
+
+    private static ControlProfile recoveryProfile() {
+        return new ControlProfile(1, 100, false, 100, 1, NormalizationPreset.CUSTOM,
+                -18f, 2.5f, 1f, 80, 100, 200, 2, 1,
+                -2f, 6f, 10f, false, 1_000L);
+    }
+
     private static void assertTrue(boolean value, String message) {
         if (!value) throw new AssertionError(message);
     }
@@ -101,6 +146,10 @@ public final class V070AdaptiveEnvelopePureTest {
         if (Math.abs(expected - actual) > tolerance) {
             throw new AssertionError(message + ": expected=" + expected + " actual=" + actual);
         }
+    }
+
+    private static void assertEquals(String expected, String actual, String message) {
+        if (!expected.equals(actual)) throw new AssertionError(message + ": " + actual);
     }
 
     private static void assertEquals(int expected, int actual, String message) {
