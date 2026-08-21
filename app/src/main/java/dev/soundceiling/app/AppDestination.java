@@ -4,6 +4,7 @@ enum AppDestination {
     SIMPLE("simple"),
     ADVANCED("advanced"),
     APPS_SYSTEM("apps_system"),
+    DEVICE_PROFILES("device_profiles"),
     EQ("eq"),
     CALIBRATION("calibration"),
     DIAGNOSTICS("diagnostics"),
