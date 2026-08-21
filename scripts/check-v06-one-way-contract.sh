@@ -42,6 +42,8 @@ require "$PKG/NormalizerService.java" 'loud.controlLoudnessDb'
 require "$PKG/TransientAttenuationPolicy.java" 'safeTarget'
 require "$PKG/NormalizerService.java" 'TransientAttenuationPolicy.safeTarget'
 reject "$PKG/NormalizerService.java" 'int extraSteps = Math.max(2,'
+require "$PKG/NormalizerService.java" 'long reactionLatency = applied < current'
+reject "$PKG/NormalizerService.java" 'long reactionLatency = emergency && applied < current'
 
 require "$PKG/LoudnessControlPolicy.java" 'below_target_hold'
 require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
