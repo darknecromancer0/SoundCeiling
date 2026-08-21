@@ -13,6 +13,10 @@ final class TransientGuard {
             this.deltaDb = deltaDb;
             this.baselineDb = baselineDb;
         }
+
+        static Event none(float baselineDb) {
+            return new Event(Severity.NONE, 0f, baselineDb);
+        }
     }
 
     private final float warningDeltaDb;
