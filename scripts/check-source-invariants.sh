@@ -5,7 +5,7 @@ PKG="$ROOT/app/src/main/java/dev/soundceiling/app"
 mapfile -t files < <(grep -RIl 'setStreamVolume(' "$PKG" || true)
 for file in "${files[@]}"; do
   case "$(basename "$file")" in
-    VolumeApplier.java|ToneController.java) ;;
+    VolumeApplier.java|ToneController.java|SystemStreamController.java) ;;
     *) echo "Unexpected setStreamVolume call: $file" >&2; exit 1 ;;
   esac
 done
@@ -24,6 +24,13 @@ for file in "${direct_apply_index[@]}"; do
     echo "VolumeApplier.applyIndex bypass outside SafeVolumeController: $file" >&2; exit 1;
   }
 done
+if [[ -f "$PKG/SystemStreamController.java" ]]; then
+  grep -q 'policy.enabled' "$PKG/SystemStreamController.java" || {
+    echo "System stream writes must be explicitly enabled" >&2; exit 1; }
+  if grep -q 'STREAM_MUSIC' "$PKG/SystemStreamController.java"; then
+    echo "SystemStreamController must not write Media stream" >&2; exit 1
+  fi
+fi
 for token in 'PeakSafetyDetector' 'TransientGuard' 'ManualSafetyController' 'VolumeWriteTracker' 'LoudnessMeter' 'ACTION_QUIET' 'safeVolume'; do
   grep -q "$token" "$PKG/NormalizerService.java" || { echo "NormalizerService missing v0.4 integration: $token" >&2; exit 1; }
 done
@@ -39,4 +46,47 @@ grep -q 'missing_spl_profile' "$PKG/NormalizerService.java" || {
 grep -q 'updateNotification(state)' "$PKG/NormalizerService.java" || {
   echo "NormalizerService must update notification from RuntimeState" >&2; exit 1;
 }
+
+# v0.5 fail-closed source/policy invariants.
+grep -Fq 'return AppRule.Mode.OFF' "$PKG/AppClassifier.java" || {
+  echo "Samsung/system classifier must have an OFF default path" >&2; exit 1;
+}
+grep -Fq 'kind == SystemStreamPolicy.Kind.MEDIA' "$PKG/SystemStreamPolicies.java" || {
+  echo "Only Media may default enabled in system stream policies" >&2; exit 1;
+}
+grep -Fq '!policy.allowAutomaticRaise' "$PKG/HybridEngineCoordinator.java" || {
+  echo "Hybrid coordinator must gate upward control on allowAutomaticRaise" >&2; exit 1;
+}
+grep -Fq 'HybridEngineCoordinator.plan' "$PKG/NormalizerService.java" || {
+  echo "NormalizerService must route hybrid requests through HybridEngineCoordinator" >&2; exit 1;
+}
+grep -Fq 'hybridSnapshot.policy' "$PKG/NormalizerService.java" || {
+  echo "NormalizerService must pass resolved policy into hybrid control" >&2; exit 1;
+}
+
+# Verified per-app/DSP claims may only originate from the dedicated capability resolver.
+mapfile -t per_app_claims < <(grep -RIl 'VolumeControlCapability.PER_APP_VERIFIED' "$PKG" || true)
+for file in "${per_app_claims[@]}"; do
+  [[ "$(basename "$file")" == "CapabilityResolver.java" ]] || {
+    echo "PER_APP_VERIFIED claim outside CapabilityResolver: $file" >&2; exit 1;
+  }
+done
+mapfile -t dsp_claims < <(grep -RIl 'DspTransportCapability.VERIFIED_' "$PKG" || true)
+for file in "${dsp_claims[@]}"; do
+  case "$(basename "$file")" in
+    CapabilityResolver.java|StatusText.java) ;;
+    *) echo "Verified DSP claim outside capability/status boundary: $file" >&2; exit 1 ;;
+  esac
+done
+
+# Unsupported non-Media writes must be suppressed at the adapter boundary, not merely log-deduplicated.
+for token in 'SystemStreamAttemptGate' 'attempts.shouldAttempt' 'attempts.markUnsupported'; do
+  grep -Fq "$token" "$PKG/SystemStreamController.java" || {
+    echo "SystemStreamController missing unsupported-write suppression: $token" >&2; exit 1;
+  }
+done
+grep -Fq 'system_stream_unavailable' "$PKG/DiagnosticLog.java" || {
+  echo "system_stream_unavailable must use compact transition logging" >&2; exit 1;
+}
+
 echo "Source invariants: PASS"

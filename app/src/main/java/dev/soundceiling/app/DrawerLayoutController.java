@@ -45,7 +45,7 @@ final class DrawerLayoutController {
         panel.setVisibility(View.GONE);
 
         TextView title = new TextView(activity);
-        title.setText("Sound Ceiling v0.4.0");
+        title.setText("Sound Ceiling v" + BuildConfig.VERSION_NAME);
         title.setTextSize(22);
         title.setTextColor(UiTheme.primaryText(activity));
         title.setPadding(dp(8), 0, dp(8), dp(16));
@@ -53,6 +53,8 @@ final class DrawerLayoutController {
 
         addNav("Простой режим", AppDestination.SIMPLE);
         addNav("Расширенный режим", AppDestination.ADVANCED);
+        addNav("Приложения и системные звуки", AppDestination.APPS_SYSTEM);
+        addNav("Профили устройств", AppDestination.DEVICE_PROFILES);
         addNav("Эквалайзер", AppDestination.EQ);
         addNav("Калибровка и тест", AppDestination.CALIBRATION);
         addNav("Диагностика", AppDestination.DIAGNOSTICS);

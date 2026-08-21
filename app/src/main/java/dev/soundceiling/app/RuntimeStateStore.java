@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Central runtime snapshot store plus low-cost automatic anomaly enrichment. */
+/** Central runtime snapshot store plus low-cost automatic anomaly and transition enrichment. */
 final class RuntimeStateStore {
     private static final AtomicReference<RuntimeState> CURRENT =
             new AtomicReference<>(RuntimeState.stopped("Остановлено"));
@@ -36,8 +36,63 @@ final class RuntimeStateStore {
         lastPublishNanos = now;
         lastVolume = next.volumeIndex;
         lastRunning = next.running;
+        logTransitions(next);
         next = diagnose(next, 0L, unexpectedZero, oscillations);
         CURRENT.set(next);
+    }
+
+    private static void logTransitions(RuntimeState state) {
+        String source = state.sourcePackage.isEmpty() ? "unknown" : state.sourcePackage;
+        DiagnosticLog.transition("playback_activity",
+                state.running + ":" + state.signalPresent,
+                "running=" + state.running + " signal=" + state.signalPresent);
+        DiagnosticLog.transition("pcm_state", state.pcmState.name(),
+                "state=" + state.pcmState + " source=" + source);
+        DiagnosticLog.transition("source_confidence",
+                state.sourceConfidence.name() + ":" + source,
+                "confidence=" + state.sourceConfidence + " source=" + source);
+
+        boolean pcmBlocked = state.pcmState == PcmAvailabilityState.BLOCKED;
+        DiagnosticLog.transition("pcm_blocked", pcmBlocked + ":" + source,
+                "active=" + pcmBlocked + " source=" + source + " reason=" + state.downgradeReason);
+
+        boolean mixed = state.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.MIXED;
+        DiagnosticLog.transition("source_mixed", mixed + ":" + source,
+                "active=" + mixed + " source=" + source);
+
+        boolean confidenceBlocksRaise = state.running
+                && (state.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.MIXED
+                || state.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.LIKELY
+                || state.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.UNKNOWN);
+        DiagnosticLog.transition("raise_blocked_confidence",
+                confidenceBlocksRaise + ":" + state.sourceConfidence + ":" + state.pcmState,
+                "active=" + confidenceBlocksRaise + " confidence=" + state.sourceConfidence
+                        + " pcm=" + state.pcmState + " source=" + source);
+
+        boolean offSource = "OFF".equalsIgnoreCase(state.appRuleLabel)
+                || "off_source_present".equals(state.downgradeReason);
+        DiagnosticLog.transition("policy_conflict_off_source", offSource + ":" + source,
+                "active=" + offSource + " rule=" + state.appRuleLabel
+                        + " source=" + source + " reason=" + state.downgradeReason);
+
+        String downgrade = state.downgradeReason.isEmpty() ? "none" : state.downgradeReason;
+        DiagnosticLog.transition("capability_downgrade", downgrade,
+                "reason=" + downgrade + " metering=" + state.meteringCapability
+                        + " control=" + state.volumeControlCapability
+                        + " dsp=" + state.dspTransportCapability);
+
+        String raiseReason = raiseBlockReason(state);
+        DiagnosticLog.transition("raise_blocked_reason", raiseReason,
+                "reason=" + raiseReason + " source=" + source);
+    }
+
+    private static String raiseBlockReason(RuntimeState state) {
+        if (!state.running) return "engine_stopped";
+        if (state.manualSafetyPause) return "manual_safety_pause";
+        if ("OFF".equalsIgnoreCase(state.appRuleLabel)) return "off_source_present";
+        String reason = state.downgradeReason;
+        if (reason == null || reason.isEmpty()) return "none";
+        return reason;
     }
 
     private static RuntimeState diagnose(RuntimeState state, long captureAgeMs,

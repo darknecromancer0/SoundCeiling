@@ -4,11 +4,31 @@ import java.util.List;
 
 final class DiagnosticLog {
     private static volatile SessionLogger logger;
+    private static final TransitionLogGate transitions = new TransitionLogGate();
 
-    static void attach(SessionLogger value) { logger = value; }
-    static void detach(SessionLogger value) { if (logger == value) logger = null; }
+    static synchronized void attach(SessionLogger value) {
+        logger = value;
+        transitions.reset();
+    }
+
+    static synchronized void detach(SessionLogger value) {
+        if (logger == value) logger = null;
+    }
 
     static void event(String code, String details) {
+        if ("system_stream_unavailable".equals(code)) {
+            transition(code, details, details);
+            return;
+        }
+        writeEvent(code, details);
+    }
+
+    static void transition(String code, String state, String details) {
+        if (!transitions.shouldLog(code, state)) return;
+        writeEvent(code, details);
+    }
+
+    private static void writeEvent(String code, String details) {
         SessionLogger current = logger;
         if (current != null) current.event(code, details);
     }

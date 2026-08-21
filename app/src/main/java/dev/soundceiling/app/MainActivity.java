@@ -70,7 +70,7 @@ public class MainActivity extends Activity {
         menu.setTextSize(22);
         top.addView(menu, new LinearLayout.LayoutParams(dp(56), dp(48)));
         TextView title = new TextView(this);
-        title.setText("Sound Ceiling v0.4.0");
+        title.setText("Sound Ceiling v" + BuildConfig.VERSION_NAME);
         title.setTextColor(UiTheme.primaryText(this));
         title.setTextSize(19);
         title.setGravity(Gravity.CENTER_VERTICAL);
@@ -107,6 +107,18 @@ public class MainActivity extends Activity {
                 });
                 activeScreen = advanced;
                 screen = advanced;
+                break;
+            }
+            case APPS_SYSTEM: {
+                AppsSystemView apps = new AppsSystemView(this);
+                activeScreen = apps;
+                screen = apps;
+                break;
+            }
+            case DEVICE_PROFILES: {
+                DeviceProfilesView profiles = new DeviceProfilesView(this);
+                activeScreen = profiles;
+                screen = profiles;
                 break;
             }
             case EQ: {
@@ -168,7 +180,7 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(UiTheme.background(this));
         TextView text = new TextView(this);
-        text.setText("Sound Ceiling v0.4.0\n\n"
+        text.setText("Sound Ceiling v" + BuildConfig.VERSION_NAME + "\n\n"
                 + "Safety path: raw peak / transient → manual envelope → Safety Lock → Media write.\n"
                 + "Precision mode: Android AudioPlaybackCapture + LUFS-like/RMS/Peak.\n"
                 + "Fallback: Visualizer/output-mix safety when доступно; иначе только системный Media guard без авто-повышения.\n\n"

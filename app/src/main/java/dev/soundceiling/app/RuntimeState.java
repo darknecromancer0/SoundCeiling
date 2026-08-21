@@ -16,6 +16,15 @@ final class RuntimeState {
     final String routeLabel, profileName, logStatus, message, backendLabel;
     final long lastVolumeChangeElapsedMs, lastReactionLatencyMs;
     final ControlDecision lastDecision;
+
+    // v0.5 independent Hybrid Engine dimensions. Defaults deliberately describe uncertainty.
+    final PcmAvailabilityState pcmState;
+    final EngineCapabilities.SourceIdentityConfidence sourceConfidence;
+    final EngineCapabilities.MeteringCapability meteringCapability;
+    final EngineCapabilities.VolumeControlCapability volumeControlCapability;
+    final EngineCapabilities.DspTransportCapability dspTransportCapability;
+    final String sourcePackage, sourceLabel, appRuleLabel, downgradeReason;
+
     private final float[] bandLevels;
     private final DiagnosticItem[] diagnostics;
 
@@ -30,6 +39,10 @@ final class RuntimeState {
         logStatus=n(b.logStatus); message=n(b.message); backendLabel=n(b.backendLabel);
         lastVolumeChangeElapsedMs=b.lastVolumeChangeElapsedMs;
         lastReactionLatencyMs=b.lastReactionLatencyMs; lastDecision=b.lastDecision;
+        pcmState=b.pcmState; sourceConfidence=b.sourceConfidence;
+        meteringCapability=b.meteringCapability; volumeControlCapability=b.volumeControlCapability;
+        dspTransportCapability=b.dspTransportCapability; sourcePackage=n(b.sourcePackage);
+        sourceLabel=n(b.sourceLabel); appRuleLabel=n(b.appRuleLabel); downgradeReason=n(b.downgradeReason);
         bandLevels=b.bandLevels.clone(); diagnostics=b.diagnostics.clone();
     }
 
@@ -46,6 +59,8 @@ final class RuntimeState {
                 .backendLabel(backendLabel).reactionLatencyMs(lastReactionLatencyMs)
                 .routeLabel(routeLabel).profileName(profileName).logStatus(logStatus).message(message)
                 .lastVolumeChangeElapsedMs(lastVolumeChangeElapsedMs).lastDecision(lastDecision)
+                .hybrid(pcmState, sourceConfidence, meteringCapability, volumeControlCapability,
+                        dspTransportCapability, sourcePackage, sourceLabel, appRuleLabel, downgradeReason)
                 .bandLevels(bandLevels).diagnostics(items);
         return b.build();
     }
@@ -68,6 +83,12 @@ final class RuntimeState {
         String routeLabel="", profileName="", logStatus="", message="Остановлено", backendLabel="";
         long lastVolumeChangeElapsedMs, lastReactionLatencyMs=-1L;
         ControlDecision lastDecision;
+        PcmAvailabilityState pcmState=PcmAvailabilityState.IDLE;
+        EngineCapabilities.SourceIdentityConfidence sourceConfidence=EngineCapabilities.SourceIdentityConfidence.UNKNOWN;
+        EngineCapabilities.MeteringCapability meteringCapability=EngineCapabilities.MeteringCapability.NONE;
+        EngineCapabilities.VolumeControlCapability volumeControlCapability=EngineCapabilities.VolumeControlCapability.NONE;
+        EngineCapabilities.DspTransportCapability dspTransportCapability=EngineCapabilities.DspTransportCapability.UNAVAILABLE;
+        String sourcePackage="", sourceLabel="", appRuleLabel="Global", downgradeReason="";
         float[] bandLevels=new float[5];
         DiagnosticItem[] diagnostics=new DiagnosticItem[0];
 
@@ -87,6 +108,19 @@ final class RuntimeState {
         Builder message(String v){message=v;return this;}
         Builder lastVolumeChangeElapsedMs(long v){lastVolumeChangeElapsedMs=v;return this;}
         Builder lastDecision(ControlDecision v){lastDecision=v;return this;}
+        Builder hybrid(PcmAvailabilityState pcm,
+                       EngineCapabilities.SourceIdentityConfidence confidence,
+                       EngineCapabilities.MeteringCapability metering,
+                       EngineCapabilities.VolumeControlCapability control,
+                       EngineCapabilities.DspTransportCapability dsp,
+                       String pkg, String label, String appRule, String downgrade) {
+            pcmState=pcm==null?PcmAvailabilityState.UNCERTAIN:pcm;
+            sourceConfidence=confidence==null?EngineCapabilities.SourceIdentityConfidence.UNKNOWN:confidence;
+            meteringCapability=metering==null?EngineCapabilities.MeteringCapability.NONE:metering;
+            volumeControlCapability=control==null?EngineCapabilities.VolumeControlCapability.NONE:control;
+            dspTransportCapability=dsp==null?EngineCapabilities.DspTransportCapability.UNAVAILABLE:dsp;
+            sourcePackage=pkg;sourceLabel=label;appRuleLabel=appRule;downgradeReason=downgrade;return this;
+        }
         Builder bandLevels(float[] v){bandLevels=v==null?new float[5]:v.clone();return this;}
         Builder diagnostics(List<DiagnosticItem> v){diagnostics=v==null?new DiagnosticItem[0]:v.toArray(new DiagnosticItem[0]);return this;}
         Builder diagnostics(DiagnosticItem[] v){diagnostics=v==null?new DiagnosticItem[0]:v.clone();return this;}

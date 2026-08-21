@@ -24,6 +24,7 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
     private final TextView minLabel;
     private final TextView maxLabel;
     private final TextView normalizeLabel;
+    private final TextView engineStatus;
     private final TextView safetyBadge;
     private final Button startStop;
     private final StatusCardView statusCard;
@@ -45,8 +46,13 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         root.addView(title);
         TextView intro = text("Главные границы и сила выравнивания. Аварийная защита работает отдельно.",
                 14, Color.rgb(190, 194, 205));
-        intro.setPadding(0, dp(6), 0, dp(18));
+        intro.setPadding(0, dp(6), 0, dp(12));
         root.addView(intro);
+
+        engineStatus = text("Waiting for audio", 16, Color.rgb(170, 205, 255));
+        engineStatus.setTypeface(Typeface.DEFAULT_BOLD);
+        engineStatus.setPadding(0, 0, 0, dp(8));
+        root.addView(engineStatus);
 
         safetyBadge = text("", 14, Color.rgb(150, 220, 170));
         safetyBadge.setTypeface(Typeface.DEFAULT_BOLD);
@@ -144,6 +150,7 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
 
     @Override public void render(RuntimeState state) {
         startStop.setText(state.running ? "Остановить" : "Запустить");
+        engineStatus.setText(StatusText.engine(state));
         String lock = state.safetyLockEnabled
                 ? "Safety Lock: ON · до " + state.safetyLockIndex + "/" + state.volumeMax
                 : "Safety Lock: OFF · основной потолок активен";
