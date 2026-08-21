@@ -7,6 +7,7 @@ public final class V070CalibrationSafetyPureTest {
         mediaChangeInvalidatesToneAndRestoresProtection();
         routeChangeInvalidatesToneAndRestoresProtection();
         restoreRequestIsConsumedOnce();
+        replacementRequestPreservesRestore();
         System.out.println("V070CalibrationSafetyPureTest: PASS");
     }
 
@@ -52,6 +53,23 @@ public final class V070CalibrationSafetyPureTest {
         s.onToneError("tone_error");
         assertTrue(s.consumeProtectionRestore(), "first restore consume");
         assertFalse(s.consumeProtectionRestore(), "restore must never be requested twice");
+    }
+
+    private static void replacementRequestPreservesRestore() {
+        CalibrationToneStateMachine s = new CalibrationToneStateMachine();
+        s.request(true, 6_000L);
+        s.onStopRequested(6_000L);
+        s.onEngineObserved(false, 6_020L);
+        s.armEnvironment(6, "speaker");
+        s.onToneStarted();
+
+        // A second tap happens after SoundCeiling has already stopped the engine for the first tone.
+        s.request(false, 6_100L);
+        s.armEnvironment(6, "speaker");
+        s.onToneStarted();
+        s.onToneComplete();
+        assertTrue(s.consumeProtectionRestore(),
+                "replacement calibration request must inherit the original protection-restore obligation");
     }
 
     private static CalibrationToneStateMachine playing(boolean protectionRunning, int media,
