@@ -130,4 +130,23 @@ require "$PKG/MainActivity.java" 'CalibrationToneStateMachine toneStateMachine'
 require "$PKG/MainActivity.java" 'tone_waiting_engine_stop'
 require "$PKG/MainActivity.java" 'handler.postDelayed(toneStopPoll, TONE_STOP_POLL_MS)'
 
+# Task 10: logs are one logical UX and one shared file per session.
+require "$PKG/DrawerLayoutController.java" 'addAction("Логи"'
+reject "$PKG/DrawerLayoutController.java" 'Открыть папку логов'
+reject "$PKG/DrawerLayoutController.java" 'Поделиться последним логом'
+require "$PKG/LogSessionsActivity.java" 'button("Открыть папку")'
+require "$PKG/LogSessionsActivity.java" 'button("Выбрать папку")'
+require "$PKG/LogSessionsActivity.java" 'button("Default location")'
+require "$PKG/LogSessionsActivity.java" 'button("Поделиться последней сессией")'
+require "$PKG/LogAccess.java" 'mergeSessionForShare'
+require "$PKG/LogAccess.java" 'FileProvider.getUriForFile'
+require "$PKG/LogAccess.java" 'openStorageFolder'
+require "$PKG/LogAccess.java" 'Intent.ACTION_SEND'
+reject "$PKG/LogAccess.java" 'ACTION_SEND_MULTIPLE'
+require "$ROOT/app/src/main/AndroidManifest.xml" 'androidx.core.content.FileProvider'
+require "$ROOT/app/src/main/AndroidManifest.xml" '${applicationId}.fileprovider'
+require "$ROOT/app/src/main/AndroidManifest.xml" '@xml/file_paths'
+require "$ROOT/app/src/main/res/xml/file_paths.xml" '<cache-path name="shared_logs" path="shared_logs/" />'
+require "$ROOT/app/build.gradle.kts" 'implementation("androidx.core:core:1.16.0")'
+
 echo "v0.6 one-way runtime/UI contract: PASS"
