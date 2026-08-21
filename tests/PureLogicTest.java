@@ -1,7 +1,7 @@
 package dev.soundceiling.app;
 import java.util.Arrays;
 public final class PureLogicTest{
- public static void main(String[]a){testOutput();testPeak();testCurve();testDecision();testFrequency();testState();testLog();testDestination();testSafetyGuard();testManualOverride();System.out.println("PureLogicTest: PASS");}
+ public static void main(String[]a){testOutput();testPeak();testCurve();testDecision();testFrequency();testState();testLog();testDestination();testSafetyGuard();testManualOverride();testWriteTracker();System.out.println("PureLogicTest: PASS");}
  static void testOutput(){assertFalse(Arrays.stream(OutputDevicePriority.forSdk(29)).anyMatch(v->v==26),"API29 BLE");}
  static void testPeak(){assertNear(-4f,GainPlanner.dbfs(-20f,-2f,0f,-10f,-6f,true,1f).desiredGainDb,.001f,"ceiling");}
  static void testCurve(){VolumeCurveMath.ValidationResult r=VolumeCurveMath.validate(new float[16],0,15);assertTrue(r.fallbackUsed,"flat fallback");assertEquals("flat_or_single_finite",r.reason,"reason");ControlVolumeCurve c=new ControlVolumeCurve(0,15);assertEquals(5,c.capIndexFromPercent(35),"cap");}
@@ -12,5 +12,6 @@ public final class PureLogicTest{
  static void testDestination(){assertTrue(AppDestination.fromPreference("broken")==AppDestination.SIMPLE,"fallback");}
  static void testSafetyGuard(){SafetySettings s=new SafetySettings(1,10,true,6,1,750);assertEquals(6,SafetyGuard.clampRequested(15,s,10),"safety lock final");assertEquals(4,SafetyGuard.clampRequested(4,s,5),"normal request preserved");SafetySettings malformed=new SafetySettings(8,3,false,15,1,750);assertTrue(malformed.minIndex<=malformed.maxIndex,"normalized range");}
  static void testManualOverride(){ManualSafetyController c=new ManualSafetyController(1,10,750);c.observeUserIndex(5,1000);c.observeUserIndex(4,1100);assertTrue(c.isPausedForRaise(),"one-step user decrease pauses raise");assertEquals(4,c.effectiveMax(),"one-step shrinks envelope");c.observeUserIndex(1,1200);assertTrue(c.isManualSafetyPause(),"minimum enters safety pause");c.observeUserIndex(2,2000);assertTrue(c.isPausedForRaise(),"manual raise begins gradual recovery");assertEquals(2,c.effectiveMax(),"manual raise does not jump envelope");c.tick(2750);assertEquals(3,c.effectiveMax(),"gradual recovery one step");}
+ static void testWriteTracker(){VolumeWriteTracker t=new VolumeWriteTracker(250);t.observeInitial(3);t.noteAppWrite(2,1000);assertTrue(t.classifyObserved(2,1100)==VolumeWriteTracker.Origin.APP,"app write ack");assertTrue(t.classifyObserved(3,1200)==VolumeWriteTracker.Origin.USER,"one-step user change");assertTrue(t.classifyObserved(3,1250)==VolumeWriteTracker.Origin.UNCHANGED,"unchanged");}
  static void assertTrue(boolean v,String m){if(!v)throw new AssertionError(m);}static void assertFalse(boolean v,String m){assertTrue(!v,m);}static void assertNear(float e,float a,float x,String m){if(Math.abs(e-a)>x)throw new AssertionError(m+":"+a);}static void assertEquals(int e,int a,String m){if(e!=a)throw new AssertionError(m+":"+a);}static void assertEquals(String e,String a,String m){if(!e.equals(a))throw new AssertionError(m+":"+a);}
 }
