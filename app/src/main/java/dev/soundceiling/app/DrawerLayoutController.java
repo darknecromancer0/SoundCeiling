@@ -41,19 +41,22 @@ final class DrawerLayoutController {
         panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(32), dp(18), dp(24));
-        panel.setBackgroundColor(Color.rgb(29, 31, 36));
+        panel.setBackgroundColor(UiTheme.surface(activity));
         panel.setVisibility(View.GONE);
 
         TextView title = new TextView(activity);
-        title.setText("Sound Ceiling v0.3.0");
+        title.setText("Sound Ceiling v0.4.0");
         title.setTextSize(22);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(UiTheme.primaryText(activity));
         title.setPadding(dp(8), 0, dp(8), dp(16));
         panel.addView(title);
 
         addNav("Простой режим", AppDestination.SIMPLE);
         addNav("Расширенный режим", AppDestination.ADVANCED);
+        addNav("Эквалайзер", AppDestination.EQ);
         addNav("Калибровка и тест", AppDestination.CALIBRATION);
+        addNav("Диагностика", AppDestination.DIAGNOSTICS);
+        addNav("Оформление", AppDestination.APPEARANCE);
         addAction("Открыть папку логов", () -> listener.onOpenLogs());
         addAction("Поделиться последним логом", () -> listener.onShareLatestLog());
         addNav("О приложении", AppDestination.ABOUT);
@@ -86,8 +89,6 @@ final class DrawerLayoutController {
                 .withEndAction(() -> scrim.setVisibility(View.GONE)).start();
         open = false;
     }
-
-    boolean isOpen() { return open; }
 
     boolean handleBack() {
         if (!open) return false;

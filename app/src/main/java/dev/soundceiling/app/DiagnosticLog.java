@@ -1,2 +1,32 @@
 package dev.soundceiling.app;
-final class DiagnosticLog{private static volatile SessionLogger logger;static void attach(SessionLogger l){logger=l;}static void detach(SessionLogger l){if(logger==l)logger=null;}static void event(String code,String details){SessionLogger l=logger;if(l!=null)l.event(code,details);}private DiagnosticLog(){}}
+
+import java.util.List;
+
+final class DiagnosticLog {
+    private static volatile SessionLogger logger;
+
+    static void attach(SessionLogger value) { logger = value; }
+    static void detach(SessionLogger value) { if (logger == value) logger = null; }
+
+    static void event(String code, String details) {
+        SessionLogger current = logger;
+        if (current != null) current.event(code, details);
+    }
+
+    static void decision(ControlDecision decision) {
+        SessionLogger current = logger;
+        if (current != null) current.decision(decision);
+    }
+
+    static void anomaly(List<DiagnosticItem> items) {
+        SessionLogger current = logger;
+        if (current != null) current.anomaly(items);
+    }
+
+    static boolean hasWriteFailure() {
+        SessionLogger current = logger;
+        return current != null && current.hasWriteFailure();
+    }
+
+    private DiagnosticLog() {}
+}

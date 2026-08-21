@@ -17,10 +17,16 @@ jobs:
           java-version: '17'
       - name: Run pure logic tests
         run: ./scripts/run-pure-tests.sh
+      - name: Check v0.4 storage contract
+        run: bash ./scripts/check-v04-storage-contract.sh
       - name: Check source invariants
         run: ./scripts/check-source-invariants.sh
-      - name: Check Task 9 UI contract
+      - name: Check legacy UI contract
         run: bash ./scripts/check-ui-contract.sh
+      - name: Check v0.4 UI contract
+        run: bash ./scripts/check-v04-ui-contract.sh
+      - name: Check v0.4 package contract
+        run: bash ./scripts/check-v04-package-contract.sh
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
@@ -32,7 +38,7 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.3.0-debug-apk
+          name: SoundCeiling-v0.4.0-debug-apk
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/debug/app-debug.apk.sha256

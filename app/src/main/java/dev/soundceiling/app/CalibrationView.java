@@ -1,5 +1,6 @@
 package dev.soundceiling.app;
 
+import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -26,8 +27,6 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     private final TextView stopPrompt;
     private final ProgressBar speakerProgress;
     private final ProgressBar calibrationProgress;
-    private final Button speakerButton;
-    private final Button calibrationButton;
     private final Button stopContinue;
     private final SeekBar measuredSpl;
     private ToneController.Kind pendingTone;
@@ -36,47 +35,56 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
         super(context);
         this.listener = listener;
         setFillViewport(true);
-        setBackgroundColor(Color.rgb(16, 17, 20));
+        setBackgroundColor(UiTheme.background(context));
 
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(20), dp(20), dp(36));
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("Калибровка и тест", 28, Color.WHITE);
+        TextView title = text("Калибровка", 28, UiTheme.primaryText(context));
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title);
-        route = text("Выход: …", 14, Color.rgb(188, 193, 205));
+        root.addView(text("Калибровка нужна только для приблизительного dB SPL. LUFS-like, dBFS и safety ceiling работают и без неё.",
+                14, UiTheme.secondaryText(context)));
+        route = text("Выход: …", 14, UiTheme.secondaryText(context));
         route.setPadding(0, dp(8), 0, dp(16));
         root.addView(route);
 
-        TextView speakerTitle = section("Проверить динамик");
+        TextView speakerTitle = section("Шаг 1 · Проверить аудиовыход");
         root.addView(speakerTitle);
-        root.addView(text("Короткий безопасный тест покажет, что звук идёт через ожидаемый аудиовыход. Тон: 1 кГц · -12 dBFS · 3 сек.",
-                14, Color.rgb(185, 190, 202)));
+        root.addView(text("Безопасный тест: 1 кГц · -12 dBFS · 3 сек. Убедитесь, что звук идёт из нужного динамика/наушников.",
+                14, UiTheme.secondaryText(context)));
         speakerProgress = progress();
         root.addView(speakerProgress);
-        speakerButton = button("▶ Проверить динамик");
+        Button speakerButton = button("▶ Проверить динамик / наушники");
         speakerButton.setOnClickListener(v -> requestTone(ToneController.Kind.SPEAKER_CHECK));
         root.addView(speakerButton, buttonLp());
-        speakerStatus = text("Готово к тесту", 13, Color.LTGRAY);
+        speakerStatus = text("Готово к тесту", 13, UiTheme.secondaryText(context));
         root.addView(speakerStatus);
 
-        TextView calibrationTitle = section("Калибровочный тон 1 кГц · -30 dBFS · 3 сек");
+        TextView calibrationTitle = section("Шаг 2 · Проиграть эталонный тон");
         calibrationTitle.setPadding(0, dp(28), 0, dp(6));
         root.addView(calibrationTitle);
-        root.addView(text("Измерьте громкость внешним SPL-метром. Для наушников точность требует акустического куплера; микрофон рядом с чашкой даёт лишь грубую оценку.",
-                14, Color.rgb(185, 190, 202)));
+        root.addView(text("Эталон: 1 кГц · -30 dBFS · 3 сек. Измерьте его внешним SPL-метром. Для наушников точность требует акустического куплера.",
+                14, UiTheme.secondaryText(context)));
         calibrationProgress = progress();
         root.addView(calibrationProgress);
-        calibrationButton = button("▶ Запустить калибровочный тон");
+        Button calibrationButton = button("▶ Запустить калибровочный тон");
         calibrationButton.setOnClickListener(v -> requestTone(ToneController.Kind.CALIBRATION));
         root.addView(calibrationButton, buttonLp());
-        calibrationStatus = text("Сначала проиграйте калибровочный тон", 13, Color.LTGRAY);
+        calibrationStatus = text("Сначала проиграйте калибровочный тон", 13, UiTheme.secondaryText(context));
         root.addView(calibrationStatus);
 
+        Button noMeter = button("У меня нет SPL-метра");
+        noMeter.setOnClickListener(v -> showNoMeterInfo());
+        root.addView(noMeter, buttonLp());
+
+        TextView measureTitle = section("Шаг 3 · Ввести результат измерения");
+        measureTitle.setPadding(0, dp(24), 0, 0);
+        root.addView(measureTitle);
         measuredLabel = section("");
-        measuredLabel.setPadding(0, dp(18), 0, 0);
+        measuredLabel.setPadding(0, dp(8), 0, 0);
         root.addView(measuredLabel);
         measuredSpl = new SeekBar(context);
         measuredSpl.setMin(40);
@@ -93,15 +101,15 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
 
-        Button save = button("Сохранить калибровку");
+        Button save = button("Сохранить профиль этого выхода");
         save.setOnClickListener(v -> listener.onSaveCalibration(measuredSpl.getProgress()));
         root.addView(save, buttonLp());
         Button delete = button("Удалить профиль текущего выхода");
         delete.setOnClickListener(v -> listener.onDeleteCalibration());
         root.addView(delete, buttonLp());
 
-        stopPrompt = text("Сначала остановите нормализатор, чтобы он не менял громкость тест-тона", 14,
-                Color.rgb(255, 205, 110));
+        stopPrompt = text("Для тест-тона сначала остановим нормализатор, чтобы он не менял его громкость.", 14,
+                Color.rgb(235, 175, 65));
         stopPrompt.setPadding(0, dp(18), 0, dp(6));
         stopPrompt.setVisibility(GONE);
         root.addView(stopPrompt);
@@ -111,6 +119,18 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
             if (pendingTone != null) listener.onStopForTone(pendingTone);
         });
         root.addView(stopContinue, buttonLp());
+        UiTheme.applyToTree(root);
+    }
+
+    private void showNoMeterInfo() {
+        Prefs.get(getContext()).edit().putBoolean(Prefs.SPL_MODE, false).apply();
+        calibrationStatus.setText("dB SPL режим отключён. Используются LUFS-like/dBFS и системный safety ceiling.");
+        new AlertDialog.Builder(getContext())
+                .setTitle("Можно пользоваться без SPL-метра")
+                .setMessage("Оставьте dB SPL выключенным. Sound Ceiling всё равно видит цифровой уровень доступного PCM, "
+                        + "контролирует пики и системный потолок. Просто абсолютные dB SPL для конкретного динамика будут неизвестны.")
+                .setPositiveButton("Понятно", null)
+                .show();
     }
 
     private void requestTone(ToneController.Kind kind) {
@@ -126,7 +146,7 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     @Override public void render(RuntimeState state) {
         route.setText("Выход: " + (state.routeLabel.isEmpty() ? "определяется…" : state.routeLabel)
                 + " · Media " + state.volumeIndex + "/" + state.volumeMax
-                + (state.profileName.isEmpty() ? "\nКалибровка: нет" : "\nКалибровка: " + state.profileName));
+                + (state.profileName.isEmpty() ? "\nSPL-калибровка: нет" : "\nSPL-калибровка: " + state.profileName));
         if (pendingTone != null && !state.running) {
             ToneController.Kind kind = pendingTone;
             pendingTone = null;
@@ -150,7 +170,7 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
         if (result.kind == ToneController.Kind.SPEAKER_CHECK) {
             speakerStatus.setText("Тест завершён · " + routeText);
         } else {
-            calibrationStatus.setText("Тон завершён · " + routeText + " · теперь укажите измеренный SPL и сохраните профиль");
+            calibrationStatus.setText("Тон завершён · " + routeText + " · теперь укажите измеренный SPL");
         }
     }
 
@@ -187,7 +207,7 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     }
 
     private TextView section(String label) {
-        TextView v = text(label, 18, Color.WHITE);
+        TextView v = text(label, 18, UiTheme.primaryText(getContext()));
         v.setTypeface(Typeface.DEFAULT_BOLD);
         return v;
     }
