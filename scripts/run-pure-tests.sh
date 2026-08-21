@@ -58,9 +58,11 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
  "$ROOT/tests/HybridEnginePureTest.java" \
- "$ROOT/tests/SourceEvidencePureTest.java"
+ "$ROOT/tests/SourceEvidencePureTest.java" \
+ "$ROOT/tests/HybridPolicyPureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
 java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
 java -cp "$OUT" dev.soundceiling.app.LoudnessPolicyPeakThresholdTest
 java -cp "$OUT" dev.soundceiling.app.HybridEnginePureTest
 java -cp "$OUT" dev.soundceiling.app.SourceEvidencePureTest
+java -cp "$OUT" dev.soundceiling.app.HybridPolicyPureTest
