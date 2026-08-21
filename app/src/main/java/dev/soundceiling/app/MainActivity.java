@@ -2,6 +2,7 @@ package dev.soundceiling.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -211,7 +212,7 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
             return;
         }
-        requestProjection();
+        showProjectionExplanation();
     }
 
     private void quietNow() {
@@ -322,6 +323,18 @@ public class MainActivity extends Activity {
         Toast.makeText(this, "Профиль удалён.", Toast.LENGTH_SHORT).show();
     }
 
+    private void showProjectionExplanation() {
+        new AlertDialog.Builder(this)
+                .setTitle("Точный анализ воспроизведения")
+                .setMessage("Android покажет системное окно разрешения, похожее на запись или трансляцию экрана. "
+                        + "Это нужно потому, что AudioPlaybackCapture авторизуется через MediaProjection.\n\n"
+                        + "SoundCeiling использует только PCM воспроизводимого аудио для измерения громкости. "
+                        + "SoundCeiling не записывает видео экрана.")
+                .setPositiveButton("Продолжить", (dialog, which) -> requestProjection())
+                .setNegativeButton("Safe fallback", (dialog, which) -> startFastFallback())
+                .show();
+    }
+
     private void requestProjection() {
         MediaProjectionManager manager =
                 (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
@@ -338,7 +351,7 @@ public class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_RECORD_AUDIO && grantResults.length > 0) {
-            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) requestProjection();
+            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) showProjectionExplanation();
             else Toast.makeText(this, "Без разрешения Android не даёт Sound Ceiling читать playback-meter APIs.", Toast.LENGTH_LONG).show();
         }
     }
