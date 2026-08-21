@@ -33,14 +33,21 @@ final class AdaptiveVolumeEnvelope {
         ensureInitialized(previousIndex, Math.max(previousIndex, currentIndex), nowMs);
         advance(nowMs);
         if (currentIndex < previousIndex) {
-            userCeilingIndex = Math.min(userCeilingIndex, Math.max(0, currentIndex));
-            automaticReferenceIndex = Math.min(automaticReferenceIndex, userCeilingIndex);
-            addNegativeCurveDelta(previousIndex, currentIndex, curve);
+            applyDeliberateDown(previousIndex, currentIndex, curve);
         } else if (currentIndex > previousIndex) {
             userCeilingIndex = Math.max(userCeilingIndex, Math.max(0, currentIndex));
             automaticReferenceIndex = Math.max(automaticReferenceIndex, userCeilingIndex);
             desiredManualOffsetDb = 0f;
         }
+        lastObservedIndex = Math.max(0, currentIndex);
+    }
+
+    /** Explicit user command such as Quiet Now. Unlike automatic protection, this lowers authority. */
+    void onDeliberateLowering(int previousIndex, int currentIndex,
+                              ControlVolumeCurve curve, long nowMs) {
+        ensureInitialized(previousIndex, Math.max(previousIndex, currentIndex), nowMs);
+        advance(nowMs);
+        if (currentIndex < previousIndex) applyDeliberateDown(previousIndex, currentIndex, curve);
         lastObservedIndex = Math.max(0, currentIndex);
     }
 
@@ -105,6 +112,13 @@ final class AdaptiveVolumeEnvelope {
 
     void onRouteEpochReset(int currentIndex, int safetyCeilingIndex, long nowMs) {
         observeInitial(currentIndex, safetyCeilingIndex, nowMs);
+    }
+
+    private void applyDeliberateDown(int previousIndex, int currentIndex,
+                                     ControlVolumeCurve curve) {
+        userCeilingIndex = Math.min(userCeilingIndex, Math.max(0, currentIndex));
+        automaticReferenceIndex = Math.min(automaticReferenceIndex, userCeilingIndex);
+        addNegativeCurveDelta(previousIndex, currentIndex, curve);
     }
 
     private void addNegativeCurveDelta(int previousIndex, int currentIndex,
