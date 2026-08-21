@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PKG="$ROOT/app/src/main/java/dev/soundceiling/app"
+require(){ local file="$1"; local needle="$2"; [[ -f "$file" ]] || { echo "Missing v0.5 UI file: $(basename "$file")" >&2; exit 1; }; grep -Fq "$needle" "$file" || { echo "Missing v0.5 UI contract: $(basename "$file") -> $needle" >&2; exit 1; }; }
+
+require "$PKG/AppDestination.java" "APPS_SYSTEM"
+require "$PKG/DrawerLayoutController.java" "Приложения и системные звуки"
+require "$PKG/MainActivity.java" "AppsSystemView"
+require "$PKG/AppsSystemView.java" "Поиск приложений"
+require "$PKG/AppsSystemView.java" "Controlled"
+require "$PKG/AppsSystemView.java" "Custom"
+require "$PKG/AppsSystemView.java" "Ignored"
+require "$PKG/AppsSystemView.java" "PCM unavailable"
+require "$PKG/AppsSystemView.java" "System apps"
+require "$PKG/AppPolicyEditorView.java" "Global"
+require "$PKG/AppPolicyEditorView.java" "On"
+require "$PKG/AppPolicyEditorView.java" "Off"
+require "$PKG/AppPolicyEditorView.java" "Custom"
+require "$PKG/AppsSystemView.java" "Calls"
+require "$PKG/AppsSystemView.java" "Alarm"
+require "$PKG/AppsSystemView.java" "Ringtone"
+require "$PKG/AppsSystemView.java" "Notifications"
+require "$PKG/AppsSystemView.java" "System"
+require "$PKG/AppsSystemView.java" "DTMF"
+require "$PKG/AppsSystemView.java" "Accessibility"
+require "$PKG/AppsSystemView.java" "Assistant"
+require "$PKG/AppsSystemView.java" "ceilingPercent"
+
+echo "v0.5 UI contract: PASS"
