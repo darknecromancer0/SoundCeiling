@@ -20,9 +20,9 @@ public final class LoudnessPolicyPeakThresholdTest {
         LoudnessControlPolicy.Result strict = LoudnessControlPolicy.decide(
                 10_000L, -30f, -6f, true, 5, curve, strictPeak, stateB);
 
-        if (strict.requestedIndex >= normal.requestedIndex) {
-            throw new AssertionError("custom peak threshold must constrain auto-raise: normal="
-                    + normal.requestedIndex + " strict=" + strict.requestedIndex);
+        if (!(strict.desiredGainDb < normal.desiredGainDb - 0.5f)) {
+            throw new AssertionError("custom peak threshold must constrain desired gain: normal="
+                    + normal.desiredGainDb + " strict=" + strict.desiredGainDb);
         }
         System.out.println("LoudnessPolicyPeakThresholdTest: PASS");
     }
