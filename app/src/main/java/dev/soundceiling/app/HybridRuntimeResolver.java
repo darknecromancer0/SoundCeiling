@@ -81,7 +81,7 @@ final class HybridRuntimeResolver implements AutoCloseable {
 
         long noPcmMs = capture == null ? Long.MAX_VALUE : capture.sampleAgeMs(nowElapsedMs);
         PcmStateResolver.Input input = new PcmStateResolver.Input.Builder()
-                .playbackActive(playback.playbackActive)
+                .playbackActive(playback.active)
                 .captureRequested(capture != null)
                 .captureHealthy(capture != null && capture.healthy())
                 .sourceEligible(true)
@@ -94,7 +94,7 @@ final class HybridRuntimeResolver implements AutoCloseable {
         boolean exactPcm = capture != null && capture.targeted()
                 && sources.confidence == EngineCapabilities.SourceIdentityConfidence.EXACT;
         EngineCapabilities capabilities = new EngineCapabilities(
-                playback.healthy ? EngineCapabilities.PlaybackObservationCapability.AVAILABLE
+                playback.observerHealthy ? EngineCapabilities.PlaybackObservationCapability.AVAILABLE
                         : EngineCapabilities.PlaybackObservationCapability.DEGRADED,
                 sources.confidence,
                 exactPcm ? EngineCapabilities.MeteringCapability.PCM_EXACT
@@ -116,7 +116,7 @@ final class HybridRuntimeResolver implements AutoCloseable {
         SourceSet sources = SourceResolver.resolve(candidateEvidence, epoch);
         markSourceTransition(sources, nowElapsedMs);
         EngineCapabilities capabilities = new EngineCapabilities(
-                playback.healthy ? EngineCapabilities.PlaybackObservationCapability.AVAILABLE
+                playback.observerHealthy ? EngineCapabilities.PlaybackObservationCapability.AVAILABLE
                         : EngineCapabilities.PlaybackObservationCapability.DEGRADED,
                 sources.confidence,
                 outputMixAvailable ? EngineCapabilities.MeteringCapability.OUTPUT_MIX_PEAK_RMS
@@ -125,7 +125,7 @@ final class HybridRuntimeResolver implements AutoCloseable {
                 EngineCapabilities.DspTransportCapability.UNAVAILABLE,
                 true,
                 outputMixAvailable ? "safe_output_mix_fallback" : "system_limiter_only");
-        PcmAvailabilityState pcm = playback.playbackActive
+        PcmAvailabilityState pcm = playback.active
                 ? PcmAvailabilityState.UNCERTAIN : PcmAvailabilityState.IDLE;
         return buildSnapshot(playback, sources, pcm, capabilities, globalProfile, deviceProfile,
                 nowElapsedMs);
