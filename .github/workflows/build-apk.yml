@@ -41,6 +41,8 @@ jobs:
         run: bash ./scripts/check-v04-package-contract.sh
       - name: Check v0.5 release contract
         run: bash ./scripts/check-v05-release-contract.sh
+      - name: Check v0.5.1 core stability contract
+        run: bash ./scripts/check-v051-core-stability-contract.sh
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
@@ -52,7 +54,7 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.5.0-debug-apk
+          name: SoundCeiling-v0.5.1-debug-apk
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/debug/app-debug.apk.sha256

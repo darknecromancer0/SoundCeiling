@@ -16,7 +16,7 @@ final class DiagnosticLog {
     }
 
     static void event(String code, String details) {
-        if ("system_stream_unavailable".equals(code)) {
+        if ("system_stream_unavailable".equals(code) || "raise_blocked".equals(code)) {
             transition(code, details, details);
             return;
         }

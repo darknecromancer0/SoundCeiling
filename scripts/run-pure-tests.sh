@@ -10,6 +10,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LoudnessMeter.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizationPreset.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlDefaults.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ControlSettingConstraints.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlProfile.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/BuiltInProfiles.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LoudnessControlPolicy.java" \
@@ -38,6 +39,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PeakSafetyDetector.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TransientGuard.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/QuietNowPolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/EqLinkMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EngineCapabilities.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackSnapshot.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceDescriptor.java" \
@@ -68,7 +71,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/tests/SourceEvidencePureTest.java" \
  "$ROOT/tests/HybridPolicyPureTest.java" \
  "$ROOT/tests/HybridCoordinatorPureTest.java" \
- "$ROOT/tests/SystemStreamAttemptGatePureTest.java"
+ "$ROOT/tests/SystemStreamAttemptGatePureTest.java" \
+ "$ROOT/tests/V051RegressionPureTest.java" \
+ "$ROOT/tests/EqLinkPureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
 java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
 java -cp "$OUT" dev.soundceiling.app.LoudnessPolicyPeakThresholdTest
@@ -77,3 +82,5 @@ java -cp "$OUT" dev.soundceiling.app.SourceEvidencePureTest
 java -cp "$OUT" dev.soundceiling.app.HybridPolicyPureTest
 java -cp "$OUT" dev.soundceiling.app.HybridCoordinatorPureTest
 java -cp "$OUT" dev.soundceiling.app.SystemStreamAttemptGatePureTest
+java -cp "$OUT" dev.soundceiling.app.V051RegressionPureTest
+java -cp "$OUT" dev.soundceiling.app.EqLinkPureTest

@@ -1,6 +1,6 @@
 package dev.soundceiling.app;
 
-/** Tracks the user's manual volume intent and opens the automation ceiling slowly. */
+/** Tracks only the user's manual volume intent and opens a user ceiling slowly after decreases. */
 final class ManualSafetyController {
     private int minIndex;
     private int configuredMax;
@@ -34,14 +34,19 @@ final class ManualSafetyController {
         lastRecoveryAtMs = nowMs;
     }
 
+    /** Initial device state is observation, not a user command to disable normalization. */
+    void observeInitialIndex(int index, long nowMs) {
+        lastUserIndex = clamp(index, 0, configuredMax);
+        effectiveMax = configuredMax;
+        pausedForRaise = false;
+        manualSafetyPause = false;
+        lastRecoveryAtMs = nowMs;
+    }
+
     void observeUserIndex(int index, long nowMs) {
         int safe = clamp(index, 0, configuredMax);
         if (lastUserIndex < 0) {
-            lastUserIndex = safe;
-            manualSafetyPause = safe <= minIndex;
-            pausedForRaise = manualSafetyPause;
-            if (manualSafetyPause) effectiveMax = safe;
-            lastRecoveryAtMs = nowMs;
+            observeInitialIndex(safe, nowMs);
             return;
         }
         if (safe < lastUserIndex) {
@@ -51,7 +56,7 @@ final class ManualSafetyController {
             lastRecoveryAtMs = nowMs;
         } else if (safe > lastUserIndex) {
             effectiveMax = Math.min(configuredMax, safe);
-            manualSafetyPause = safe <= minIndex;
+            manualSafetyPause = false;
             pausedForRaise = effectiveMax < configuredMax;
             lastRecoveryAtMs = nowMs;
         }
@@ -66,10 +71,12 @@ final class ManualSafetyController {
         if (effectiveMax >= configuredMax) pausedForRaise = false;
     }
 
+    /**
+     * Compatibility hook for v0.5.0 call sites. Automatic limiter/transient reductions are not
+     * user intent and therefore must never collapse the manual upward envelope.
+     */
     void shrinkEffectiveMax(int index, long nowMs) {
-        effectiveMax = Math.min(effectiveMax, clamp(index, minIndex, configuredMax));
-        pausedForRaise = effectiveMax < configuredMax;
-        lastRecoveryAtMs = nowMs;
+        // Intentionally no-op. Only observeUserIndex() and quietNow() may alter manual intent.
     }
 
     void quietNow(int quietIndex, long nowMs) {
@@ -82,6 +89,7 @@ final class ManualSafetyController {
     }
 
     int effectiveMax() { return effectiveMax; }
+    int lastUserIndex() { return lastUserIndex; }
     boolean isPausedForRaise() { return pausedForRaise; }
     boolean isManualSafetyPause() { return manualSafetyPause; }
 

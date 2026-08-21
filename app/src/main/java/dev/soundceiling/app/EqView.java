@@ -2,121 +2,113 @@ package dev.soundceiling.app;
 
 import android.content.Context;
 import android.graphics.Typeface;
-import android.media.audiofx.Equalizer;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import java.util.Locale;
 
 final class EqView extends ScrollView implements RuntimeScreen {
-    private static final int[] FREQUENCIES_HZ = {60, 230, 910, 3600, 14000};
     private static final String[] LABELS = {"Bass 60 Hz", "Low 230 Hz", "Mid 910 Hz", "Presence 3.6 kHz", "Air 14 kHz"};
 
+    private final EqController controller;
+    private EqSettings settings;
     private final TextView capability;
-    private Equalizer equalizer;
+    private final TextView linkLabel;
+    private final SeekBar[] bands = new SeekBar[EqSettings.BAND_COUNT];
+    private final TextView[] bandLabels = new TextView[EqSettings.BAND_COUNT];
+    private boolean syncing;
 
     EqView(Context context) {
         super(context);
         setFillViewport(true);
         setBackgroundColor(UiTheme.background(context));
+        controller = EqController.get(context);
+        settings = EqSettings.load(context);
+        controller.apply(settings);
+
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(20), dp(20), dp(36));
+        root.setBackgroundColor(UiTheme.background(context));
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("Эквалайзер", 28);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title);
-        capability = text("DSP/EQ capability: probing…", 14);
-        capability.setPadding(0, dp(8), 0, dp(10));
-        root.addView(capability);
-        root.addView(text("Это дополнительный эффект. SafetyGuard и потолок Media работают независимо от EQ. "
-                + "Global audio session 0 считается экспериментальным: если Android/OEM не даёт надёжный путь, ползунки блокируются.", 13));
+        TextView title = text("Эквалайзер", 28, true); root.addView(title);
+        capability = secondary(controller.status(), 14); capability.setPadding(0, dp(8), 0, dp(8)); root.addView(capability);
+        root.addView(secondary("EQ — отдельный модуль. Он может работать сам по себе, вместе с Simple или Advanced. Если DSP недоступен, основной limiter/normalizer продолжает работать.", 13));
 
-        try {
-            equalizer = new Equalizer(0, 0);
-            equalizer.setEnabled(true);
-            short[] range = equalizer.getBandLevelRange();
-            for (int i = 0; i < FREQUENCIES_HZ.length; i++) addBand(root, i, range[0], range[1]);
-            capability.setText("DSP/EQ capability: experimental global session active");
-        } catch (RuntimeException e) {
-            if (equalizer != null) {
-                try { equalizer.release(); } catch (RuntimeException ignored) {}
-                equalizer = null;
-            }
-            capability.setText("DSP/EQ capability: unavailable · визуализаторы и safety продолжают работать");
-            for (int i = 0; i < FREQUENCIES_HZ.length; i++) addDisabledBand(root, i);
-        }
-    }
+        Switch enabled = new Switch(context); enabled.setText("EQ enabled"); enabled.setTextColor(UiTheme.primaryText(context)); enabled.setChecked(settings.enabled); root.addView(enabled);
+        enabled.setOnCheckedChangeListener((button, checked) -> {
+            if (syncing) return; settings = settings.withEnabled(checked); persistAndApply();
+        });
 
-    private void addBand(LinearLayout root, int index, short min, short max) {
-        int frequency = FREQUENCIES_HZ[index];
-        short band = equalizer.getBand(frequency * 1000);
-        TextView label = text("", 15);
-        label.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(label);
-        SeekBar seek = new SeekBar(getContext());
-        seek.setMin(min);
-        seek.setMax(max);
-        short level = equalizer.getBandLevel(band);
-        seek.setProgress(level);
-        updateLabel(label, index, level);
-        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+        linkLabel = text("", 15, true); linkLabel.setPadding(0, dp(18), 0, 0); root.addView(linkLabel);
+        SeekBar linkStrength = new SeekBar(context); linkStrength.setMin(0); linkStrength.setMax(100); linkStrength.setProgress(settings.linkStrengthPercent); root.addView(linkStrength);
+        updateLinkLabel(settings.linkStrengthPercent);
+        root.addView(secondary("Отметьте частоты Link. При движении одной отмеченной полосы остальные отмеченные следуют за ней пропорционально Link Strength. Например, Bass и Low можно связать почти жёстко, а верх оставить свободным.", 12));
+        linkStrength.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                updateLabel(label, index, progress);
-                if (!fromUser || equalizer == null) return;
-                try {
-                    equalizer.setBandLevel(band, (short) progress);
-                    DiagnosticLog.event("eq_change", "freq=" + frequency + " levelMb=" + progress);
-                } catch (RuntimeException e) {
-                    seekBar.setEnabled(false);
-                    capability.setText("DSP/EQ capability: effect rejected changes · core safety unaffected");
-                }
+                updateLinkLabel(progress); if (!fromUser || syncing) return; settings = settings.withLinkStrength(progress); persistAndApply();
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
-        root.addView(seek);
+
+        int min = controller.minMb(); int max = controller.maxMb();
+        for (int i = 0; i < EqSettings.BAND_COUNT; i++) addBand(root, i, min, max);
+        syncBandUi();
     }
 
-    private void addDisabledBand(LinearLayout root, int index) {
-        TextView label = text(LABELS[index] + ": unavailable", 15);
-        root.addView(label);
-        SeekBar seek = new SeekBar(getContext());
-        seek.setMin(-1500);
-        seek.setMax(1500);
-        seek.setProgress(0);
-        seek.setEnabled(false);
-        root.addView(seek);
+    private void addBand(LinearLayout root, int index, int min, int max) {
+        LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL);
+        TextView label = text("", 15, true); bandLabels[index] = label;
+        CheckBox linked = new CheckBox(getContext()); linked.setText("Link"); linked.setTextColor(UiTheme.primaryText(getContext())); linked.setChecked(settings.linked[index]);
+        row.addView(label, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)); row.addView(linked); root.addView(row);
+        SeekBar seek = new SeekBar(getContext()); seek.setMin(min); seek.setMax(max); bands[index] = seek; root.addView(seek);
+        linked.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (syncing) return; settings = settings.withLinked(index, isChecked); persistAndApply();
+        });
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                updateBandLabel(index, progress);
+                if (!fromUser || syncing) return;
+                settings = settings.moveBand(index, progress, seekBar.getMin(), seekBar.getMax());
+                persistAndApply(); syncBandUi();
+                DiagnosticLog.event("eq_change", "band=" + index + " levelMb=" + settings.levelsMb[index]
+                        + " linkStrength=" + settings.linkStrengthPercent);
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
     }
 
-    private void updateLabel(TextView label, int index, int millibels) {
-        label.setText(String.format(Locale.US, "%s: %+.1f dB", LABELS[index], millibels / 100f));
+    private void persistAndApply() {
+        settings.save(getContext()); controller.apply(settings); capability.setText(controller.status());
     }
 
-    @Override public void render(RuntimeState state) {}
-
-    @Override protected void onDetachedFromWindow() {
-        if (equalizer != null) {
-            try { equalizer.setEnabled(false); } catch (RuntimeException ignored) {}
-            try { equalizer.release(); } catch (RuntimeException ignored) {}
-            equalizer = null;
+    private void syncBandUi() {
+        syncing = true;
+        for (int i = 0; i < bands.length; i++) {
+            int v = DbMath.clamp(settings.levelsMb[i], bands[i].getMin(), bands[i].getMax());
+            bands[i].setProgress(v); updateBandLabel(i, v);
         }
-        super.onDetachedFromWindow();
+        syncing = false;
     }
 
-    private TextView text(String value, float sp) {
-        TextView view = new TextView(getContext());
-        view.setText(value);
-        view.setTextSize(sp);
-        view.setTextColor(UiTheme.primaryText(getContext()));
-        view.setLineSpacing(0, 1.08f);
-        return view;
+    private void updateBandLabel(int index, int millibels) {
+        bandLabels[index].setText(String.format(Locale.US, "%s: %+.1f dB", LABELS[index], millibels / 100f));
     }
+    private void updateLinkLabel(int strength) { linkLabel.setText("Link Strength: " + strength + "%"); }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+    @Override public void render(RuntimeState state) { capability.setText(controller.status()); }
+
+    private TextView text(String value, float sp, boolean bold) {
+        TextView view = new TextView(getContext()); view.setText(value); view.setTextSize(sp); view.setTextColor(UiTheme.primaryText(getContext()));
+        view.setLineSpacing(0, 1.08f); if (bold) view.setTypeface(Typeface.DEFAULT_BOLD); return view;
     }
+    private TextView secondary(String value, float sp) { TextView v = text(value, sp, false); v.setTextColor(UiTheme.secondaryText(getContext())); return v; }
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 }
