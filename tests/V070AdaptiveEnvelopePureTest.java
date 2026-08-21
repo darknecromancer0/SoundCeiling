@@ -12,6 +12,8 @@ public final class V070AdaptiveEnvelopePureTest {
         ordinaryControllerRecoversOneOwnedStep();
         recoveryStopsAtUserCeiling();
         recoveryWaitsForHoldAndRelease();
+        manualDownCannotBeRecoveredByQuietMaterial();
+        uncertainProvenanceCanOnlyTightenAuthority();
         System.out.println("V070AdaptiveEnvelopePureTest: PASS");
     }
 
@@ -126,6 +128,36 @@ public final class V070AdaptiveEnvelopePureTest {
                 1_000L, -20f, -20f, 5, 8, true, curve, profile, release);
         assertEquals(5, wait.requestedIndex, "upward release interval rate-limits recovery");
         assertEquals("up_release_wait", wait.reason, "release wait reason");
+    }
+
+    private static void manualDownCannotBeRecoveredByQuietMaterial() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        AdaptiveVolumeEnvelope e = new AdaptiveVolumeEnvelope();
+        e.observeInitial(8, 10, 6_000L);
+        e.onAppWriteAck(VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN, 8, 5, curve, 6_050L);
+        e.onUserChange(5, 4, curve, 6_100L);
+        LoudnessControlPolicy.Result quiet = LoudnessControlPolicy.decide(
+                7_000L, -30f, -20f, 4, e.recoverableCeilingIndex(10), true,
+                curve, recoveryProfile(), new LoudnessControlPolicy.State());
+        assertEquals(4, quiet.requestedIndex,
+                "quiet material must never recover a manual user decrease");
+    }
+
+    private static void uncertainProvenanceCanOnlyTightenAuthority() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        AdaptiveVolumeEnvelope e = new AdaptiveVolumeEnvelope();
+        e.observeInitial(8, 10, 8_000L);
+        e.onAppWriteAck(VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN, 8, 5, curve, 8_050L);
+        e.onProvenanceUncertain(5, 4, curve, 8_100L);
+        assertEquals(4, e.userCeilingIndex(),
+                "mismatch/external decrease must conservatively become the new ceiling");
+        assertFalse(e.hasRecoverableAttenuation(4),
+                "uncertain decrease must erase old app-owned recovery authority");
+        e.onProvenanceUncertain(4, 5, curve, 8_200L);
+        assertEquals(4, e.userCeilingIndex(),
+                "uncertain or stale upward movement must never widen user authority");
+        assertEquals(4, e.recoverableCeilingIndex(10),
+                "stale/mismatched provenance never grants any UP ceiling");
     }
 
     private static ControlProfile recoveryProfile() {
