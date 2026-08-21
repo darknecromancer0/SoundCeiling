@@ -41,7 +41,7 @@ final class MediaSessionEvidenceProvider {
                 }
             }
             return Collections.unmodifiableList(out);
-        } catch (SecurityException | RuntimeException e) {
+        } catch (RuntimeException e) {
             return Collections.emptyList();
         }
     }
