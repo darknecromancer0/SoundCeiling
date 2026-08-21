@@ -7,6 +7,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DbMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/GainPlanner.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LoudnessTracker.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/LoudnessMeter.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizationPreset.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ControlDefaults.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/OutputDevicePriority.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeCurveMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlVolumeCurve.java" \
