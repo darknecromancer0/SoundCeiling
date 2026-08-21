@@ -28,6 +28,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/StatusText.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFormatter.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFilePolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DiagnosticItem.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AnomalyDetector.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DecisionRingBuffer.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AppDestination.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SafetySettings.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SafetyGuard.java" \
@@ -35,5 +38,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PeakSafetyDetector.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TransientGuard.java" \
- "$ROOT/tests/PureLogicTest.java"
+ "$ROOT/tests/PureLogicTest.java" \
+ "$ROOT/tests/DiagnosticsPureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
+java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
