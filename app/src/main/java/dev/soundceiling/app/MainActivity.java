@@ -184,7 +184,7 @@ public class MainActivity extends Activity {
                 + "Safety path: raw peak / transient → manual envelope → Safety Lock → Media write.\n"
                 + "Precision mode: Android AudioPlaybackCapture + LUFS-like/RMS/Peak.\n"
                 + "Fallback: Visualizer/output-mix safety when доступно; иначе только системный Media guard без авто-повышения.\n\n"
-                + "Логи: Download/SoundCeiling/Logs · общий бюджет до 16 MiB. PCM-аудио в лог не сохраняется и автоматически никуда не отправляется.\n\n"
+                + "Логи: " + LogStorage.activeLocation(this) + " · общий бюджет до 16 MiB. Open logs показывает логические сессии; PCM-аудио в лог не сохраняется и автоматически никуда не отправляется.\n\n"
                 + "Эквалайзер — дополнительная экспериментальная возможность и не является частью критического safety-пути. "
                 + "Если OEM не разрешает глобальный эффект, EQ отключается, а ограничитель продолжает работать.");
         text.setTextColor(UiTheme.primaryText(this));
