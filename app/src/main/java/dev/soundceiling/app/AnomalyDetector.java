@@ -18,7 +18,9 @@ final class AnomalyDetector {
         if (input.running && input.captureAgeMs > STALLED_CAPTURE_MS) {
             out.add(DiagnosticItem.red("stalled_capture", "Audio measurements stopped updating while the engine is running"));
         }
-        if (input.rawPeakDbfs > input.peakThresholdDbfs && input.reactionLatencyMs > SLOW_PEAK_REACTION_MS) {
+        // The service only records reactionLatencyMs for an emergency peak that actually requested a reduction.
+        // Therefore latency itself is the reliable trigger, even if the user configured a non-default peak threshold.
+        if (input.reactionLatencyMs > SLOW_PEAK_REACTION_MS) {
             out.add(DiagnosticItem.red("slow_peak_reaction", "Peak protection reacted slower than the safety target"));
         }
         if (input.unexpectedZero) {
