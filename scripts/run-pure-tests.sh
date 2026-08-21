@@ -50,6 +50,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AppClassifier.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SystemStreamPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SystemStreamPolicies.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/SystemStreamAttemptGate.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DeviceProfile.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DeviceProfileV2.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DeviceProfileMigrator.java" \
@@ -66,7 +67,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/tests/HybridEnginePureTest.java" \
  "$ROOT/tests/SourceEvidencePureTest.java" \
  "$ROOT/tests/HybridPolicyPureTest.java" \
- "$ROOT/tests/HybridCoordinatorPureTest.java"
+ "$ROOT/tests/HybridCoordinatorPureTest.java" \
+ "$ROOT/tests/SystemStreamAttemptGatePureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
 java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
 java -cp "$OUT" dev.soundceiling.app.LoudnessPolicyPeakThresholdTest
@@ -74,3 +76,4 @@ java -cp "$OUT" dev.soundceiling.app.HybridEnginePureTest
 java -cp "$OUT" dev.soundceiling.app.SourceEvidencePureTest
 java -cp "$OUT" dev.soundceiling.app.HybridPolicyPureTest
 java -cp "$OUT" dev.soundceiling.app.HybridCoordinatorPureTest
+java -cp "$OUT" dev.soundceiling.app.SystemStreamAttemptGatePureTest
