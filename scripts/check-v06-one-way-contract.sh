@@ -148,5 +148,24 @@ require "$ROOT/app/src/main/AndroidManifest.xml" '${applicationId}.fileprovider'
 require "$ROOT/app/src/main/AndroidManifest.xml" '@xml/file_paths'
 require "$ROOT/app/src/main/res/xml/file_paths.xml" '<cache-path name="shared_logs" path="shared_logs/" />'
 require "$ROOT/app/build.gradle.kts" 'implementation("androidx.core:core:1.16.0")'
+require "$ROOT/gradle.properties" 'android.useAndroidX=true'
+
+# Task 11: precise PCM consent is explained before MediaProjection and EQ survives navigation.
+require "$PKG/MainActivity.java" 'private void showProjectionExplanation()'
+require "$PKG/MainActivity.java" 'Android покажет системное окно'
+require "$PKG/MainActivity.java" 'SoundCeiling не записывает видео экрана'
+require "$PKG/MainActivity.java" 'setPositiveButton("Продолжить", (dialog, which) -> requestProjection())'
+require "$PKG/MainActivity.java" 'setNegativeButton("Safe fallback", (dialog, which) -> startFastFallback())'
+require "$PKG/MainActivity.java" 'if (grantResults[0] == PackageManager.PERMISSION_GRANTED) showProjectionExplanation();'
+projection_calls="$(grep -Fc 'requestProjection();' "$PKG/MainActivity.java")"
+[[ "$projection_calls" -eq 1 ]] || { echo "Projection must be requested only from the explicit consent dialog; found $projection_calls direct calls" >&2; exit 1; }
+require "$PKG/StatusText.java" 'PCM blocked - safe fallback'
+require "$PKG/StatusText.java" 'System limiter only'
+require "$PKG/SoundCeilingApplication.java" 'EqController.get(this).applySaved()'
+require "$PKG/EqController.java" 'private static volatile EqController instance;'
+require "$PKG/EqController.java" 'getApplicationContext()'
+require "$PKG/EqSettings.java" 'linkStrengthPercent'
+reject "$PKG/EqView.java" 'onDetachedFromWindow'
+reject "$PKG/EqView.java" 'releaseEffect()'
 
 echo "v0.6 one-way runtime/UI contract: PASS"
