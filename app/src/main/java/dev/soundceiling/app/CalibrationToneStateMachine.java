@@ -16,6 +16,11 @@ final class CalibrationToneStateMachine {
     private State state = State.IDLE;
     private long stopDeadlineMs = -1L;
     private String error = "";
+    private boolean restoreProtection;
+    private boolean restoreConsumed;
+    private boolean environmentArmed;
+    private int baselineMediaIndex = -1;
+    private String baselineRouteKey = "";
 
     State state() { return state; }
     String error() { return error; }
@@ -23,6 +28,11 @@ final class CalibrationToneStateMachine {
     void request(boolean engineRunning, long nowMs) {
         error = "";
         stopDeadlineMs = -1L;
+        restoreProtection = engineRunning;
+        restoreConsumed = false;
+        environmentArmed = false;
+        baselineMediaIndex = -1;
+        baselineRouteKey = "";
         state = engineRunning ? State.STOPPING_ENGINE : State.STARTING_TONE;
     }
 
@@ -44,6 +54,28 @@ final class CalibrationToneStateMachine {
         }
     }
 
+    void armEnvironment(int mediaIndex, String routeKey) {
+        if (state != State.STARTING_TONE) return;
+        baselineMediaIndex = Math.max(0, mediaIndex);
+        baselineRouteKey = normalizeRoute(routeKey);
+        environmentArmed = true;
+    }
+
+    boolean validateEnvironment(int mediaIndex, String routeKey) {
+        if (!environmentArmed || (state != State.STARTING_TONE && state != State.PLAYING_TONE)) {
+            return state != State.ERROR;
+        }
+        if (Math.max(0, mediaIndex) != baselineMediaIndex) {
+            fail("media_changed");
+            return false;
+        }
+        if (!baselineRouteKey.equals(normalizeRoute(routeKey))) {
+            fail("route_changed");
+            return false;
+        }
+        return true;
+    }
+
     void onToneStarted() {
         if (state == State.STARTING_TONE) state = State.PLAYING_TONE;
     }
@@ -56,15 +88,31 @@ final class CalibrationToneStateMachine {
         fail(reason == null || reason.isEmpty() ? "tone_error" : reason);
     }
 
+    boolean consumeProtectionRestore() {
+        if (!restoreProtection || restoreConsumed) return false;
+        if (state != State.COMPLETE && state != State.ERROR) return false;
+        restoreConsumed = true;
+        return true;
+    }
+
     void reset() {
         state = State.IDLE;
         stopDeadlineMs = -1L;
         error = "";
+        restoreProtection = false;
+        restoreConsumed = false;
+        environmentArmed = false;
+        baselineMediaIndex = -1;
+        baselineRouteKey = "";
     }
 
     private void fail(String reason) {
         state = State.ERROR;
         stopDeadlineMs = -1L;
         error = reason;
+    }
+
+    private static String normalizeRoute(String routeKey) {
+        return routeKey == null ? "" : routeKey;
     }
 }
