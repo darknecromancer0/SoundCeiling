@@ -9,6 +9,11 @@ public final class V060OneWayPureTest {
         appWriteAckKeepsOriginAndDoesNotBecomeUserIntent();
         pendingWriteSurvivesUnchangedPollBeforeAck();
         mismatchedWriteIsNotUserIntent();
+        manualDecreaseMovesThresholdOffsetInDb();
+        manualOffsetFollowsDecreaseWith120msTimeConstant();
+        manualRaiseRestoresThresholdsWithoutMediaAuthority();
+        quietNowLoweringFeedsThresholdFollower();
+        streamMinimumPausesOrdinaryNormalization();
         System.out.println("V060OneWayPureTest: PASS");
     }
 
@@ -83,10 +88,82 @@ public final class V060OneWayPureTest {
                 "unexpected index while app write is pending must be diagnosed as mismatch");
     }
 
+    private static void manualDecreaseMovesThresholdOffsetInDb() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        ManualThresholdFollower follower = new ManualThresholdFollower();
+        follower.observeInitial(8, 1_000L);
+        follower.onUserChange(8, 5, curve, 1_000L);
+        float expected = curve.gainDbForIndex(5) - curve.gainDbForIndex(8);
+        assertNear(expected, follower.desiredOffsetDb(), .001f,
+                "manual decrease must translate Samsung steps through the control curve into dB");
+        assertTrue(follower.desiredOffsetDb() <= 0f, "desired threshold offset is never positive");
+    }
+
+    private static void manualOffsetFollowsDecreaseWith120msTimeConstant() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        ManualThresholdFollower follower = new ManualThresholdFollower();
+        follower.observeInitial(8, 2_000L);
+        follower.onUserChange(8, 5, curve, 2_000L);
+        float desired = follower.desiredOffsetDb();
+        follower.tick(2_120L);
+        float expected = desired * (float) (1.0 - Math.exp(-1.0));
+        assertNear(expected, follower.offsetDb(), .08f,
+                "after one 120 ms time constant the negative offset should move about 63 percent");
+    }
+
+    private static void manualRaiseRestoresThresholdsWithoutMediaAuthority() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        ManualThresholdFollower follower = new ManualThresholdFollower();
+        follower.observeInitial(8, 3_000L);
+        follower.onUserChange(8, 5, curve, 3_000L);
+        follower.tick(3_120L);
+        float beforeRaise = follower.offsetDb();
+        follower.onUserChange(5, 6, curve, 3_120L);
+        assertNear(0f, follower.desiredOffsetDb(), .001f,
+                "manual raise starts threshold restoration toward configured values");
+        follower.tick(3_770L);
+        assertNear(beforeRaise * (float) Math.exp(-1.0), follower.offsetDb(), .10f,
+                "one 650 ms restore time constant leaves about 37 percent of the offset");
+        assertTrue(follower.offsetDb() <= 0f,
+                "threshold restoration must never overshoot into a positive boost offset");
+    }
+
+    private static void quietNowLoweringFeedsThresholdFollower() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        ManualThresholdFollower follower = new ManualThresholdFollower();
+        follower.observeInitial(9, 4_000L);
+        follower.onDeliberateLowering(9, 4, curve, 4_000L);
+        float expected = curve.gainDbForIndex(4) - curve.gainDbForIndex(9);
+        assertNear(expected, follower.desiredOffsetDb(), .001f,
+                "Quiet Now lowering should move the same dB safety envelope without becoming USER_CHANGE");
+    }
+
+    private static void streamMinimumPausesOrdinaryNormalization() {
+        ManualThresholdFollower follower = new ManualThresholdFollower();
+        assertTrue(follower.ordinaryNormalizationPaused(0, 0),
+                "stream minimum/mute pauses ordinary normalization until the user raises Media");
+        assertFalse(follower.ordinaryNormalizationPaused(1, 0),
+                "raising Media manually above stream minimum re-enables ordinary normalization");
+    }
+
     private static EffectivePolicy policy(boolean sourceControl, boolean raise,
                                           boolean limiterOnly, int maxPercent, String reason) {
         return new EffectivePolicy(sourceControl, raise, limiterOnly, maxPercent, 50,
                 -18f, .65f, -2f, 6f, 10f, reason, "v06_test");
+    }
+
+    private static void assertTrue(boolean value, String message) {
+        if (!value) throw new AssertionError(message);
+    }
+
+    private static void assertFalse(boolean value, String message) {
+        assertTrue(!value, message);
+    }
+
+    private static void assertNear(float expected, float actual, float tolerance, String message) {
+        if (Math.abs(expected - actual) > tolerance) {
+            throw new AssertionError(message + ": expected=" + expected + " actual=" + actual);
+        }
     }
 
     private static void assertEquals(int expected, int actual, String message) {
