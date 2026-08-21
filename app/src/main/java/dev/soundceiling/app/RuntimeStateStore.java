@@ -39,10 +39,8 @@ final class RuntimeStateStore {
 
     private static RuntimeState diagnose(RuntimeState state, long captureAgeMs,
                                          boolean unexpectedZero, int oscillationCount) {
-        int safetyMax = state.effectiveMaxIndex > 0 ? state.effectiveMaxIndex : state.volumeMax;
-        if (state.safetyLockEnabled && state.safetyLockIndex > 0) {
-            safetyMax = Math.min(safetyMax, state.safetyLockIndex);
-        }
+        int safetyMax = state.running ? state.effectiveMaxIndex : state.volumeMax;
+        if (state.safetyLockEnabled) safetyMax = Math.min(safetyMax, state.safetyLockIndex);
         List<DiagnosticItem> diagnostics = AnomalyDetector.evaluate(new AnomalyDetector.Input.Builder()
                 .running(state.running)
                 .captureAgeMs(captureAgeMs)
