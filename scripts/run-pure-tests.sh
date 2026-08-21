@@ -40,6 +40,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PeakSafetyDetector.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TransientGuard.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/TransientAttenuationPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/QuietNowPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EqLinkMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EngineCapabilities.java" \
