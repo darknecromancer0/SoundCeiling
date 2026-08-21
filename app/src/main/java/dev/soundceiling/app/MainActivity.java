@@ -109,6 +109,12 @@ public class MainActivity extends Activity {
                 screen = advanced;
                 break;
             }
+            case APPS_SYSTEM: {
+                AppsSystemView apps = new AppsSystemView(this);
+                activeScreen = apps;
+                screen = apps;
+                break;
+            }
             case EQ: {
                 EqView eq = new EqView(this);
                 activeScreen = eq;
