@@ -27,8 +27,8 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
     private enum Filter { ALL, CONTROLLED, CUSTOM, IGNORED, PCM_UNAVAILABLE, SYSTEM_APPS }
 
     private final LinearLayout root;
-    private final LinearLayout appsHost;
-    private final EditText search;
+    private LinearLayout appsHost;
+    private EditText search;
     private Filter filter = Filter.ALL;
     private RuntimeState runtime = RuntimeState.stopped("Остановлено");
 
@@ -40,9 +40,22 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(18), dp(18), dp(34));
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        showList();
+    }
 
+    @Override public void render(RuntimeState state) {
+        if (state == null) return;
+        boolean changed = !state.sourcePackage.equals(runtime.sourcePackage)
+                || state.pcmState != runtime.pcmState
+                || state.meteringCapability != runtime.meteringCapability;
+        runtime = state;
+        if (changed && appsHost != null) rebuildApps();
+    }
+
+    private void showList() {
+        root.removeAllViews();
         addHeader();
-        search = new EditText(context);
+        search = new EditText(getContext());
         search.setHint("Поиск приложений");
         search.setSingleLine(true);
         search.setTextColor(Color.WHITE);
@@ -56,23 +69,14 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
 
         addFilters();
         addSystemStreams();
-
         TextView appTitle = text("Приложения", 20, Color.WHITE, true);
         appTitle.setPadding(0, dp(20), 0, dp(8));
         root.addView(appTitle);
-        appsHost = new LinearLayout(context);
+        appsHost = new LinearLayout(getContext());
         appsHost.setOrientation(LinearLayout.VERTICAL);
         root.addView(appsHost);
         rebuildApps();
-    }
-
-    @Override public void render(RuntimeState state) {
-        if (state == null) return;
-        boolean changed = !state.sourcePackage.equals(runtime.sourcePackage)
-                || state.pcmState != runtime.pcmState
-                || state.meteringCapability != runtime.meteringCapability;
-        runtime = state;
-        if (changed) rebuildApps();
+        scrollTo(0, 0);
     }
 
     private void addHeader() {
@@ -235,19 +239,15 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
 
     private void showEditor(SourceDescriptor source, AppPolicy policy) {
         root.removeAllViews();
+        appsHost = null;
+        search = null;
         AppPolicyEditorView editor = new AppPolicyEditorView(getContext(), source, policy,
                 new AppPolicyEditorView.Listener() {
-                    @Override public void onSaved() { rebuildWholeScreen(); }
-                    @Override public void onCancel() { rebuildWholeScreen(); }
+                    @Override public void onSaved() { showList(); }
+                    @Override public void onCancel() { showList(); }
                 });
         root.addView(editor, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-    }
-
-    private void rebuildWholeScreen() {
-        removeAllViews();
-        AppsSystemView replacement = new AppsSystemView(getContext());
-        replacement.render(runtime);
-        addView(replacement, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        scrollTo(0, 0);
     }
 
     private void saveStreamPolicy(SystemStreamPolicy.Kind kind, boolean enabled, int ceilingPercent) {
