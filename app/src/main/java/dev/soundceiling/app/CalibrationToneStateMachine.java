@@ -3,15 +3,7 @@ package dev.soundceiling.app;
 final class CalibrationToneStateMachine {
     static final long STOP_TIMEOUT_MS = 2_000L;
 
-    enum State {
-        IDLE,
-        STOPPING_ENGINE,
-        WAITING_STOPPED,
-        STARTING_TONE,
-        PLAYING_TONE,
-        COMPLETE,
-        ERROR
-    }
+    enum State { IDLE, STOPPING_ENGINE, WAITING_STOPPED, STARTING_TONE, PLAYING_TONE, COMPLETE, ERROR }
 
     private State state = State.IDLE;
     private long stopDeadlineMs = -1L;
@@ -26,9 +18,10 @@ final class CalibrationToneStateMachine {
     String error() { return error; }
 
     void request(boolean engineRunning, long nowMs) {
+        boolean inheritedRestore = restoreProtection && !restoreConsumed;
         error = "";
         stopDeadlineMs = -1L;
-        restoreProtection = engineRunning;
+        restoreProtection = engineRunning || inheritedRestore;
         restoreConsumed = false;
         environmentArmed = false;
         baselineMediaIndex = -1;
@@ -49,9 +42,7 @@ final class CalibrationToneStateMachine {
             state = State.STARTING_TONE;
             return;
         }
-        if (stopDeadlineMs >= 0L && nowMs >= stopDeadlineMs) {
-            fail("engine_stop_timeout");
-        }
+        if (stopDeadlineMs >= 0L && nowMs >= stopDeadlineMs) fail("engine_stop_timeout");
     }
 
     void armEnvironment(int mediaIndex, String routeKey) {
@@ -76,17 +67,9 @@ final class CalibrationToneStateMachine {
         return true;
     }
 
-    void onToneStarted() {
-        if (state == State.STARTING_TONE) state = State.PLAYING_TONE;
-    }
-
-    void onToneComplete() {
-        if (state == State.PLAYING_TONE) state = State.COMPLETE;
-    }
-
-    void onToneError(String reason) {
-        fail(reason == null || reason.isEmpty() ? "tone_error" : reason);
-    }
+    void onToneStarted() { if (state == State.STARTING_TONE) state = State.PLAYING_TONE; }
+    void onToneComplete() { if (state == State.PLAYING_TONE) state = State.COMPLETE; }
+    void onToneError(String reason) { fail(reason == null || reason.isEmpty() ? "tone_error" : reason); }
 
     boolean consumeProtectionRestore() {
         if (!restoreProtection || restoreConsumed) return false;
@@ -112,7 +95,5 @@ final class CalibrationToneStateMachine {
         error = reason;
     }
 
-    private static String normalizeRoute(String routeKey) {
-        return routeKey == null ? "" : routeKey;
-    }
+    private static String normalizeRoute(String routeKey) { return routeKey == null ? "" : routeKey; }
 }
