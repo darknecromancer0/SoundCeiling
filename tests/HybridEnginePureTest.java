@@ -2,6 +2,7 @@ package dev.soundceiling.app;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Map;
 
 public final class HybridEnginePureTest {
     public static void main(String[] args) {
@@ -11,6 +12,7 @@ public final class HybridEnginePureTest {
         testPcmBlockedRequiresCorroboration();
         testNoConfidenceNoRaise();
         testAppPolicyDefaults();
+        testSystemStreamDefaults();
         System.out.println("HybridEnginePureTest: PASS");
     }
 
@@ -101,35 +103,46 @@ public final class HybridEnginePureTest {
     }
 
     private static void testAppPolicyDefaults() {
-        assertEquals(AppRule.Mode.GLOBAL, AppClassifier.defaultMode("com.google.android.youtube", false, false),
-                "ordinary third-party default");
-        assertEquals(AppRule.Mode.OFF, AppClassifier.defaultMode("com.samsung.android.gallery3d", false, false),
-                "Samsung package default");
-        assertEquals(AppRule.Mode.OFF, AppClassifier.defaultMode("com.example.vendor", true, false),
-                "system app flag default");
-        assertEquals(AppRule.Mode.OFF, AppClassifier.defaultMode("com.android.systemui", false, false),
-                "Android system namespace default");
-
+        assertEquals(AppRule.Mode.GLOBAL, AppClassifier.defaultMode("com.google.android.youtube", false, false), "ordinary third-party default");
+        assertEquals(AppRule.Mode.OFF, AppClassifier.defaultMode("com.samsung.android.gallery3d", false, false), "Samsung package default");
+        assertEquals(AppRule.Mode.OFF, AppClassifier.defaultMode("com.example.vendor", true, false), "system app flag default");
+        assertEquals(AppRule.Mode.OFF, AppClassifier.defaultMode("com.android.systemui", false, false), "Android system namespace default");
         AppPolicy global = AppPolicy.global();
         if (!global.allowsAutomaticRaise()) throw new AssertionError("GLOBAL may raise only after later confidence gates");
-        AppPolicy off = AppPolicy.off();
-        if (off.allowsAutomaticRaise()) throw new AssertionError("OFF must never auto-raise");
-        AppPolicy limiterOnly = AppPolicy.custom(-18f, 55, 0.4f, true,
-                -2f, 6f, 10f, 45, AppPolicy.DspPreference.AUTO, "");
+        if (AppPolicy.off().allowsAutomaticRaise()) throw new AssertionError("OFF must never auto-raise");
+        AppPolicy limiterOnly = AppPolicy.custom(-18f, 55, 0.4f, true, -2f, 6f, 10f, 45, AppPolicy.DspPreference.AUTO, "");
         if (limiterOnly.allowsAutomaticRaise()) throw new AssertionError("Limiter only must be downward-only");
         assertEquals(55, limiterOnly.maxMediaPercent, "custom max media");
         assertEquals(45, limiterOnly.fallbackMaxPercent, "custom fallback max");
     }
 
+    private static void testSystemStreamDefaults() {
+        Map<SystemStreamPolicy.Kind, SystemStreamPolicy> defaults = SystemStreamPolicies.defaults();
+        for (SystemStreamPolicy.Kind kind : SystemStreamPolicy.Kind.values()) {
+            SystemStreamPolicy policy = defaults.get(kind);
+            if (policy == null) throw new AssertionError("Missing system stream policy: " + kind);
+            boolean shouldEnable = kind == SystemStreamPolicy.Kind.MEDIA;
+            if (policy.enabled != shouldEnable) {
+                throw new AssertionError(kind + " default enabled=" + policy.enabled);
+            }
+        }
+        SystemStreamPolicy alarm = defaults.get(SystemStreamPolicy.Kind.ALARM);
+        SystemStreamPolicy enabledAlarm = alarm.withEnabled(true).withCeilingPercent(35);
+        if (!enabledAlarm.enabled || enabledAlarm.ceilingPercent != 35) {
+            throw new AssertionError("alarm opt-in must be independent");
+        }
+        if (AppPolicy.on().mode != AppRule.Mode.ON) throw new AssertionError("app ON sanity");
+        if (defaults.get(SystemStreamPolicy.Kind.ALARM).enabled) {
+            throw new AssertionError("enabling an app must not mutate ALARM stream default");
+        }
+    }
+
     private static EngineCapabilities exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence confidence, boolean healthy) {
-        return new EngineCapabilities(
-                EngineCapabilities.PlaybackObservationCapability.AVAILABLE,
-                confidence,
+        return new EngineCapabilities(EngineCapabilities.PlaybackObservationCapability.AVAILABLE, confidence,
                 EngineCapabilities.MeteringCapability.PCM_EXACT,
                 EngineCapabilities.VolumeControlCapability.STREAM_MEDIA,
                 EngineCapabilities.DspTransportCapability.UNAVAILABLE,
-                healthy,
-                healthy ? "ok" : "backend_unhealthy");
+                healthy, healthy ? "ok" : "backend_unhealthy");
     }
 
     private static void assertEquals(Object expected, Object actual, String message) {
