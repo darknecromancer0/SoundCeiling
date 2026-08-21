@@ -1,6 +1,6 @@
 package dev.soundceiling.app;
 
-/** Pure final arbiter between emergency safety, comfort normalization and resolved policy. */
+/** Pure final arbiter between app policy, emergency safety and comfort normalization. */
 final class HybridEngineCoordinator {
     static final class ControlPlan {
         final int requestedIndex;
@@ -25,14 +25,16 @@ final class HybridEngineCoordinator {
         int max = Math.max(0, effectiveMaxIndex);
         int current = Math.max(0, currentIndex);
 
-        if (emergencyActive && emergencyTargetIndex < current) {
-            int requested = Math.max(0, Math.min(emergencyTargetIndex, max));
-            return new ControlPlan(requested, false, "emergency_downward");
-        }
-
+        // Explicit source/app OFF precedes source-specific analysis. Global Safety Lock is
+        // enforced independently by SafeVolumeController outside this coordinator.
         if (!policy.sourceControlEnabled) {
             return new ControlPlan(Math.min(current, max), comfortTargetIndex > current,
                     policy.raiseBlockReason.isEmpty() ? "source_control_disabled" : policy.raiseBlockReason);
+        }
+
+        if (emergencyActive && emergencyTargetIndex < current) {
+            int requested = Math.max(0, Math.min(emergencyTargetIndex, max));
+            return new ControlPlan(requested, false, "emergency_downward");
         }
 
         int comfort = Math.max(0, Math.min(comfortTargetIndex, max));
