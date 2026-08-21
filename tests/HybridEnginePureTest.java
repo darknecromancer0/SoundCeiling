@@ -10,6 +10,7 @@ public final class HybridEnginePureTest {
         testExactSourceDoesNotImplyPerAppControl();
         testPcmBlockedRequiresCorroboration();
         testNoConfidenceNoRaise();
+        testAppPolicyDefaults();
         System.out.println("HybridEnginePureTest: PASS");
     }
 
@@ -19,26 +20,15 @@ public final class HybridEnginePureTest {
 
     private static void testSourceConfidence() {
         SourceDescriptor youtube = youtube();
-        SourceDescriptor game = new SourceDescriptor(
-                "com.example.game", 10124, "Game", false, false);
-
-        SourceSet exact = new SourceSet(Collections.singletonList(youtube),
-                EngineCapabilities.SourceIdentityConfidence.EXACT, "targeted_pcm");
+        SourceDescriptor game = new SourceDescriptor("com.example.game", 10124, "Game", false, false);
+        SourceSet exact = new SourceSet(Collections.singletonList(youtube), EngineCapabilities.SourceIdentityConfidence.EXACT, "targeted_pcm");
         assertEquals(1, exact.sources().size(), "exact source count");
-        assertEquals(EngineCapabilities.SourceIdentityConfidence.EXACT,
-                exact.confidence, "exact confidence");
-
-        SourceSet likely = new SourceSet(Collections.singletonList(youtube),
-                EngineCapabilities.SourceIdentityConfidence.LIKELY, "media_session_candidate");
-        assertEquals(EngineCapabilities.SourceIdentityConfidence.LIKELY,
-                likely.confidence, "likely confidence");
-
-        SourceSet mixed = new SourceSet(Arrays.asList(youtube, game),
-                EngineCapabilities.SourceIdentityConfidence.MIXED, "multiple_candidates");
+        assertEquals(EngineCapabilities.SourceIdentityConfidence.EXACT, exact.confidence, "exact confidence");
+        SourceSet likely = new SourceSet(Collections.singletonList(youtube), EngineCapabilities.SourceIdentityConfidence.LIKELY, "media_session_candidate");
+        assertEquals(EngineCapabilities.SourceIdentityConfidence.LIKELY, likely.confidence, "likely confidence");
+        SourceSet mixed = new SourceSet(Arrays.asList(youtube, game), EngineCapabilities.SourceIdentityConfidence.MIXED, "multiple_candidates");
         assertEquals(2, mixed.sources().size(), "mixed count");
-
-        SourceSet unknown = new SourceSet(Collections.emptyList(),
-                EngineCapabilities.SourceIdentityConfidence.UNKNOWN, "no_identity_evidence");
+        SourceSet unknown = new SourceSet(Collections.emptyList(), EngineCapabilities.SourceIdentityConfidence.UNKNOWN, "no_identity_evidence");
         assertEquals(0, unknown.sources().size(), "unknown has no fabricated source");
     }
 
@@ -61,19 +51,15 @@ public final class HybridEnginePureTest {
         PcmStateResolver.Input blockedInput = new PcmStateResolver.Input.Builder()
                 .playbackActive(true).captureRequested(true).captureHealthy(true)
                 .sourceEligible(true).validPcm(false).signalPresent(false)
-                .independentAudioEvidence(true).noValidPcmMs(PcmStateResolver.BLOCKED_AFTER_MS + 1)
-                .build();
+                .independentAudioEvidence(true).noValidPcmMs(PcmStateResolver.BLOCKED_AFTER_MS + 1).build();
         assertEquals(PcmAvailabilityState.BLOCKED, PcmStateResolver.resolve(blockedInput).state,
                 "corroborated active playback with missing pcm becomes blocked");
-
         PcmStateResolver.Input uncertain = new PcmStateResolver.Input.Builder()
                 .playbackActive(true).captureRequested(true).captureHealthy(true)
                 .sourceEligible(true).validPcm(false).signalPresent(false)
-                .independentAudioEvidence(false).noValidPcmMs(PcmStateResolver.BLOCKED_AFTER_MS + 1)
-                .build();
+                .independentAudioEvidence(false).noValidPcmMs(PcmStateResolver.BLOCKED_AFTER_MS + 1).build();
         assertEquals(PcmAvailabilityState.UNCERTAIN, PcmStateResolver.resolve(uncertain).state,
                 "no independent activity evidence must not claim blocked");
-
         PcmStateResolver.Input silent = new PcmStateResolver.Input.Builder()
                 .playbackActive(true).captureRequested(true).captureHealthy(true)
                 .sourceEligible(true).validPcm(true).signalPresent(false)
@@ -83,13 +69,10 @@ public final class HybridEnginePureTest {
     }
 
     private static void testNoConfidenceNoRaise() {
-        SourceSet exact = new SourceSet(Collections.singletonList(youtube()),
-                EngineCapabilities.SourceIdentityConfidence.EXACT, "targeted_pcm");
+        SourceSet exact = new SourceSet(Collections.singletonList(youtube()), EngineCapabilities.SourceIdentityConfidence.EXACT, "targeted_pcm");
         ConfidenceGate.Result allowed = ConfidenceGate.evaluate(exact,
-                exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, true),
-                PcmAvailabilityState.ACTIVE);
+                exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, true), PcmAvailabilityState.ACTIVE);
         if (!allowed.allowed) throw new AssertionError("exact active pcm should allow raise: " + allowed.reason);
-
         EngineCapabilities.SourceIdentityConfidence[] deniedConfidence = {
                 EngineCapabilities.SourceIdentityConfidence.LIKELY,
                 EngineCapabilities.SourceIdentityConfidence.MIXED,
@@ -99,35 +82,46 @@ public final class HybridEnginePureTest {
             SourceSet set = confidence == EngineCapabilities.SourceIdentityConfidence.UNKNOWN
                     ? new SourceSet(Collections.emptyList(), confidence, "test")
                     : new SourceSet(Collections.singletonList(youtube()), confidence, "test");
-            ConfidenceGate.Result denied = ConfidenceGate.evaluate(set,
-                    exactPcmCapabilities(confidence, true), PcmAvailabilityState.ACTIVE);
-            if (denied.allowed) throw new AssertionError(confidence + " must block auto-raise");
+            if (ConfidenceGate.evaluate(set, exactPcmCapabilities(confidence, true), PcmAvailabilityState.ACTIVE).allowed) {
+                throw new AssertionError(confidence + " must block auto-raise");
+            }
         }
-
         PcmAvailabilityState[] deniedStates = {
-                PcmAvailabilityState.BLOCKED,
-                PcmAvailabilityState.UNCERTAIN,
-                PcmAvailabilityState.ERROR,
-                PcmAvailabilityState.IDLE,
-                PcmAvailabilityState.STARTING,
-                PcmAvailabilityState.SILENT_SOURCE
+                PcmAvailabilityState.BLOCKED, PcmAvailabilityState.UNCERTAIN, PcmAvailabilityState.ERROR,
+                PcmAvailabilityState.IDLE, PcmAvailabilityState.STARTING, PcmAvailabilityState.SILENT_SOURCE
         };
         for (PcmAvailabilityState state : deniedStates) {
-            if (ConfidenceGate.evaluate(exact,
-                    exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, true), state).allowed) {
+            if (ConfidenceGate.evaluate(exact, exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, true), state).allowed) {
                 throw new AssertionError(state + " must block auto-raise");
             }
         }
-
-        if (ConfidenceGate.evaluate(exact,
-                exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, false),
-                PcmAvailabilityState.ACTIVE).allowed) {
+        if (ConfidenceGate.evaluate(exact, exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence.EXACT, false), PcmAvailabilityState.ACTIVE).allowed) {
             throw new AssertionError("unhealthy capabilities must block auto-raise");
         }
     }
 
-    private static EngineCapabilities exactPcmCapabilities(
-            EngineCapabilities.SourceIdentityConfidence confidence, boolean healthy) {
+    private static void testAppPolicyDefaults() {
+        assertEquals(AppRule.Mode.GLOBAL, AppClassifier.defaultMode("com.google.android.youtube", false, false),
+                "ordinary third-party default");
+        assertEquals(AppRule.Mode.OFF, AppClassifier.defaultMode("com.samsung.android.gallery3d", false, false),
+                "Samsung package default");
+        assertEquals(AppRule.Mode.OFF, AppClassifier.defaultMode("com.example.vendor", true, false),
+                "system app flag default");
+        assertEquals(AppRule.Mode.OFF, AppClassifier.defaultMode("com.android.systemui", false, false),
+                "Android system namespace default");
+
+        AppPolicy global = AppPolicy.global();
+        if (!global.allowsAutomaticRaise()) throw new AssertionError("GLOBAL may raise only after later confidence gates");
+        AppPolicy off = AppPolicy.off();
+        if (off.allowsAutomaticRaise()) throw new AssertionError("OFF must never auto-raise");
+        AppPolicy limiterOnly = AppPolicy.custom(-18f, 55, 0.4f, true,
+                -2f, 6f, 10f, 45, AppPolicy.DspPreference.AUTO, "");
+        if (limiterOnly.allowsAutomaticRaise()) throw new AssertionError("Limiter only must be downward-only");
+        assertEquals(55, limiterOnly.maxMediaPercent, "custom max media");
+        assertEquals(45, limiterOnly.fallbackMaxPercent, "custom fallback max");
+    }
+
+    private static EngineCapabilities exactPcmCapabilities(EngineCapabilities.SourceIdentityConfidence confidence, boolean healthy) {
         return new EngineCapabilities(
                 EngineCapabilities.PlaybackObservationCapability.AVAILABLE,
                 confidence,
