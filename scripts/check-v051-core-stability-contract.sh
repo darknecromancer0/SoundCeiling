@@ -16,15 +16,16 @@ require "$README" 'v0.5.1'
 require "$PKG/TransientGuard.java" 'REARM_MS'
 require "$PKG/PeakSafetyDetector.java" 'gainDbForIndex'
 require "$PKG/ManualSafetyController.java" 'observeInitialIndex'
-require "$PKG/QuietNowPolicy.java" 'Math.min(currentIndex'
+require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
 require "$PKG/SafeVolumeController.java" 'QuietNowPolicy.targetIndex'
 require "$PKG/SafeVolumeController.java" 'DiagnosticLog.event("volume_change"'
 require "$ROOT/tests/V051RegressionPureTest.java" 'healthy ACTIVE PCM_MIXED'
 require "$ROOT/tests/V051RegressionPureTest.java" 'raising Target must materially increase'
 
 # UI responsiveness, themes and understandable controls.
-require "$PKG/PackageSourceRepository.java" 'refreshAsync'
-require "$PKG/AppsSystemView.java" 'refreshAsync'
+require "$PKG/AppsSystemView.java" 'loadAppsAsync'
+require "$PKG/AppsSystemView.java" 'packageLoader.execute'
+require "$PKG/AppsSystemView.java" 'PackageSourceRepository.list(appContext)'
 require "$PKG/SimpleModeView.java" 'UiTheme.background'
 require "$PKG/AdvancedModeView.java" 'По умолчанию'
 require "$PKG/AdvancedModeView.java" 'Custom'
@@ -35,7 +36,7 @@ require "$PKG/CalibrationView.java" 'Калибровка нужна тольк�
 require "$PKG/SoundCeilingApplication.java" 'EqController.get(this).applySaved()'
 require "$PKG/EqController.java" 'independent module'
 require "$PKG/EqSettings.java" 'linkStrengthPercent'
-require "$PKG/EqLinkMath.java" 'linkStrengthPercent'
+require "$PKG/EqLinkMath.java" 'strengthPercent'
 require "$PKG/EqView.java" 'Link Strength'
 
 # Logical log sessions and explicit storage UX.
