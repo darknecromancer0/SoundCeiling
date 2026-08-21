@@ -30,6 +30,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DiagnosticItem.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AnomalyDetector.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DecisionRingBuffer.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/TransitionLogGate.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AppDestination.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SafetySettings.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SafetyGuard.java" \
