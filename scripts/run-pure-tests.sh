@@ -41,6 +41,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackSnapshot.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceDescriptor.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceSet.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PcmAvailabilityState.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PcmStateResolver.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ConfidenceGate.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
