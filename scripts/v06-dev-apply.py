@@ -50,3 +50,9 @@ replace_once(
                 }
 """,
 )
+
+replace_once(
+    "app/src/main/java/dev/soundceiling/app/NormalizerService.java",
+    "long reactionLatency = emergency && applied < current\n",
+    "long reactionLatency = applied < current\n",
+)
