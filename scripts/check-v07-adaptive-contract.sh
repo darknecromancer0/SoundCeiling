@@ -6,8 +6,11 @@ require(){ local file="$1"; local needle="$2"; [[ -f "$file" ]] || { echo "Missi
 reject(){ local file="$1"; local needle="$2"; if [[ -f "$file" ]] && grep -Fq "$needle" "$file"; then echo "Forbidden v0.7 pattern: $(basename "$file") -> $needle" >&2; exit 1; fi; }
 require "$PKG/AdaptiveVolumeEnvelope.java" 'class AdaptiveVolumeEnvelope'
 require "$PKG/LoudnessControlPolicy.java" 'recoveryCeilingIndex'
+require "$PKG/LoudnessControlPolicy.java" 'loudness_recover_up'
 require "$PKG/VolumeWriteTracker.java" 'NORMALIZER_UP'
-reject "$PKG/SafeVolumeController.java" 'Math.min(current, requested)'
+require "$PKG/SafetyGuard.java" 'clampRecovery'
+require "$PKG/SafeVolumeController.java" 'applyRecovery'
+require "$PKG/HybridEngineCoordinator.java" 'adaptive_recovery'
 reject "$PKG/SimpleModeView.java" 'только вниз'
 require "$PKG/FrequencyMeterView.java" 'UiTheme.'
 require "$PKG/EqView.java" 'EQ Amount'
