@@ -29,7 +29,8 @@ require "$PKG/AppsSystemView.java" 'PackageSourceRepository.list(appContext)'
 require "$PKG/SimpleModeView.java" 'UiTheme.background'
 require "$PKG/AdvancedModeView.java" 'По умолчанию'
 require "$PKG/AdvancedModeView.java" 'Custom'
-require "$PKG/HelpText.java" 'приблизительная realtime-оценка'
+require "$PKG/HelpText.java" 'приближённая loudness-оценка'
+require "$PKG/HelpText.java" 'не сертифицированное измерение настоящего LUFS'
 require "$PKG/CalibrationView.java" 'Калибровка нужна только'
 
 # Independent EQ with persisted linked-band behaviour.
