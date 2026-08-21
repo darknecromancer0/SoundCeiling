@@ -71,11 +71,12 @@ final class ManualSafetyController {
         if (effectiveMax >= configuredMax) pausedForRaise = false;
     }
 
-    /** Reserved for an explicit user/UX envelope, never for automatic transient decisions. */
+    /**
+     * Compatibility hook for v0.5.0 call sites. Automatic limiter/transient reductions are not
+     * user intent and therefore must never collapse the manual upward envelope.
+     */
     void shrinkEffectiveMax(int index, long nowMs) {
-        effectiveMax = Math.min(effectiveMax, clamp(index, minIndex, configuredMax));
-        pausedForRaise = effectiveMax < configuredMax;
-        lastRecoveryAtMs = nowMs;
+        // Intentionally no-op. Only observeUserIndex() and quietNow() may alter manual intent.
     }
 
     void quietNow(int quietIndex, long nowMs) {
@@ -83,7 +84,6 @@ final class ManualSafetyController {
         effectiveMax = safe;
         lastUserIndex = safe;
         pausedForRaise = true;
-        // Quiet Now is an explicit upward hold. Keep it held until the user raises Media.
         manualSafetyPause = true;
         lastRecoveryAtMs = nowMs;
     }
