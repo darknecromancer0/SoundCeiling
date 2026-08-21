@@ -27,11 +27,11 @@ done
 for token in 'PeakSafetyDetector' 'TransientGuard' 'ManualSafetyController' 'VolumeWriteTracker' 'LoudnessMeter' 'ACTION_QUIET' 'safeVolume'; do
   grep -q "$token" "$PKG/NormalizerService.java" || { echo "NormalizerService missing v0.4 integration: $token" >&2; exit 1; }
 done
-grep -q 'DiagnosticLog.anomaly' "$PKG/NormalizerService.java" || {
-  echo "NormalizerService must feed automatic anomalies to the black-box logger" >&2; exit 1;
+grep -q 'DiagnosticLog.anomaly' "$PKG/RuntimeStateStore.java" || {
+  echo "RuntimeStateStore must feed automatic anomalies to the black-box logger" >&2; exit 1;
 }
-grep -q '\.diagnostics(' "$PKG/NormalizerService.java" || {
-  echo "NormalizerService must publish diagnostics in RuntimeState" >&2; exit 1;
+grep -q 'withDiagnostics' "$PKG/RuntimeStateStore.java" || {
+  echo "RuntimeStateStore must publish diagnostics in RuntimeState" >&2; exit 1;
 }
 grep -q 'missing_spl_profile' "$PKG/NormalizerService.java" || {
   echo "NormalizerService must publish/log missing_spl_profile HOLD" >&2; exit 1;
