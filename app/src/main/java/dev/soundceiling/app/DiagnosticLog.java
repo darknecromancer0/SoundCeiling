@@ -16,13 +16,21 @@ final class DiagnosticLog {
     }
 
     static void event(String code, String details) {
-        SessionLogger current = logger;
-        if (current != null) current.event(code, details);
+        if ("system_stream_unavailable".equals(code)) {
+            transition(code, details, details);
+            return;
+        }
+        writeEvent(code, details);
     }
 
     static void transition(String code, String state, String details) {
         if (!transitions.shouldLog(code, state)) return;
-        event(code, details);
+        writeEvent(code, details);
+    }
+
+    private static void writeEvent(String code, String details) {
+        SessionLogger current = logger;
+        if (current != null) current.event(code, details);
     }
 
     static void decision(ControlDecision decision) {
