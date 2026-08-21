@@ -78,7 +78,6 @@ public class NormalizerService extends Service {
     private float[] lastBands = new float[5];
     private int lastAppliedNonzero = -1;
     private boolean unexpectedZeroThisPoll;
-    private boolean unexpectedZeroThisPoll;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -100,7 +99,6 @@ public class NormalizerService extends Service {
         long now = SystemClock.elapsedRealtime();
         writeTracker.observeInitial(initial);
         manualThreshold.observeInitial(initial, now);
-        if (initial > controlCurve.minIndex()) lastAppliedNonzero = initial;
         if (initial > controlCurve.minIndex()) lastAppliedNonzero = initial;
         refreshRoute(true);
         NotificationManager nm = getSystemService(NotificationManager.class);
