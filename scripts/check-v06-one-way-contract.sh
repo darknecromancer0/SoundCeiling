@@ -157,8 +157,8 @@ require "$PKG/MainActivity.java" 'SoundCeiling не записывает вид�
 require "$PKG/MainActivity.java" 'setPositiveButton("Продолжить", (dialog, which) -> requestProjection())'
 require "$PKG/MainActivity.java" 'setNegativeButton("Safe fallback", (dialog, which) -> startFastFallback())'
 require "$PKG/MainActivity.java" 'if (grantResults[0] == PackageManager.PERMISSION_GRANTED) showProjectionExplanation();'
-projection_calls="$(grep -Fc 'requestProjection();' "$PKG/MainActivity.java")"
-[[ "$projection_calls" -eq 1 ]] || { echo "Projection must be requested only from the explicit consent dialog; found $projection_calls direct calls" >&2; exit 1; }
+projection_mentions="$(grep -Fo 'requestProjection()' "$PKG/MainActivity.java" | wc -l | tr -d ' ')"
+[[ "$projection_mentions" -eq 2 ]] || { echo "Projection must exist only as one method declaration plus the explicit consent action; found $projection_mentions mentions" >&2; exit 1; }
 require "$PKG/StatusText.java" 'PCM blocked - safe fallback'
 require "$PKG/StatusText.java" 'System limiter only'
 require "$PKG/SoundCeilingApplication.java" 'EqController.get(this).applySaved()'
