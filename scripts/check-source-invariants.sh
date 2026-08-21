@@ -79,12 +79,14 @@ for file in "${dsp_claims[@]}"; do
   esac
 done
 
-# Unsupported system streams must stop retrying until route/policy refresh, and live profile edits
-# must be visible to the running service.
-for token in 'SystemStreamAttemptGate' 'systemStreamAttempts.shouldAttempt' 'systemStreamAttempts.markUnsupported' 'refreshDeviceProfileV2'; do
-  grep -Fq "$token" "$PKG/NormalizerService.java" || {
-    echo "NormalizerService missing v0.5 stream/profile safety invariant: $token" >&2; exit 1;
+# Unsupported non-Media writes must be suppressed at the adapter boundary, not merely log-deduplicated.
+for token in 'SystemStreamAttemptGate' 'attempts.shouldAttempt' 'attempts.markUnsupported'; do
+  grep -Fq "$token" "$PKG/SystemStreamController.java" || {
+    echo "SystemStreamController missing unsupported-write suppression: $token" >&2; exit 1;
   }
 done
+grep -Fq 'system_stream_unavailable' "$PKG/DiagnosticLog.java" || {
+  echo "system_stream_unavailable must use compact transition logging" >&2; exit 1;
+}
 
 echo "Source invariants: PASS"
