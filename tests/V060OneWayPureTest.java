@@ -16,7 +16,6 @@ public final class V060OneWayPureTest {
         streamMinimumPausesOrdinaryNormalization();
         transientAttenuationMapsExcessDbToCurve();
         unexpectedZeroRequiresWriteMismatchEvidence();
-        unexpectedZeroRequiresWriteMismatchEvidence();
         System.out.println("V060OneWayPureTest: PASS");
     }
 
@@ -164,26 +163,6 @@ public final class V060OneWayPureTest {
         assertEquals(current, TransientAttenuationPolicy.safeTarget(current, curve, 9f,
                         emergencyThresholdDb, 1, 15),
                 "transient below emergency threshold must hold");
-    }
-
-    private static void unexpectedZeroRequiresWriteMismatchEvidence() {
-        VolumeWriteTracker tracker = new VolumeWriteTracker(250L);
-        tracker.observeInitial(5);
-        VolumeWriteTracker.Observation userZero = tracker.observe(0, 1_000L);
-        assertFalse(UnexpectedZeroPolicy.isUnexpectedZero(0, 0, 5, userZero),
-                "manual zero must not be invented as unexpected");
-
-        tracker.observeInitial(5);
-        tracker.noteAppWrite(VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN, 5, 3, 2_000L);
-        VolumeWriteTracker.Observation mismatchZero = tracker.observe(0, 2_060L);
-        assertTrue(UnexpectedZeroPolicy.isUnexpectedZero(0, 0, 5, mismatchZero),
-                "zero that contradicts a pending nonzero app write is unexpected");
-
-        tracker.observeInitial(5);
-        tracker.noteAppWrite(VolumeWriteTracker.WriteOrigin.PEAK_EMERGENCY, 5, 0, 3_000L);
-        VolumeWriteTracker.Observation ackZero = tracker.observe(0, 3_050L);
-        assertFalse(UnexpectedZeroPolicy.isUnexpectedZero(0, 0, 5, ackZero),
-                "acknowledged deliberate app zero must not be unexpected");
     }
 
     private static void unexpectedZeroRequiresWriteMismatchEvidence() {
