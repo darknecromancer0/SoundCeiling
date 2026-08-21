@@ -1,6 +1,6 @@
 package dev.soundceiling.app;
 
-/** Android bridge: one-way SafetyGuard is always the last decision before VolumeApplier. */
+/** Android bridge with separate downward and recovery write paths. */
 final class SafeVolumeController {
     private final VolumeApplier applier;
     private final VolumeWriteTracker writeTracker;
@@ -35,13 +35,12 @@ final class SafeVolumeController {
                 ? QuietNowPolicy.targetIndex(current, requestedIndex,
                         Math.min(settings.minIndex, current), settings.hardMax())
                 : requestedIndex;
-        // Defense in depth: even a stale upper-layer algorithm cannot move Samsung Media up.
         int guarded = SafetyGuard.clampAutomatic(
                 Math.min(current, requested), current, settings, effectiveMax, allowBelowMinimum);
         if (guarded == current) {
             if (quietCommand) {
                 DiagnosticLog.event("quiet_now_hold", "current=" + current
-                        + " configured=" + requestedIndex + " reason=one_way_hold");
+                        + " configured=" + requestedIndex + " reason=downward_hold");
             }
             return current;
         }
@@ -52,6 +51,27 @@ final class SafeVolumeController {
                 + " guarded=" + guarded + " applied=" + applied
                 + " min=" + settings.minIndex + " effectiveMax=" + effectiveMax
                 + " hardMax=" + settings.hardMax());
+        return applied;
+    }
+
+    /**
+     * Recovery is deliberately a distinct API. It may only hold or move Media upward and is
+     * bounded by the user envelope plus the normal hard/effective safety ceilings.
+     */
+    int applyRecovery(int requestedIndex, int currentIndex, SafetySettings settings,
+                      int effectiveMax, int userEnvelopeCeiling, long nowMs) {
+        int current = Math.max(0, currentIndex);
+        int guarded = SafetyGuard.clampRecovery(requestedIndex, current, settings,
+                effectiveMax, userEnvelopeCeiling);
+        if (guarded == current) return current;
+        VolumeWriteTracker.WriteOrigin origin = VolumeWriteTracker.WriteOrigin.NORMALIZER_UP;
+        writeTracker.noteAppWrite(origin, current, guarded, nowMs);
+        int applied = applier.applyIndex(guarded, current);
+        DiagnosticLog.event("volume_change", "origin=" + origin
+                + " current=" + current + " requested=" + requestedIndex
+                + " guarded=" + guarded + " applied=" + applied
+                + " userCeiling=" + userEnvelopeCeiling
+                + " effectiveMax=" + effectiveMax + " hardMax=" + settings.hardMax());
         return applied;
     }
 
