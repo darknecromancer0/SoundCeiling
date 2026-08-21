@@ -54,10 +54,21 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
 
     @Override public void render(RuntimeState state) {
         summary.setText(String.format(Locale.US,
-                "Engine: %s\nCapture: %s · signal: %s\nMedia: %d/%d · effective max: %d\n"
+                "Engine: %s\nCapture: %s · signal: %s · PCM: %s\n"
+                        + "Source: %s · package: %s · sourceConfidence: %s · rule: %s\n"
+                        + "meteringCapability: %s\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
+                        + "Downgrade reason: %s\nRoute: %s · Device profile: %s\n"
+                        + "Media: %d/%d · effective max: %d\n"
                         + "Raw Peak %.1f dBFS · LUFS-like %.1f · reaction %s\nLog: %s",
                 state.backendLabel.isEmpty() ? "—" : state.backendLabel,
-                state.captureStatus, state.signalPresent ? "yes" : "no",
+                state.captureStatus, state.signalPresent ? "yes" : "no", state.pcmState,
+                state.sourceLabel.isEmpty() ? "—" : state.sourceLabel,
+                state.sourcePackage.isEmpty() ? "—" : state.sourcePackage,
+                state.sourceConfidence, state.appRuleLabel,
+                state.meteringCapability, state.volumeControlCapability, state.dspTransportCapability,
+                state.downgradeReason.isEmpty() ? "—" : state.downgradeReason,
+                state.routeLabel.isEmpty() ? "—" : state.routeLabel,
+                state.profileName.isEmpty() ? "—" : state.profileName,
                 state.volumeIndex, state.volumeMax, state.effectiveMaxIndex,
                 state.rawPeakDbfs, state.sourceLoudness,
                 state.lastReactionLatencyMs >= 0 ? state.lastReactionLatencyMs + " ms" : "—",
