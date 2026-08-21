@@ -10,6 +10,7 @@ final class RuntimeStateStore {
             new AtomicReference<>(RuntimeState.stopped("Остановлено"));
     private static long lastPublishNanos = System.nanoTime();
     private static int lastVolume = -1;
+    private static boolean lastRunning;
     private static int lastDirection;
     private static int oscillations;
     private static long oscillationWindowNanos = lastPublishNanos;
@@ -28,11 +29,13 @@ final class RuntimeStateStore {
     static synchronized void publish(RuntimeState state) {
         RuntimeState next = Objects.requireNonNull(state);
         long now = System.nanoTime();
-        boolean unexpectedZero = lastVolume > 0 && next.volumeIndex == 0
+        boolean unexpectedZero = lastRunning && next.running && lastVolume > 0 && next.volumeIndex == 0
                 && next.controlActivity != RuntimeState.ControlActivity.MINIMUM_LIMIT;
-        updateOscillation(next.volumeIndex, now);
+        if (next.running) updateOscillation(next.volumeIndex, now);
+        else resetOscillation(now);
         lastPublishNanos = now;
         lastVolume = next.volumeIndex;
+        lastRunning = next.running;
         next = diagnose(next, 0L, unexpectedZero, oscillations);
         CURRENT.set(next);
     }
@@ -59,15 +62,17 @@ final class RuntimeStateStore {
     }
 
     private static void updateOscillation(int volume, long nowNanos) {
-        if (nowNanos - oscillationWindowNanos > 2_000_000_000L) {
-            oscillationWindowNanos = nowNanos;
-            oscillations = 0;
-            lastDirection = 0;
-        }
+        if (nowNanos - oscillationWindowNanos > 2_000_000_000L) resetOscillation(nowNanos);
         if (lastVolume < 0 || volume == lastVolume) return;
         int direction = Integer.compare(volume, lastVolume);
         if (lastDirection != 0 && direction != lastDirection) oscillations++;
         lastDirection = direction;
+    }
+
+    private static void resetOscillation(long nowNanos) {
+        oscillationWindowNanos = nowNanos;
+        oscillations = 0;
+        lastDirection = 0;
     }
 
     private static void maybeLog(List<DiagnosticItem> diagnostics) {
