@@ -63,6 +63,8 @@ jobs:
         run: bash ./scripts/check-v05-release-contract.sh
       - name: Check v0.5.1 core stability contract
         run: bash ./scripts/check-v051-core-stability-contract.sh
+      - name: Check v0.6 release contract
+        run: bash ./scripts/check-v06-release-contract.sh
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
