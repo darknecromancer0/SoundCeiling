@@ -22,21 +22,17 @@ final class ToneController {
     static final class Result {
         final Kind kind;
         final int playbackIndex;
-        final int originalIndex;
         final AudioDeviceInfo routedDevice;
-        final boolean volumeWasTemporary;
 
-        Result(Kind kind, int playbackIndex, int originalIndex,
-               AudioDeviceInfo routedDevice, boolean volumeWasTemporary) {
+        Result(Kind kind, int playbackIndex, AudioDeviceInfo routedDevice) {
             this.kind = kind;
             this.playbackIndex = playbackIndex;
-            this.originalIndex = originalIndex;
             this.routedDevice = routedDevice;
-            this.volumeWasTemporary = volumeWasTemporary;
         }
     }
 
     interface Listener {
+        void onStarted(Kind kind, int playbackIndex);
         void onTick(Kind kind, int secondsRemaining, int playbackIndex);
         void onComplete(Result result);
         void onError(Kind kind, String error);
@@ -45,7 +41,6 @@ final class ToneController {
     private final AudioManager audio;
     private final Handler main = new Handler(Looper.getMainLooper());
     private AudioTrack track;
-    private int originalIndex = -1;
     private int generation;
     private Result lastCalibration;
 
@@ -53,37 +48,34 @@ final class ToneController {
         audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
     }
 
-    synchronized void play(Kind kind, int configuredMaxPercent, Listener listener) {
+    synchronized void play(Kind kind, Listener listener) {
         cancelLocked();
         final int token = ++generation;
-        originalIndex = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
-        int min = audio.getStreamMinVolume(AudioManager.STREAM_MUSIC);
-        int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-        int playback = originalIndex;
-        boolean temporary = false;
-        if (playback == min && max > min) {
-            ControlVolumeCurve curve = new ControlVolumeCurve(min, max);
-            int temporaryTarget = Math.max(min + 1,
-                    Math.min(curve.capIndexFromPercent(30), curve.capIndexFromPercent(configuredMaxPercent)));
-            try {
-                audio.setStreamVolume(AudioManager.STREAM_MUSIC, temporaryTarget, 0);
-                playback = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
-                temporary = playback != originalIndex;
-            } catch (RuntimeException error) {
-                DiagnosticLog.event("tone_volume_error", "errorClass=" + error.getClass().getSimpleName());
-            }
+        if (kind == Kind.CALIBRATION) lastCalibration = null;
+        final int playback;
+        final int min;
+        try {
+            playback = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+            min = audio.getStreamMinVolume(AudioManager.STREAM_MUSIC);
+        } catch (RuntimeException error) {
+            String reason = "Не удалось прочитать Media-громкость: " + error.getClass().getSimpleName();
+            DiagnosticLog.event("tone_error", "kind=" + kind.name() + " reason=volume_read_failed");
+            main.post(() -> listener.onError(kind, reason));
+            return;
         }
-        final int p = playback;
-        final int original = originalIndex;
-        final boolean wasTemporary = temporary;
-        DiagnosticLog.event("tone_start", "kind=" + kind.name() + " index=" + p);
-
-        new Thread(() -> runTone(token, kind, p, original, wasTemporary, listener),
+        if (playback <= min) {
+            String reason = "Media слишком тихо. Поднимите громкость вручную и повторите.";
+            DiagnosticLog.event("tone_error", "kind=" + kind.name()
+                    + " reason=media_too_low index=" + playback + " min=" + min);
+            main.post(() -> listener.onError(kind, reason));
+            return;
+        }
+        DiagnosticLog.event("tone_request_ready", "kind=" + kind.name() + " index=" + playback);
+        new Thread(() -> runTone(token, kind, playback, listener),
                 "SoundCeilingTone").start();
     }
 
-    private void runTone(int token, Kind kind, int playbackIndex, int original,
-                         boolean wasTemporary, Listener listener) {
+    private void runTone(int token, Kind kind, int playbackIndex, Listener listener) {
         AudioTrack local = null;
         try {
             short[] pcm = ToneSamples.sinePcm16(48_000, 3_000, 1_000f, kind.peakDbfs, 1);
@@ -108,6 +100,8 @@ final class ToneController {
             }
             local.write(pcm, 0, pcm.length);
             local.play();
+            DiagnosticLog.event("tone_started", "kind=" + kind.name() + " index=" + playbackIndex);
+            main.post(() -> listener.onStarted(kind, playbackIndex));
             for (int remaining = 3; remaining >= 1; remaining--) {
                 synchronized (this) { if (token != generation) return; }
                 final int tick = remaining;
@@ -115,7 +109,7 @@ final class ToneController {
                 Thread.sleep(1_000L);
             }
             AudioDeviceInfo routed = local.getRoutedDevice();
-            Result result = new Result(kind, playbackIndex, original, routed, wasTemporary);
+            Result result = new Result(kind, playbackIndex, routed);
             synchronized (this) {
                 if (token != generation) return;
                 if (kind == Kind.CALIBRATION) lastCalibration = result;
@@ -132,7 +126,7 @@ final class ToneController {
                 }
             }
         } finally {
-            finish(local, token);
+            finish(local);
         }
     }
 
@@ -150,10 +144,9 @@ final class ToneController {
             try { old.stop(); } catch (RuntimeException ignored) {}
             try { old.release(); } catch (RuntimeException ignored) {}
         }
-        restoreVolume();
     }
 
-    private void finish(AudioTrack local, int token) {
+    private void finish(AudioTrack local) {
         if (local != null) {
             try {
                 if (local.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) local.stop();
@@ -164,23 +157,6 @@ final class ToneController {
         }
         synchronized (this) {
             if (track == local) track = null;
-            if (token == generation) restoreVolume();
-        }
-    }
-
-    private void restoreVolume() {
-        if (originalIndex < 0) return;
-        int restore = originalIndex;
-        int from;
-        try { from = audio.getStreamVolume(AudioManager.STREAM_MUSIC); }
-        catch (RuntimeException ignored) { from = -1; }
-        originalIndex = -1;
-        try {
-            audio.setStreamVolume(AudioManager.STREAM_MUSIC, restore, 0);
-        } catch (RuntimeException error) {
-            DiagnosticLog.event("tone_restore_error", "errorClass=" + error.getClass().getSimpleName());
-        } finally {
-            DiagnosticLog.event("tone_restore", "from=" + from + " to=" + restore);
         }
     }
 }
