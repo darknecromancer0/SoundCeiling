@@ -63,7 +63,9 @@ final class SystemStreamController {
             case SYSTEM: return AudioManager.STREAM_SYSTEM;
             case DTMF: return AudioManager.STREAM_DTMF;
             case ACCESSIBILITY: return AudioManager.STREAM_ACCESSIBILITY;
-            case ASSISTANT: return AudioManager.STREAM_ASSISTANT;
+            // Android exposes no stable public STREAM_ASSISTANT constant in the SDK.
+            // Fail closed instead of guessing a hidden/OEM-specific stream id.
+            case ASSISTANT: return -1;
             case MEDIA:
             default: return -1;
         }
