@@ -62,9 +62,9 @@ final class LogAccess {
         try {
             Intent intent = new Intent(Intent.ACTION_SEND)
                     .setType("text/plain")
-                    .putExtra(Intent.EXTRA_STREAM, uri)
-                    .setClipData(ClipData.newRawUri("SoundCeiling log session", uri))
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    .putExtra(Intent.EXTRA_STREAM, uri);
+            intent.setClipData(ClipData.newRawUri("SoundCeiling log session", uri));
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             activity.startActivity(Intent.createChooser(intent, "Поделиться лог-сессией"));
             return true;
         } catch (RuntimeException error) {
@@ -80,9 +80,9 @@ final class LogAccess {
         catch (IOException | RuntimeException error) { return false; }
         try {
             Intent intent = new Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(uri, "text/plain")
-                    .setClipData(ClipData.newRawUri("SoundCeiling log session", uri))
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    .setDataAndType(uri, "text/plain");
+            intent.setClipData(ClipData.newRawUri("SoundCeiling log session", uri));
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             activity.startActivity(Intent.createChooser(intent, "Открыть лог-сессию"));
             return true;
         } catch (RuntimeException error) { return false; }
