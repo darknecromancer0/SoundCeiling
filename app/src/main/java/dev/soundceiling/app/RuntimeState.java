@@ -37,6 +37,19 @@ final class RuntimeState {
     float[] bandLevels(){return bandLevels.clone();}
     DiagnosticItem[] diagnostics(){return diagnostics.clone();}
 
+    RuntimeState withDiagnostics(List<DiagnosticItem> items) {
+        Builder b = new Builder()
+                .running(running).captureStatus(captureStatus).controlActivity(controlActivity)
+                .signalPresent(signalPresent).levels(rmsDbfs, peakDbfs, estimatedRmsSpl, estimatedPeakSpl)
+                .loudness(rawPeakDbfs, sourceLoudness).volume(volumeIndex, volumeMax)
+                .safety(manualSafetyPause, effectiveMaxIndex, safetyLockEnabled, safetyLockIndex)
+                .backendLabel(backendLabel).reactionLatencyMs(lastReactionLatencyMs)
+                .routeLabel(routeLabel).profileName(profileName).logStatus(logStatus).message(message)
+                .lastVolumeChangeElapsedMs(lastVolumeChangeElapsedMs).lastDecision(lastDecision)
+                .bandLevels(bandLevels).diagnostics(items);
+        return b.build();
+    }
+
     static RuntimeState stopped(String message) {
         return new Builder().running(false).captureStatus(CaptureStatus.STOPPED)
                 .controlActivity(ControlActivity.IDLE).message(message).build();
