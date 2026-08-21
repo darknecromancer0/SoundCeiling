@@ -21,8 +21,10 @@ jobs:
         run: bash ./scripts/check-v04-storage-contract.sh
       - name: Check source invariants
         run: ./scripts/check-source-invariants.sh
-      - name: Check Task 9 UI contract
+      - name: Check legacy UI contract
         run: bash ./scripts/check-ui-contract.sh
+      - name: Check v0.4 UI contract
+        run: bash ./scripts/check-v04-ui-contract.sh
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
