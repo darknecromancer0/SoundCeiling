@@ -27,5 +27,5 @@ jobs:
           git config user.name "soundceiling-dev-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/dev/soundceiling/app
-          git commit -m "fix: route normalizer through fast control loudness"
+          git commit -m "chore: apply v0.6 development patch"
           git push origin HEAD:feature/v0.6-one-way-adaptive
