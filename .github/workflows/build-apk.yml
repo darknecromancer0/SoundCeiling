@@ -19,6 +19,8 @@ jobs:
         run: ./scripts/run-pure-tests.sh
       - name: Check source invariants
         run: ./scripts/check-source-invariants.sh
+      - name: Check Task 9 UI contract
+        run: ./scripts/check-ui-contract.sh
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
