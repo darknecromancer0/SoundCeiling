@@ -88,4 +88,32 @@ require_before "$PKG/AppsSystemView.java" 'addSystemStreams();' 'TextView appTit
 require_before "$PKG/AppsSystemView.java" 'TextView appTitle = text("Приложения"' 'search.setHint("Поиск приложений")'
 require_before "$PKG/AppsSystemView.java" 'search.setHint("Поиск приложений")' 'addFilters();'
 
+# Task 8: semantic status palettes must remain readable in both light and dark themes.
+require "$PKG/UiTheme.java" 'successSurface(Context context)'
+require "$PKG/UiTheme.java" 'successText(Context context)'
+require "$PKG/UiTheme.java" 'warningSurface(Context context)'
+require "$PKG/UiTheme.java" 'warningText(Context context)'
+require "$PKG/UiTheme.java" 'errorSurface(Context context)'
+require "$PKG/UiTheme.java" 'errorText(Context context)'
+require "$PKG/UiTheme.java" 'neutralStatusSurface(Context context)'
+require "$PKG/UiTheme.java" 'neutralStatusText(Context context)'
+reject "$PKG/UiTheme.java" 'view.setBackgroundColor(background(context));'
+
+require "$PKG/StatusCardView.java" 'UiTheme.successSurface(getContext())'
+require "$PKG/StatusCardView.java" 'UiTheme.warningSurface(getContext())'
+require "$PKG/StatusCardView.java" 'UiTheme.errorSurface(getContext())'
+require "$PKG/StatusCardView.java" 'UiTheme.neutralStatusSurface(getContext())'
+require "$PKG/StatusCardView.java" 'UiTheme.successText(getContext())'
+reject "$PKG/StatusCardView.java" 'setTextColor(Color.WHITE)'
+reject "$PKG/StatusCardView.java" 'Color.rgb(91, 35, 35)'
+reject "$PKG/StatusCardView.java" 'Color.rgb(86, 72, 31)'
+reject "$PKG/StatusCardView.java" 'Color.rgb(30, 78, 51)'
+
+require "$PKG/DiagnosticsView.java" 'UiTheme.successText(activity)'
+require "$PKG/DiagnosticsView.java" 'UiTheme.warningText(activity)'
+require "$PKG/DiagnosticsView.java" 'UiTheme.errorText(activity)'
+reject "$PKG/DiagnosticsView.java" 'Color.rgb(70,190,105)'
+reject "$PKG/DiagnosticsView.java" 'Color.rgb(230,180,55)'
+reject "$PKG/DiagnosticsView.java" 'Color.rgb(230,80,80)'
+
 echo "v0.6 one-way runtime/UI contract: PASS"
