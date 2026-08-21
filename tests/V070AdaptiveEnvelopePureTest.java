@@ -6,7 +6,9 @@ public final class V070AdaptiveEnvelopePureTest {
         manualDownCollapsesRecoveryCeiling();
         manualUpWidensButNeverPastSafety();
         minimumNeverAuthorizesRaise();
-        ordinaryControllerCanRecoverOwnedAttenuation();
+        normalizerUpAckDoesNotWidenAuthority();
+        routeResetForgetsOldAutomaticDebt();
+        manualThresholdOffsetMovesAndRestoresSmoothly();
         System.out.println("V070AdaptiveEnvelopePureTest: PASS");
     }
 
@@ -17,6 +19,7 @@ public final class V070AdaptiveEnvelopePureTest {
         e.onAppWriteAck(VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN, 8, 5, curve, 1_050L);
         assertEquals(8, e.userCeilingIndex(), "app down must not lower user ceiling");
         assertEquals(8, e.recoverableCeilingIndex(10), "app down may recover to prior user-authorized level");
+        assertTrue(e.hasRecoverableAttenuation(5), "app down must create recoverable attenuation");
     }
 
     private static void manualDownCollapsesRecoveryCeiling() {
@@ -27,6 +30,7 @@ public final class V070AdaptiveEnvelopePureTest {
         e.onUserChange(5, 4, curve, 1_100L);
         assertEquals(4, e.userCeilingIndex(), "manual down becomes new authority ceiling");
         assertEquals(4, e.recoverableCeilingIndex(10), "old automatic debt may not cross manual down");
+        assertFalse(e.hasRecoverableAttenuation(4), "manual down cancels old recovery debt above user ceiling");
     }
 
     private static void manualUpWidensButNeverPastSafety() {
@@ -42,10 +46,61 @@ public final class V070AdaptiveEnvelopePureTest {
         AdaptiveVolumeEnvelope e = new AdaptiveVolumeEnvelope();
         e.observeInitial(1, 10, 1_000L);
         assertEquals(1, e.recoverableCeilingIndex(10), "initial/manual low position remains authoritative");
+        assertFalse(e.hasRecoverableAttenuation(1), "configured minimum elsewhere cannot create recovery debt");
     }
 
-    private static void ordinaryControllerCanRecoverOwnedAttenuation() {
-        throw new AssertionError("RED until bidirectional controller exists");
+    private static void normalizerUpAckDoesNotWidenAuthority() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        AdaptiveVolumeEnvelope e = new AdaptiveVolumeEnvelope();
+        e.observeInitial(8, 10, 1_000L);
+        e.onAppWriteAck(VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN, 8, 5, curve, 1_050L);
+        e.onAppWriteAck(VolumeWriteTracker.WriteOrigin.NORMALIZER_UP, 5, 6, curve, 1_100L);
+        assertEquals(8, e.userCeilingIndex(), "app recovery ack cannot widen user authority");
+        assertEquals(8, e.recoverableCeilingIndex(10), "remaining owned attenuation may still recover");
+    }
+
+    private static void routeResetForgetsOldAutomaticDebt() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        AdaptiveVolumeEnvelope e = new AdaptiveVolumeEnvelope();
+        e.observeInitial(8, 10, 1_000L);
+        e.onAppWriteAck(VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN, 8, 5, curve, 1_050L);
+        e.onRouteEpochReset(5, 10, 2_000L);
+        assertEquals(5, e.userCeilingIndex(), "route reset re-anchors authority to observed Media");
+        assertFalse(e.hasRecoverableAttenuation(5), "route reset cannot carry old recovery debt to a new route epoch");
+    }
+
+    private static void manualThresholdOffsetMovesAndRestoresSmoothly() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        AdaptiveVolumeEnvelope e = new AdaptiveVolumeEnvelope();
+        e.observeInitial(8, 10, 3_000L);
+        e.onUserChange(8, 5, curve, 3_000L);
+        float desired = e.desiredManualOffsetDb();
+        if (!(desired < 0f)) throw new AssertionError("manual down must create a negative threshold offset");
+        e.tick(3_120L);
+        float afterDownTau = e.manualOffsetDb();
+        if (!(afterDownTau < 0f && afterDownTau > desired)) {
+            throw new AssertionError("manual offset must approach negative target smoothly: " + afterDownTau);
+        }
+        e.onUserChange(5, 6, curve, 3_120L);
+        assertNear(0f, e.desiredManualOffsetDb(), .001f, "manual up starts smooth threshold restoration");
+        e.tick(3_770L);
+        if (!(e.manualOffsetDb() > afterDownTau && e.manualOffsetDb() <= 0f)) {
+            throw new AssertionError("manual offset must restore toward zero without overshoot: " + e.manualOffsetDb());
+        }
+    }
+
+    private static void assertTrue(boolean value, String message) {
+        if (!value) throw new AssertionError(message);
+    }
+
+    private static void assertFalse(boolean value, String message) {
+        assertTrue(!value, message);
+    }
+
+    private static void assertNear(float expected, float actual, float tolerance, String message) {
+        if (Math.abs(expected - actual) > tolerance) {
+            throw new AssertionError(message + ": expected=" + expected + " actual=" + actual);
+        }
     }
 
     private static void assertEquals(int expected, int actual, String message) {
