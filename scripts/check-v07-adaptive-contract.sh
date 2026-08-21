@@ -28,6 +28,7 @@ require "$PKG/RuntimeState.java" 'automaticAttenuationDb'
 require "$PKG/NormalizerService.java" 'AdaptiveVolumeEnvelope volumeEnvelope'
 require "$PKG/NormalizerService.java" 'volumeEnvelope.onUserChange'
 require "$PKG/NormalizerService.java" 'volumeEnvelope.onAppWriteAck'
+require "$PKG/NormalizerService.java" 'volumeEnvelope.onProvenanceUncertain'
 require "$PKG/NormalizerService.java" 'volumeEnvelope.recoverableCeilingIndex'
 require "$PKG/NormalizerService.java" 'volumeEnvelope.hasRecoverableAttenuation'
 require "$PKG/NormalizerService.java" 'safeVolume.applyRecovery'
@@ -35,5 +36,19 @@ require "$PKG/NormalizerService.java" 'VolumeWriteTracker.WriteOrigin.NORMALIZER
 require "$PKG/NormalizerService.java" 'RuntimeState.ControlActivity.RECOVERING'
 require "$PKG/NormalizerService.java" '.envelope('
 
-# Later task-specific requirements are appended here only when their RED test is introduced.
+# Task 5: calibration is volume/route-stable and may not silently leave protection off.
+require "$PKG/CalibrationToneStateMachine.java" 'armEnvironment'
+require "$PKG/CalibrationToneStateMachine.java" 'validateEnvironment'
+require "$PKG/CalibrationToneStateMachine.java" 'consumeProtectionRestore'
+require "$PKG/CalibrationToneStateMachine.java" 'media_changed'
+require "$PKG/CalibrationToneStateMachine.java" 'route_changed'
+require "$PKG/MainActivity.java" 'toneStateMachine.armEnvironment'
+require "$PKG/MainActivity.java" 'validateToneEnvironment'
+require "$PKG/MainActivity.java" 'tone_protection_restore'
+require "$PKG/MainActivity.java" 'NormalizerService.EXTRA_FAST_ONLY'
+require "$PKG/CalibrationView.java" '-12 dBFS задаёт только цифровой уровень тестового сигнала'
+require "$PKG/CalibrationView.java" 'не гарантирует безопасную акустическую громкость'
+require "$PKG/CalibrationView.java" 'SoundCeiling отслеживает оба параметра и отменяет тест при изменении'
+reject "$PKG/CalibrationView.java" 'Безопасный тест: 1 кГц · -12 dBFS'
+
 echo "v0.7 adaptive runtime checkpoint: PASS"
