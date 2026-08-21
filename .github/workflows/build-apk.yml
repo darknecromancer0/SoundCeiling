@@ -39,6 +39,8 @@ jobs:
         run: bash ./scripts/check-v05-ui-contract.sh
       - name: Check v0.4 package contract
         run: bash ./scripts/check-v04-package-contract.sh
+      - name: Check v0.5 release contract
+        run: bash ./scripts/check-v05-release-contract.sh
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
