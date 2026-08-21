@@ -1,6 +1,6 @@
 package dev.soundceiling.app;
 
-import android.content.Context;
+import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.widget.Button;
@@ -13,40 +13,42 @@ import java.util.List;
 import java.util.Locale;
 
 final class DiagnosticsView extends ScrollView implements RuntimeScreen {
+    private final Activity activity;
     private final TextView summary;
     private final LinearLayout items;
 
-    DiagnosticsView(Context context) {
-        super(context);
+    DiagnosticsView(Activity activity) {
+        super(activity);
+        this.activity = activity;
         setFillViewport(true);
-        setBackgroundColor(UiTheme.background(context));
-        LinearLayout root = new LinearLayout(context);
+        setBackgroundColor(UiTheme.background(activity));
+        LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(20), dp(20), dp(36));
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("Диагностика", 28, UiTheme.primaryText(context));
+        TextView title = text("Диагностика", 28, UiTheme.primaryText(activity));
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title);
         root.addView(text("GREEN = всё штатно · YELLOW = ограничение/деградация · RED = ошибка безопасности или контроля.",
-                13, UiTheme.secondaryText(context)));
+                13, UiTheme.secondaryText(activity)));
 
-        summary = text("", 14, UiTheme.primaryText(context));
+        summary = text("", 14, UiTheme.primaryText(activity));
         summary.setPadding(0, dp(14), 0, dp(12));
         root.addView(summary);
 
-        items = new LinearLayout(context);
+        items = new LinearLayout(activity);
         items.setOrientation(LinearLayout.VERTICAL);
         root.addView(items);
 
         TextView logInfo = text("Логи: до 16 MiB суммарно. Старые сессии удаляются первыми; аудио PCM в лог не записывается.",
-                13, UiTheme.secondaryText(context));
+                13, UiTheme.secondaryText(activity));
         logInfo.setPadding(0, dp(16), 0, dp(8));
         root.addView(logInfo);
-        Button logs = new Button(context);
+        Button logs = new Button(activity);
         logs.setAllCaps(false);
         logs.setText("Открыть папку логов");
-        logs.setOnClickListener(v -> LogAccess.openFolder(getContext()));
+        logs.setOnClickListener(v -> LogAccess.openFolder(this.activity));
         root.addView(logs, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50)));
     }
 
