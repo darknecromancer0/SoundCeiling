@@ -686,9 +686,6 @@ public class NormalizerService extends Service {
             if (result.changed) {
                 DiagnosticLog.event("system_stream_cap", "kind=" + entry.getKey()
                         + " from=" + result.observedIndex + " to=" + result.appliedIndex);
-            } else if (!result.supported) {
-                DiagnosticLog.event("system_stream_unavailable", "kind=" + entry.getKey()
-                        + " reason=" + result.reason);
             }
         }
     }
