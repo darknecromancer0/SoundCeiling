@@ -39,7 +39,7 @@ final class GlobalVisualizerBackend implements AutoCloseable {
             }
             failure = "";
             return true;
-        } catch (RuntimeException | UnsupportedOperationException e) {
+        } catch (RuntimeException e) {
             failure = e.getClass().getSimpleName();
             close();
             return false;
