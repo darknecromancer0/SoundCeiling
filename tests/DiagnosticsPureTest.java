@@ -7,6 +7,7 @@ public final class DiagnosticsPureTest {
     public static void main(String[] args) {
         testSafetyAndManualAnomalies();
         testTimingAndSubsystemAnomalies();
+        testCustomThresholdReactionLatency();
         testDecisionRingBuffer();
         testRetentionBudget();
         System.out.println("DiagnosticsPureTest: PASS");
@@ -44,6 +45,17 @@ public final class DiagnosticsPureTest {
         assertSeverity(items, "oscillation", DiagnosticItem.Severity.YELLOW);
         assertSeverity(items, "dsp_failure", DiagnosticItem.Severity.YELLOW);
         assertSeverity(items, "log_failure", DiagnosticItem.Severity.YELLOW);
+    }
+
+    private static void testCustomThresholdReactionLatency() {
+        AnomalyDetector.Input input = new AnomalyDetector.Input.Builder()
+                .running(true)
+                .rawPeakDbfs(-8f)
+                .peakThresholdDbfs(-2f)
+                .reactionLatencyMs(130)
+                .build();
+        List<DiagnosticItem> items = AnomalyDetector.evaluate(input);
+        assertSeverity(items, "slow_peak_reaction", DiagnosticItem.Severity.RED);
     }
 
     private static void testDecisionRingBuffer() {
