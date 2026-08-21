@@ -66,6 +66,21 @@ final class AdaptiveVolumeEnvelope {
         lastObservedIndex = Math.max(0, appliedIndex);
     }
 
+    /**
+     * Conservative handling for stale/mismatched Samsung provenance. An uncertain decrease is
+     * treated like user authority tightening; an uncertain increase is observed but never widens
+     * the user ceiling or creates recoverable attenuation.
+     */
+    void onProvenanceUncertain(int previousIndex, int currentIndex,
+                               ControlVolumeCurve curve, long nowMs) {
+        ensureInitialized(previousIndex, Math.max(previousIndex, currentIndex), nowMs);
+        advance(nowMs);
+        if (currentIndex < previousIndex) {
+            applyDeliberateDown(previousIndex, currentIndex, curve);
+        }
+        lastObservedIndex = Math.max(0, currentIndex);
+    }
+
     void tick(long nowMs) {
         if (!initialized) return;
         advance(nowMs);
