@@ -4,6 +4,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG="$ROOT/app/src/main/java/dev/soundceiling/app"
 require(){ local file="$1"; local needle="$2"; [[ -f "$file" ]] || { echo "Missing v0.6 file: $(basename "$file")" >&2; exit 1; }; grep -Fq "$needle" "$file" || { echo "Missing v0.6 one-way contract: $(basename "$file") -> $needle" >&2; exit 1; }; }
 reject(){ local file="$1"; local needle="$2"; if grep -Fq "$needle" "$file"; then echo "Forbidden v0.6 one-way pattern: $(basename "$file") -> $needle" >&2; exit 1; fi; }
+require_before(){
+  local file="$1" first="$2" second="$3" a b
+  a="$(grep -Fn "$first" "$file" | head -1 | cut -d: -f1 || true)"
+  b="$(grep -Fn "$second" "$file" | head -1 | cut -d: -f1 || true)"
+  [[ -n "$a" && -n "$b" && "$a" -lt "$b" ]] || {
+    echo "Wrong v0.6 UI order: $(basename "$file") -> '$first' must precede '$second'" >&2; exit 1;
+  }
+}
 
 require "$PKG/SafetyGuard.java" 'clampAutomatic'
 require "$PKG/SafeVolumeController.java" 'SafetyGuard.clampAutomatic'
@@ -48,4 +56,36 @@ reject "$PKG/NormalizerService.java" 'long reactionLatency = emergency && applie
 require "$PKG/LoudnessControlPolicy.java" 'below_target_hold'
 require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
 
-echo "v0.6 one-way runtime contract: PASS"
+# Task 7: Main/Advanced are two surfaces of the same down-only engine, not separate modes.
+require "$PKG/DrawerLayoutController.java" 'addNav("Основное", AppDestination.SIMPLE)'
+require "$PKG/DrawerLayoutController.java" 'addNav("Расширенные", AppDestination.ADVANCED)'
+reject "$PKG/DrawerLayoutController.java" 'Простой режим'
+reject "$PKG/DrawerLayoutController.java" 'Расширенный режим'
+
+require "$PKG/SimpleModeView.java" 'text("Основное", 28, true)'
+require "$PKG/SimpleModeView.java" 'StatusCardView'
+require "$PKG/SimpleModeView.java" 'HelpText.QUIET_NOW'
+reject "$PKG/SimpleModeView.java" 'engineStatus'
+reject "$PKG/SimpleModeView.java" 'safetyBadge'
+reject "$PKG/SimpleModeView.java" 'только сделать тише'
+reject "$PKG/SimpleModeView.java" 'автоматическое повышение'
+
+require "$PKG/AdvancedModeView.java" 'text("Расширенные", 28, true)'
+require "$PKG/AdvancedModeView.java" 'HelpText.QUIET_NOW'
+reject "$PKG/AdvancedModeView.java" 'Upward release'
+reject "$PKG/AdvancedModeView.java" 'Max up steps'
+reject "$PKG/AdvancedModeView.java" 'Manual recovery'
+reject "$PKG/AdvancedModeView.java" 'только понизить'
+require_before "$PKG/AdvancedModeView.java" 'section("Профили")' 'section("Главное")'
+
+require "$PKG/HelpText.java" 'QUIET_NOW="QUIET_NOW"'
+require "$PKG/HelpText.java" 'Target никогда не повышает Media'
+reject "$PKG/HelpText.java" 'охотнее поднимает тихий материал'
+reject "$PKG/HelpText.java" 'возвращается громкость вверх'
+reject "$PKG/HelpText.java" 'перед следующим автоматическим повышением'
+
+require_before "$PKG/AppsSystemView.java" 'addSystemStreams();' 'TextView appTitle = text("Приложения"'
+require_before "$PKG/AppsSystemView.java" 'TextView appTitle = text("Приложения"' 'search.setHint("Поиск приложений")'
+require_before "$PKG/AppsSystemView.java" 'search.setHint("Поиск приложений")' 'addFilters();'
+
+echo "v0.6 one-way runtime/UI contract: PASS"
