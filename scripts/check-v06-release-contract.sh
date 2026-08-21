@@ -58,6 +58,13 @@ for file in "$PKG/RuntimeState.java" "$PKG/StatusText.java" "$PKG/NormalizerServ
 done
 require "$PKG/CalibrationToneStateMachine.java" 'WAITING_STOPPED'
 
+# Reviewed runtime metadata/cleanup: no stale v0.5 release identity and no duplicated fallback threshold branch.
+reject "$PKG/NormalizerService.java" 'HEADER version=0.5.0'
+reject "$PKG/NormalizerService.java" 'Sound Ceiling v0.5.0'
+require "$PKG/NormalizerService.java" '.setContentTitle("Sound Ceiling v" + BuildConfig.VERSION_NAME)'
+control_profile_fallbacks="$(grep -Fc '} else if (controlProfile != null) {' "$PKG/NormalizerService.java")"
+[[ "$control_profile_fallbacks" -eq 1 ]] || { echo "Expected exactly one controlProfile threshold fallback; found $control_profile_fallbacks" >&2; exit 1; }
+
 # Semantic theme and logical single-file log sharing are release requirements.
 require "$PKG/UiTheme.java" 'successSurface(Context context)'
 require "$PKG/LogAccess.java" 'mergeSessionForShare'
