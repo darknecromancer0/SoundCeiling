@@ -116,4 +116,18 @@ reject "$PKG/DiagnosticsView.java" 'Color.rgb(70,190,105)'
 reject "$PKG/DiagnosticsView.java" 'Color.rgb(230,180,55)'
 reject "$PKG/DiagnosticsView.java" 'Color.rgb(230,80,80)'
 
+# Task 9: calibration tone is volume-neutral and explicitly coordinated.
+require "$PKG/CalibrationToneStateMachine.java" 'WAITING_STOPPED'
+require "$PKG/CalibrationToneStateMachine.java" 'STOP_TIMEOUT_MS'
+reject "$PKG/ToneController.java" 'setStreamVolume('
+reject "$PKG/ToneController.java" 'restoreVolume()'
+reject "$PKG/ToneController.java" 'volumeWasTemporary'
+require "$PKG/ToneController.java" 'void onStarted(Kind kind, int playbackIndex)'
+require "$PKG/ToneController.java" 'if (kind == Kind.CALIBRATION) lastCalibration = null;'
+reject "$PKG/CalibrationView.java" 'pendingTone'
+require "$PKG/CalibrationView.java" 'void onRequestTone(ToneController.Kind kind)'
+require "$PKG/MainActivity.java" 'CalibrationToneStateMachine toneStateMachine'
+require "$PKG/MainActivity.java" 'tone_waiting_engine_stop'
+require "$PKG/MainActivity.java" 'handler.postDelayed(toneStopPoll, TONE_STOP_POLL_MS)'
+
 echo "v0.6 one-way runtime/UI contract: PASS"
