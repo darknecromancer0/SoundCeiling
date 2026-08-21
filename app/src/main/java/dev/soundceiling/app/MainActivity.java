@@ -115,6 +115,12 @@ public class MainActivity extends Activity {
                 screen = apps;
                 break;
             }
+            case DEVICE_PROFILES: {
+                DeviceProfilesView profiles = new DeviceProfilesView(this);
+                activeScreen = profiles;
+                screen = profiles;
+                break;
+            }
             case EQ: {
                 EqView eq = new EqView(this);
                 activeScreen = eq;
