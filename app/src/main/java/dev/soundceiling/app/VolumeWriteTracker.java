@@ -7,6 +7,7 @@ final class VolumeWriteTracker {
 
     enum WriteOrigin {
         NORMALIZER_DOWN,
+        NORMALIZER_UP,
         PEAK_EMERGENCY,
         TRANSIENT_EMERGENCY,
         HARD_CAP,
