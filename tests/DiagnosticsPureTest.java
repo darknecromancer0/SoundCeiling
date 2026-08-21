@@ -1,5 +1,6 @@
 package dev.soundceiling.app;
 
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 
@@ -10,6 +11,7 @@ public final class DiagnosticsPureTest {
         testCustomThresholdReactionLatency();
         testDecisionRingBuffer();
         testRetentionBudget();
+        testHybridTransitionDeduplication();
         System.out.println("DiagnosticsPureTest: PASS");
     }
 
@@ -80,6 +82,28 @@ public final class DiagnosticsPureTest {
         assertEquals("SoundCeiling-20260821-030000.log", kept.get(1).name, "newest kept");
     }
 
+    private static void testHybridTransitionDeduplication() {
+        try {
+            Class<?> type = Class.forName("dev.soundceiling.app.TransitionLogGate");
+            Object gate = type.getDeclaredConstructor().newInstance();
+            Method shouldLog = type.getDeclaredMethod("shouldLog", String.class, String.class);
+            String[] codes = {
+                    "pcm_blocked",
+                    "source_mixed",
+                    "raise_blocked_confidence",
+                    "policy_conflict_off_source",
+                    "system_stream_unavailable"
+            };
+            for (String code : codes) {
+                assertTrue((Boolean) shouldLog.invoke(gate, code, "state_a"), code + " first transition");
+                assertFalse((Boolean) shouldLog.invoke(gate, code, "state_a"), code + " duplicate suppressed");
+                assertTrue((Boolean) shouldLog.invoke(gate, code, "state_b"), code + " changed transition");
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Hybrid transition deduplication is missing", e);
+        }
+    }
+
     private static void assertSeverity(List<DiagnosticItem> items, String code, DiagnosticItem.Severity severity) {
         for (DiagnosticItem item : items) {
             if (code.equals(item.code)) {
@@ -88,6 +112,14 @@ public final class DiagnosticsPureTest {
             }
         }
         throw new AssertionError("Missing diagnostic: " + code);
+    }
+
+    private static void assertTrue(boolean value, String message) {
+        if (!value) throw new AssertionError(message);
+    }
+
+    private static void assertFalse(boolean value, String message) {
+        if (value) throw new AssertionError(message);
     }
 
     private static void assertEquals(long expected, long actual, String message) {
