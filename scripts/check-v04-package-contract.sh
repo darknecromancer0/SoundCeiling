@@ -5,6 +5,8 @@ APP="$ROOT/app/src/main"
 require(){ local file="$1"; local needle="$2"; grep -Fq "$needle" "$file" || { echo "Missing v0.4 package contract: $file -> $needle" >&2; exit 1; }; }
 require "$ROOT/app/build.gradle.kts" 'versionName="0.4.0"'
 require "$ROOT/app/build.gradle.kts" 'versionCode=6'
+require "$ROOT/README.md" '# Sound Ceiling for Android - v0.4.0'
+require "$ROOT/.github/workflows/build-apk.yml" 'SoundCeiling-v0.4.0-debug-apk'
 require "$APP/AndroidManifest.xml" 'android:icon="@mipmap/ic_launcher"'
 require "$APP/AndroidManifest.xml" 'android:roundIcon="@mipmap/ic_launcher_round"'
 require "$APP/java/dev/soundceiling/app/NormalizerService.java" 'ACTION_QUIET'
