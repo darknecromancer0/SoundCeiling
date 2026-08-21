@@ -44,7 +44,11 @@ final class PackageSourceRepository {
             ApplicationInfo applicationInfo = context.getPackageManager()
                     .getApplicationInfo(packageName, PackageManager.GET_META_DATA);
             InstalledApp app = fromApplicationInfo(context.getPackageManager(), applicationInfo);
-            return app == null ? null : app.source;
+            if (app == null) return null;
+            SourceDescriptor source = app.source;
+            DiagnosticLog.transition("uid_refresh", source.packageName + ":" + source.uid,
+                    "package=" + source.packageName + " uid=" + source.uid);
+            return source;
         } catch (PackageManager.NameNotFoundException e) {
             return null;
         }
