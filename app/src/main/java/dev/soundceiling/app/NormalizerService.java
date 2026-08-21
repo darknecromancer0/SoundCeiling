@@ -335,7 +335,7 @@ public class NormalizerService extends Service {
                     reason = legacyDecision.reason;
                 } else {
                     LoudnessControlPolicy.Result normal = LoudnessControlPolicy.decide(now,
-                            loud.lufsLike, blockPeak, false, current,
+                            loud.controlLoudnessDb, blockPeak, false, current,
                             controlCurve, effectiveProfile, loudnessState);
                     comfortTarget = normal.requestedIndex;
                     reason = normal.reason;
