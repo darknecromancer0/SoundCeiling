@@ -15,14 +15,20 @@ public final class LoudnessPolicyPeakThresholdTest {
 
         LoudnessControlPolicy.State stateA = new LoudnessControlPolicy.State();
         LoudnessControlPolicy.State stateB = new LoudnessControlPolicy.State();
+        // v0.6 fixture is deliberately above the upper Target so both policies are in the
+        // legitimate DOWN path. The test no longer relies on the removed auto-raise behavior.
         LoudnessControlPolicy.Result normal = LoudnessControlPolicy.decide(
-                10_000L, -30f, -6f, true, 5, curve, base, stateA);
+                10_000L, -10f, -1f, true, 10, curve, base, stateA);
         LoudnessControlPolicy.Result strict = LoudnessControlPolicy.decide(
-                10_000L, -30f, -6f, true, 5, curve, strictPeak, stateB);
+                10_000L, -10f, -1f, true, 10, curve, strictPeak, stateB);
 
         if (!(strict.desiredGainDb < normal.desiredGainDb - 0.5f)) {
-            throw new AssertionError("custom peak threshold must constrain desired gain: normal="
+            throw new AssertionError("custom peak threshold must constrain downward desired gain: normal="
                     + normal.desiredGainDb + " strict=" + strict.desiredGainDb);
+        }
+        if (strict.requestedIndex > normal.requestedIndex) {
+            throw new AssertionError("stricter peak ceiling may not request a louder index: normal="
+                    + normal.requestedIndex + " strict=" + strict.requestedIndex);
         }
         System.out.println("LoudnessPolicyPeakThresholdTest: PASS");
     }
