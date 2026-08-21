@@ -19,6 +19,8 @@ jobs:
         run: ./scripts/run-pure-tests.sh
       - name: Check v0.4 storage contract
         run: bash ./scripts/check-v04-storage-contract.sh
+      - name: Check v0.5 storage contract
+        run: bash ./scripts/check-v05-storage-contract.sh
       - name: Check source invariants
         run: ./scripts/check-source-invariants.sh
       - name: Check legacy UI contract
