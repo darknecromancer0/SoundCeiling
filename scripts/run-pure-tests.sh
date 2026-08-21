@@ -36,10 +36,14 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SafetySettings.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SafetyGuard.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ManualSafetyController.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ManualThresholdFollower.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/UnexpectedZeroPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PeakSafetyDetector.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TransientGuard.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/TransientAttenuationPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/QuietNowPolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/CalibrationToneStateMachine.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EqLinkMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EngineCapabilities.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackSnapshot.java" \
@@ -73,7 +77,10 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/tests/HybridCoordinatorPureTest.java" \
  "$ROOT/tests/SystemStreamAttemptGatePureTest.java" \
  "$ROOT/tests/V051RegressionPureTest.java" \
- "$ROOT/tests/EqLinkPureTest.java"
+ "$ROOT/tests/EqLinkPureTest.java" \
+ "$ROOT/tests/V060OneWayPureTest.java" \
+ "$ROOT/tests/V060FastLoudnessPureTest.java" \
+ "$ROOT/tests/V060RuntimeStatePureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
 java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
 java -cp "$OUT" dev.soundceiling.app.LoudnessPolicyPeakThresholdTest
@@ -84,3 +91,6 @@ java -cp "$OUT" dev.soundceiling.app.HybridCoordinatorPureTest
 java -cp "$OUT" dev.soundceiling.app.SystemStreamAttemptGatePureTest
 java -cp "$OUT" dev.soundceiling.app.V051RegressionPureTest
 java -cp "$OUT" dev.soundceiling.app.EqLinkPureTest
+java -cp "$OUT" dev.soundceiling.app.V060OneWayPureTest
+java -cp "$OUT" dev.soundceiling.app.V060FastLoudnessPureTest
+java -cp "$OUT" dev.soundceiling.app.V060RuntimeStatePureTest

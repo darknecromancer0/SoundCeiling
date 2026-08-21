@@ -2,7 +2,6 @@ package dev.soundceiling.app;
 
 import android.app.AlertDialog;
 import android.content.Context;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -13,8 +12,7 @@ import android.widget.TextView;
 
 final class CalibrationView extends ScrollView implements RuntimeScreen {
     interface Listener {
-        void onStopForTone(ToneController.Kind kind);
-        void onPlayTone(ToneController.Kind kind);
+        void onRequestTone(ToneController.Kind kind);
         void onSaveCalibration(int measuredSpl);
         void onDeleteCalibration();
     }
@@ -24,12 +22,9 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     private final TextView speakerStatus;
     private final TextView calibrationStatus;
     private final TextView measuredLabel;
-    private final TextView stopPrompt;
     private final ProgressBar speakerProgress;
     private final ProgressBar calibrationProgress;
-    private final Button stopContinue;
     private final SeekBar measuredSpl;
-    private ToneController.Kind pendingTone;
 
     CalibrationView(Context context, Listener listener) {
         super(context);
@@ -108,17 +103,6 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
         delete.setOnClickListener(v -> listener.onDeleteCalibration());
         root.addView(delete, buttonLp());
 
-        stopPrompt = text("Для тест-тона сначала остановим нормализатор, чтобы он не менял его громкость.", 14,
-                Color.rgb(235, 175, 65));
-        stopPrompt.setPadding(0, dp(18), 0, dp(6));
-        stopPrompt.setVisibility(GONE);
-        root.addView(stopPrompt);
-        stopContinue = button("Остановить и продолжить");
-        stopContinue.setVisibility(GONE);
-        stopContinue.setOnClickListener(v -> {
-            if (pendingTone != null) listener.onStopForTone(pendingTone);
-        });
-        root.addView(stopContinue, buttonLp());
         UiTheme.applyToTree(root);
     }
 
@@ -134,38 +118,38 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     }
 
     private void requestTone(ToneController.Kind kind) {
-        if (RuntimeStateStore.get().running) {
-            pendingTone = kind;
-            stopPrompt.setVisibility(VISIBLE);
-            stopContinue.setVisibility(VISIBLE);
-            return;
-        }
-        listener.onPlayTone(kind);
+        listener.onRequestTone(kind);
     }
 
     @Override public void render(RuntimeState state) {
         route.setText("Выход: " + (state.routeLabel.isEmpty() ? "определяется…" : state.routeLabel)
                 + " · Media " + state.volumeIndex + "/" + state.volumeMax
                 + (state.profileName.isEmpty() ? "\nSPL-калибровка: нет" : "\nSPL-калибровка: " + state.profileName));
-        if (pendingTone != null && !state.running) {
-            ToneController.Kind kind = pendingTone;
-            pendingTone = null;
-            stopPrompt.setVisibility(GONE);
-            stopContinue.setVisibility(GONE);
-            listener.onPlayTone(kind);
-        }
+    }
+
+    void onToneWaitingForEngineStop(ToneController.Kind kind) {
+        ProgressBar p = progressFor(kind);
+        p.setProgress(0);
+        statusFor(kind).setText("Останавливаю нормализатор перед тест-тоном…");
+    }
+
+    void onToneStarting(ToneController.Kind kind) {
+        ProgressBar p = progressFor(kind);
+        p.setProgress(0);
+        statusFor(kind).setText("Запускаю тест-тон… Media остаётся без изменений");
+    }
+
+    void onToneStarted(ToneController.Kind kind, int playbackIndex) {
+        statusFor(kind).setText("Тон запущен · Media " + playbackIndex + " · громкость не изменялась");
     }
 
     void onToneTick(ToneController.Kind kind, int secondsRemaining, int playbackIndex) {
-        ProgressBar p = kind == ToneController.Kind.SPEAKER_CHECK ? speakerProgress : calibrationProgress;
-        p.setProgress(4 - secondsRemaining);
-        TextView status = kind == ToneController.Kind.SPEAKER_CHECK ? speakerStatus : calibrationStatus;
-        status.setText("Тон играет · осталось " + secondsRemaining + " сек · Media " + playbackIndex);
+        progressFor(kind).setProgress(4 - secondsRemaining);
+        statusFor(kind).setText("Тон играет · осталось " + secondsRemaining + " сек · Media " + playbackIndex);
     }
 
     void onToneComplete(ToneController.Result result) {
-        ProgressBar p = result.kind == ToneController.Kind.SPEAKER_CHECK ? speakerProgress : calibrationProgress;
-        p.setProgress(3);
+        progressFor(result.kind).setProgress(3);
         String routeText = result.routedDevice == null ? "аудиовыход Android" : DeviceDetector.label(result.routedDevice);
         if (result.kind == ToneController.Kind.SPEAKER_CHECK) {
             speakerStatus.setText("Тест завершён · " + routeText);
@@ -175,8 +159,15 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     }
 
     void onToneError(ToneController.Kind kind, String error) {
-        TextView status = kind == ToneController.Kind.SPEAKER_CHECK ? speakerStatus : calibrationStatus;
-        status.setText("Ошибка тест-тона: " + error);
+        statusFor(kind).setText("Ошибка тест-тона: " + error);
+    }
+
+    private ProgressBar progressFor(ToneController.Kind kind) {
+        return kind == ToneController.Kind.SPEAKER_CHECK ? speakerProgress : calibrationProgress;
+    }
+
+    private TextView statusFor(ToneController.Kind kind) {
+        return kind == ToneController.Kind.SPEAKER_CHECK ? speakerStatus : calibrationStatus;
     }
 
     private void updateMeasuredLabel(int value) {

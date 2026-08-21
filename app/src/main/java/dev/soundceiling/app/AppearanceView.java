@@ -17,12 +17,13 @@ final class AppearanceView extends ScrollView implements RuntimeScreen {
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(20), dp(20), dp(36));
+        root.setBackgroundColor(UiTheme.background(context));
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         TextView title = text("Оформление", 28);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title);
-        TextView note = text("Тема интерфейса не меняет аудио-движок и safety-настройки.", 14);
+        TextView note = text("Тема интерфейса меняет только оформление. Статусы используют отдельные semantic colors для светлой и тёмной темы; аудио-движок и safety-настройки не меняются.", 14);
         note.setPadding(0, dp(8), 0, dp(16));
         root.addView(note);
 

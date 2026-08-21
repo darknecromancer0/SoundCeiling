@@ -9,7 +9,7 @@ public final class V051RegressionPureTest {
         testInitialMinimumDoesNotPauseAutomaticRaise();
         testGlobalMixedPcmCanRaiseWithoutExactSource();
         testQuietNowNeverRaises();
-        testTargetChangesDesiredNormalizationGain();
+        testTargetChangesDownwardCorrectionWithoutRaising();
         testControlSettingsCannotContradictEachOther();
         System.out.println("V051RegressionPureTest: PASS");
     }
@@ -46,7 +46,7 @@ public final class V051RegressionPureTest {
         assertFalse(manual.isManualSafetyPause(),
                 "initial state at Minimum is not an explicit user request to pause normalization");
         assertFalse(manual.isPausedForRaise(),
-                "initial Minimum must leave normalizer free to raise quiet content");
+                "legacy manual pause metadata must not be created by initial observation");
         assertEquals(10, manual.effectiveMax(),
                 "initial observation must not collapse the automatic envelope to Minimum");
     }
@@ -71,7 +71,7 @@ public final class V051RegressionPureTest {
         assertTrue(policy.sourceControlEnabled,
                 "unknown source must still permit Global stream control");
         assertTrue(policy.allowAutomaticRaise,
-                "healthy ACTIVE PCM_MIXED must permit Global normalization without exact app identity");
+                "legacy trust metadata may remain true for healthy ACTIVE PCM_MIXED");
         assertEquals("", policy.raiseBlockReason,
                 "Global mixed PCM should not be marked as source_not_exact");
     }
@@ -85,19 +85,22 @@ public final class V051RegressionPureTest {
                 "Quiet Now respects the audible minimum unless mute is explicitly supported elsewhere");
     }
 
-    private static void testTargetChangesDesiredNormalizationGain() {
+    private static void testTargetChangesDownwardCorrectionWithoutRaising() {
         ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
         ControlProfile base = BuiltInProfiles.balanced();
         ControlProfile quieterTarget = profileWithTarget(base, -24f);
         ControlProfile louderTarget = profileWithTarget(base, -14f);
+        int current = 8;
         LoudnessControlPolicy.Result quiet = LoudnessControlPolicy.decide(
-                5_000L, -28f, -12f, true, 4, curve, quieterTarget,
+                5_000L, -5f, -1f, true, current, curve, quieterTarget,
                 new LoudnessControlPolicy.State());
         LoudnessControlPolicy.Result loud = LoudnessControlPolicy.decide(
-                5_000L, -28f, -12f, true, 4, curve, louderTarget,
+                5_000L, -5f, -1f, true, current, curve, louderTarget,
                 new LoudnessControlPolicy.State());
         assertTrue(loud.desiredGainDb > quiet.desiredGainDb + 5f,
-                "raising Target must materially increase the normalizer's desired gain");
+                "raising Target may reduce the amount of attenuation requested for loud playback");
+        assertTrue(quiet.requestedIndex <= current && loud.requestedIndex <= current,
+                "Target changes must never create an automatic Media raise in v0.6");
     }
 
     private static void testControlSettingsCannotContradictEachOther() {

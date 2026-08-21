@@ -2,6 +2,7 @@ package dev.soundceiling.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -12,6 +13,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -35,6 +37,10 @@ public class MainActivity extends Activity {
     private RuntimeScreen activeScreen;
     private CalibrationView calibrationView;
     private ToneController.Result lastCalibrationResult;
+    private final CalibrationToneStateMachine toneStateMachine = new CalibrationToneStateMachine();
+    private ToneController.Kind pendingToneKind;
+    private static final long TONE_STOP_POLL_MS = 50L;
+    private final Runnable toneStopPoll = this::pollToneStop;
 
     private final Runnable uiTick = new Runnable() {
         @Override public void run() {
@@ -129,15 +135,7 @@ public class MainActivity extends Activity {
             }
             case CALIBRATION: {
                 calibrationView = new CalibrationView(this, new CalibrationView.Listener() {
-                    @Override public void onStopForTone(ToneController.Kind kind) {
-                        if (RuntimeStateStore.get().running) {
-                            startService(new Intent(MainActivity.this, NormalizerService.class)
-                                    .setAction(NormalizerService.ACTION_STOP));
-                        } else {
-                            playTone(kind);
-                        }
-                    }
-                    @Override public void onPlayTone(ToneController.Kind kind) { playTone(kind); }
+                    @Override public void onRequestTone(ToneController.Kind kind) { requestCalibrationTone(kind); }
                     @Override public void onSaveCalibration(int measuredSpl) { saveCalibration(measuredSpl); }
                     @Override public void onDeleteCalibration() { deleteCalibration(); }
                 });
@@ -214,7 +212,7 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
             return;
         }
-        requestProjection();
+        showProjectionExplanation();
     }
 
     private void quietNow() {
@@ -222,19 +220,71 @@ public class MainActivity extends Activity {
         startService(intent);
     }
 
-    private void playTone(ToneController.Kind kind) {
-        toneController.play(kind, Prefs.maxVolumePercent(this), new ToneController.Listener() {
+    private void requestCalibrationTone(ToneController.Kind kind) {
+        handler.removeCallbacks(toneStopPoll);
+        toneController.cancel();
+        pendingToneKind = kind;
+        if (kind == ToneController.Kind.CALIBRATION) lastCalibrationResult = null;
+        long now = SystemClock.elapsedRealtime();
+        boolean running = RuntimeStateStore.get().running;
+        toneStateMachine.request(running, now);
+        DiagnosticLog.event("tone_request", "kind=" + kind.name() + " engineRunning=" + running);
+        if (toneStateMachine.state() == CalibrationToneStateMachine.State.STOPPING_ENGINE) {
+            if (calibrationView != null) calibrationView.onToneWaitingForEngineStop(kind);
+            startService(new Intent(this, NormalizerService.class).setAction(NormalizerService.ACTION_STOP));
+            toneStateMachine.onStopRequested(now);
+            DiagnosticLog.event("tone_waiting_engine_stop", "kind=" + kind.name());
+            handler.post(toneStopPoll);
+            return;
+        }
+        startPendingTone();
+    }
+
+    private void pollToneStop() {
+        if (pendingToneKind == null) return;
+        long now = SystemClock.elapsedRealtime();
+        toneStateMachine.onEngineObserved(RuntimeStateStore.get().running, now);
+        if (toneStateMachine.state() == CalibrationToneStateMachine.State.STARTING_TONE) {
+            startPendingTone();
+        } else if (toneStateMachine.state() == CalibrationToneStateMachine.State.ERROR) {
+            failPendingTone(toneStateMachine.error());
+        } else if (toneStateMachine.state() == CalibrationToneStateMachine.State.WAITING_STOPPED) {
+            handler.postDelayed(toneStopPoll, TONE_STOP_POLL_MS);
+        }
+    }
+
+    private void startPendingTone() {
+        ToneController.Kind kind = pendingToneKind;
+        if (kind == null || toneStateMachine.state() != CalibrationToneStateMachine.State.STARTING_TONE) return;
+        if (calibrationView != null) calibrationView.onToneStarting(kind);
+        toneController.play(kind, new ToneController.Listener() {
+            @Override public void onStarted(ToneController.Kind k, int playbackIndex) {
+                toneStateMachine.onToneStarted();
+                if (calibrationView != null) calibrationView.onToneStarted(k, playbackIndex);
+            }
             @Override public void onTick(ToneController.Kind k, int secondsRemaining, int playbackIndex) {
                 if (calibrationView != null) calibrationView.onToneTick(k, secondsRemaining, playbackIndex);
             }
             @Override public void onComplete(ToneController.Result result) {
+                toneStateMachine.onToneComplete();
                 if (result.kind == ToneController.Kind.CALIBRATION) lastCalibrationResult = result;
                 if (calibrationView != null) calibrationView.onToneComplete(result);
+                pendingToneKind = null;
             }
             @Override public void onError(ToneController.Kind k, String error) {
+                toneStateMachine.onToneError(error);
                 if (calibrationView != null) calibrationView.onToneError(k, error);
+                pendingToneKind = null;
             }
         });
+    }
+
+    private void failPendingTone(String reason) {
+        ToneController.Kind kind = pendingToneKind;
+        if (kind == null) return;
+        DiagnosticLog.event("tone_error", "kind=" + kind.name() + " reason=" + reason);
+        if (calibrationView != null) calibrationView.onToneError(kind, reason);
+        pendingToneKind = null;
     }
 
     private void saveCalibration(int measuredSpl) {
@@ -273,6 +323,18 @@ public class MainActivity extends Activity {
         Toast.makeText(this, "Профиль удалён.", Toast.LENGTH_SHORT).show();
     }
 
+    private void showProjectionExplanation() {
+        new AlertDialog.Builder(this)
+                .setTitle("Точный анализ воспроизведения")
+                .setMessage("Android покажет системное окно разрешения, похожее на запись или трансляцию экрана. "
+                        + "Это нужно потому, что AudioPlaybackCapture авторизуется через MediaProjection.\n\n"
+                        + "SoundCeiling использует только PCM воспроизводимого аудио для измерения громкости. "
+                        + "SoundCeiling не записывает видео экрана.")
+                .setPositiveButton("Продолжить", (dialog, which) -> requestProjection())
+                .setNegativeButton("Safe fallback", (dialog, which) -> startFastFallback())
+                .show();
+    }
+
     private void requestProjection() {
         MediaProjectionManager manager =
                 (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
@@ -289,7 +351,7 @@ public class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_RECORD_AUDIO && grantResults.length > 0) {
-            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) requestProjection();
+            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) showProjectionExplanation();
             else Toast.makeText(this, "Без разрешения Android не даёт Sound Ceiling читать playback-meter APIs.", Toast.LENGTH_LONG).show();
         }
     }
@@ -327,6 +389,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         handler.removeCallbacks(uiTick);
+        handler.removeCallbacks(toneStopPoll);
         toneController.cancel();
         super.onDestroy();
     }

@@ -1,17 +1,26 @@
 package dev.soundceiling.app;
 
 /**
- * Lightweight K-weighted short-term loudness estimate. The 48 kHz coefficients match the
- * standard K-weighting filter shape, but gating/integration is intentionally simplified, so
- * the UI must label the result LUFS-like rather than certified LUFS.
+ * Lightweight K-weighted loudness estimate. The 48 kHz coefficients match the standard
+ * K-weighting filter shape, but gating/integration is intentionally simplified, so the UI must
+ * label the slow display result LUFS-like rather than certified LUFS.
+ *
+ * v0.6 keeps a separate fast K-weighted control signal. This lets protection/normalization react
+ * quickly without making the displayed LUFS-like number jitter on every 10 ms capture block.
  */
 final class LoudnessMeter {
+    private static final double CONTROL_TAU_SECONDS = 0.070;
+    private static final double DISPLAY_TAU_SECONDS = 3.0;
+
     static final class Reading {
         final float lufsLike;
         final float rmsDbfs;
-        Reading(float lufsLike, float rmsDbfs) {
+        final float controlLoudnessDb;
+
+        Reading(float lufsLike, float rmsDbfs, float controlLoudnessDb) {
             this.lufsLike = lufsLike;
             this.rmsDbfs = rmsDbfs;
+            this.controlLoudnessDb = controlLoudnessDb;
         }
     }
 
@@ -20,6 +29,7 @@ final class LoudnessMeter {
     private final Biquad[] shelf;
     private final Biquad[] highPass;
     private boolean initialized;
+    private double controlPower;
     private double shortPower;
 
     LoudnessMeter(int sampleRate, int channels) {
@@ -35,7 +45,10 @@ final class LoudnessMeter {
 
     Reading update(short[] pcm, int length) {
         int n = Math.max(0, Math.min(length, pcm.length));
-        if (n == 0) return new Reading(DbMath.SILENCE_DBFS, DbMath.SILENCE_DBFS);
+        if (n == 0) {
+            return new Reading(DbMath.SILENCE_DBFS, DbMath.SILENCE_DBFS,
+                    DbMath.SILENCE_DBFS);
+        }
         double weightedSq = 0.0;
         double rawSq = 0.0;
         for (int i = 0; i < n; i++) {
@@ -48,16 +61,25 @@ final class LoudnessMeter {
         double blockPower = weightedSq / n;
         double seconds = n / (double) (sampleRate * channels);
         if (!initialized) {
+            controlPower = blockPower;
             shortPower = blockPower;
             initialized = true;
         } else {
-            double alpha = 1.0 - Math.exp(-Math.max(.001, seconds) / 3.0);
-            shortPower += alpha * (blockPower - shortPower);
+            double controlAlpha = 1.0 - Math.exp(-Math.max(.001, seconds) / CONTROL_TAU_SECONDS);
+            double displayAlpha = 1.0 - Math.exp(-Math.max(.001, seconds) / DISPLAY_TAU_SECONDS);
+            controlPower += controlAlpha * (blockPower - controlPower);
+            shortPower += displayAlpha * (blockPower - shortPower);
         }
-        float lufs = shortPower <= 1e-12 ? DbMath.SILENCE_DBFS
-                : (float) (-0.691 + 10.0 * Math.log10(shortPower));
+        float lufs = weightedPowerToLoudness(shortPower);
+        float controlLoudness = weightedPowerToLoudness(controlPower);
         float rms = DbMath.powerToDb(rawSq / n);
-        return new Reading(Math.max(DbMath.SILENCE_DBFS, lufs), rms);
+        return new Reading(lufs, rms, controlLoudness);
+    }
+
+    private static float weightedPowerToLoudness(double power) {
+        if (power <= 1e-12) return DbMath.SILENCE_DBFS;
+        float db = (float) (-0.691 + 10.0 * Math.log10(power));
+        return Math.max(DbMath.SILENCE_DBFS, db);
     }
 
     private static final class Biquad {

@@ -6,6 +6,9 @@ package dev.soundceiling.app;
  * stable real-time control signal with no external DSP dependencies.
  */
 final class LoudnessTracker {
+    private static final double FAST_TAU_SECONDS = 0.070;
+    private static final double SHORT_TAU_SECONDS = 2.5;
+
     private double fastPower = 0.0;
     private double shortPower = 0.0;
     private float peakHoldDb = DbMath.SILENCE_DBFS;
@@ -13,8 +16,8 @@ final class LoudnessTracker {
 
     Reading update(double blockMeanSquare, float blockPeakDb, double seconds) {
         seconds = Math.max(0.005, Math.min(0.25, seconds));
-        double fastAlpha = 1.0 - Math.exp(-seconds / 0.25);   // ~250 ms normalizer signal
-        double shortAlpha = 1.0 - Math.exp(-seconds / 2.5);  // ~2.5 s
+        double fastAlpha = 1.0 - Math.exp(-seconds / FAST_TAU_SECONDS);
+        double shortAlpha = 1.0 - Math.exp(-seconds / SHORT_TAU_SECONDS);
 
         if (!initialized) {
             fastPower = blockMeanSquare;

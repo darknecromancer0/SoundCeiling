@@ -1,7 +1,6 @@
 package dev.soundceiling.app;
 
 import android.app.Activity;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -25,6 +24,7 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(20), dp(20), dp(36));
+        root.setBackgroundColor(UiTheme.background(activity));
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         TextView title = text("Диагностика", 28, UiTheme.primaryText(activity));
@@ -98,9 +98,9 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
     }
 
     private void addItem(DiagnosticItem item) {
-        int color = item.severity == DiagnosticItem.Severity.GREEN ? Color.rgb(70,190,105)
-                : item.severity == DiagnosticItem.Severity.YELLOW ? Color.rgb(230,180,55)
-                : Color.rgb(230,80,80);
+        int color = item.severity == DiagnosticItem.Severity.GREEN ? UiTheme.successText(activity)
+                : item.severity == DiagnosticItem.Severity.YELLOW ? UiTheme.warningText(activity)
+                : UiTheme.errorText(activity);
         TextView view = text(item.severity + " · " + item.code + "\n" + item.message, 14, color);
         view.setPadding(0, dp(7), 0, dp(7));
         items.addView(view);

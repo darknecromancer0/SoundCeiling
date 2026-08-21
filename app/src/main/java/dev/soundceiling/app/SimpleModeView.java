@@ -18,7 +18,7 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
     private final AudioManager audio;
     private final int streamMin;
     private final int streamMax;
-    private final TextView comfortLabel, minLabel, maxLabel, normalizeLabel, engineStatus, safetyBadge;
+    private final TextView comfortLabel, minLabel, maxLabel, normalizeLabel;
     private final SeekBar minSeek, maxSeek;
     private final Button startStop;
     private final StatusCardView statusCard;
@@ -39,21 +39,22 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         root.setBackgroundColor(UiTheme.background(context));
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("Простой режим", 28, true);
+        TextView title = text("Основное", 28, true);
         root.addView(title);
-        TextView intro = secondary("Target задаёт желаемую громкость, Minimum только нижнюю границу, Maximum верхнюю. Аварийный limiter работает отдельно.", 14);
+        TextView intro = secondary("Один one-way движок: SoundCeiling удерживает или снижает Media, но никогда не повышает системный ползунок автоматически. Target — верхняя цель, а не положение ползунка.", 14);
         intro.setPadding(0, dp(6), 0, dp(12));
         root.addView(intro);
 
-        engineStatus = text("Waiting for audio", 16, true);
-        engineStatus.setPadding(0, 0, 0, dp(8));
-        root.addView(engineStatus);
-        safetyBadge = secondary("", 14);
-        safetyBadge.setTypeface(Typeface.DEFAULT_BOLD);
-        safetyBadge.setPadding(0, 0, 0, dp(12));
-        root.addView(safetyBadge);
+        statusCard = new StatusCardView(context);
+        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        statusLp.bottomMargin = dp(14); root.addView(statusCard, statusLp);
 
-        comfortLabel = section(); root.addView(comfortLabel);
+        LinearLayout targetRow = new LinearLayout(context);
+        targetRow.setOrientation(LinearLayout.HORIZONTAL);
+        comfortLabel = section();
+        targetRow.addView(comfortLabel, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+        targetRow.addView(helpButton(HelpText.TARGET_LOUDNESS), new LinearLayout.LayoutParams(dp(46), dp(42)));
+        root.addView(targetRow);
         SeekBar comfortSeek = new SeekBar(context);
         comfortSeek.setMin(0); comfortSeek.setMax(100);
         comfortSeek.setProgress(percentForLoudness(Prefs.targetLoudness(context)));
@@ -93,20 +94,22 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
             DiagnosticLog.event("preference_change", "normalizationStrength=" + progress);
         }, this::updateNormalizationLabel));
 
+        LinearLayout quietRow = new LinearLayout(context);
+        quietRow.setOrientation(LinearLayout.HORIZONTAL);
         Button quiet = new Button(context);
-        quiet.setAllCaps(false); quiet.setText("Quiet now · только сделать тише"); quiet.setTextSize(16);
+        quiet.setAllCaps(false); quiet.setText("Quiet Now"); quiet.setTextSize(16);
         quiet.setOnClickListener(v -> this.listener.onQuietNow());
+        quietRow.addView(quiet, new LinearLayout.LayoutParams(0, dp(52), 1f));
+        LinearLayout.LayoutParams quietHelpLp = new LinearLayout.LayoutParams(dp(52), dp(52));
+        quietHelpLp.leftMargin = dp(8); quietRow.addView(helpButton(HelpText.QUIET_NOW), quietHelpLp);
         LinearLayout.LayoutParams quietLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(52));
-        quietLp.topMargin = dp(18); root.addView(quiet, quietLp);
+        quietLp.topMargin = dp(18); root.addView(quietRow, quietLp);
 
         startStop = new Button(context); startStop.setAllCaps(false); startStop.setTextSize(18);
         startStop.setOnClickListener(v -> this.listener.onStartStop());
         LinearLayout.LayoutParams startLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(56));
         startLp.topMargin = dp(10); root.addView(startStop, startLp);
 
-        statusCard = new StatusCardView(context);
-        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        statusLp.topMargin = dp(18); root.addView(statusCard, statusLp);
     }
 
     private void applyBounds(int requestedMin, int requestedMaxPercent) {
@@ -142,12 +145,6 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
 
     @Override public void render(RuntimeState state) {
         startStop.setText(state.running ? "Остановить" : "Запустить");
-        engineStatus.setText(StatusText.engine(state));
-        String lock = state.safetyLockEnabled
-                ? "Safety Lock: ON · до " + state.safetyLockIndex + "/" + state.volumeMax
-                : "Safety Lock: OFF · основной потолок активен";
-        if (state.manualSafetyPause) lock += "\nРучная пауза: автоматическое повышение остановлено";
-        safetyBadge.setText(lock);
         statusCard.render(state);
     }
 
@@ -169,11 +166,18 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
     private void updateMaxLabel(int percent) { maxLabel.setText("Maximum: " + percent + "% · верхняя граница Media"); }
     private void updateNormalizationLabel(int percent) {
         String word = percent == 0 ? "выкл" : percent < 45 ? "мягко" : percent < 80 ? "средне" : "жёстко";
-        normalizeLabel.setText("Normalization: " + percent + "% · " + word);
+        normalizeLabel.setText("Normalization: " + percent + "% · " + word + " · только вниз");
     }
     private static float loudnessForPercent(int percent) { return -28f + Math.max(0, Math.min(100, percent)) * 0.16f; }
     private static int percentForLoudness(float loudness) { return Math.max(0, Math.min(100, Math.round((loudness + 28f) / 0.16f))); }
     private TextView section() { return text("", 16, true); }
+    private Button helpButton(String key) {
+        Button b = new Button(getContext()); b.setAllCaps(false); b.setText("?"); b.setTextSize(16);
+        b.setOnClickListener(v -> new android.app.AlertDialog.Builder(getContext())
+                .setTitle("Что это значит?").setMessage(HelpText.forKey(key))
+                .setPositiveButton("Понятно", null).show());
+        return b;
+    }
     private TextView text(String value, float sp, boolean bold) {
         TextView v = new TextView(getContext()); v.setText(value); v.setTextSize(sp); v.setTextColor(UiTheme.primaryText(getContext()));
         v.setLineSpacing(0, 1.08f); if (bold) v.setTypeface(Typeface.DEFAULT_BOLD); return v;

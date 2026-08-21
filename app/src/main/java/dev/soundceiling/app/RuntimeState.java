@@ -4,7 +4,7 @@ import java.util.List;
 
 final class RuntimeState {
     enum CaptureStatus { STOPPED, STARTING, RUNNING, WAITING_SIGNAL, ERROR }
-    enum ControlActivity { IDLE, HOLDING, DECREASING, RAISING, MINIMUM_LIMIT, MAXIMUM_LIMIT, ERROR }
+    enum ControlActivity { IDLE, HOLDING, DECREASING, MINIMUM_LIMIT, MAXIMUM_LIMIT, ERROR }
 
     final boolean running;
     final CaptureStatus captureStatus;
@@ -16,6 +16,15 @@ final class RuntimeState {
     final String routeLabel, profileName, logStatus, message, backendLabel;
     final long lastVolumeChangeElapsedMs, lastReactionLatencyMs;
     final ControlDecision lastDecision;
+
+    // v0.6 controller telemetry. Configured values come from resolved policy before the manual
+    // threshold follower; effective values include the current non-positive manual dB offset.
+    final float configuredTargetLoudness, effectiveTargetLoudness;
+    final float configuredPeakThresholdDbfs, effectivePeakThresholdDbfs;
+    final float manualThresholdOffsetDb;
+    final long meterAgeMs, lastEmergencyLatencyMs;
+    final String lastControllerAction, lastControllerReason;
+    final boolean unexpectedZero;
 
     // v0.5 independent Hybrid Engine dimensions. Defaults deliberately describe uncertainty.
     final PcmAvailabilityState pcmState;
@@ -39,6 +48,16 @@ final class RuntimeState {
         logStatus=n(b.logStatus); message=n(b.message); backendLabel=n(b.backendLabel);
         lastVolumeChangeElapsedMs=b.lastVolumeChangeElapsedMs;
         lastReactionLatencyMs=b.lastReactionLatencyMs; lastDecision=b.lastDecision;
+        configuredTargetLoudness=b.configuredTargetLoudness;
+        effectiveTargetLoudness=b.effectiveTargetLoudness;
+        configuredPeakThresholdDbfs=b.configuredPeakThresholdDbfs;
+        effectivePeakThresholdDbfs=b.effectivePeakThresholdDbfs;
+        manualThresholdOffsetDb=b.manualThresholdOffsetDb;
+        meterAgeMs=Math.max(0L,b.meterAgeMs);
+        lastEmergencyLatencyMs=b.lastEmergencyLatencyMs;
+        lastControllerAction=n(b.lastControllerAction);
+        lastControllerReason=n(b.lastControllerReason);
+        unexpectedZero=b.unexpectedZero;
         pcmState=b.pcmState; sourceConfidence=b.sourceConfidence;
         meteringCapability=b.meteringCapability; volumeControlCapability=b.volumeControlCapability;
         dspTransportCapability=b.dspTransportCapability; sourcePackage=n(b.sourcePackage);
@@ -51,6 +70,14 @@ final class RuntimeState {
     DiagnosticItem[] diagnostics(){return diagnostics.clone();}
 
     RuntimeState withDiagnostics(List<DiagnosticItem> items) {
+        return copyWithDiagnostics(items, meterAgeMs);
+    }
+
+    RuntimeState withDiagnostics(List<DiagnosticItem> items, long currentMeterAgeMs) {
+        return copyWithDiagnostics(items, currentMeterAgeMs);
+    }
+
+    private RuntimeState copyWithDiagnostics(List<DiagnosticItem> items, long currentMeterAgeMs) {
         Builder b = new Builder()
                 .running(running).captureStatus(captureStatus).controlActivity(controlActivity)
                 .signalPresent(signalPresent).levels(rmsDbfs, peakDbfs, estimatedRmsSpl, estimatedPeakSpl)
@@ -59,6 +86,11 @@ final class RuntimeState {
                 .backendLabel(backendLabel).reactionLatencyMs(lastReactionLatencyMs)
                 .routeLabel(routeLabel).profileName(profileName).logStatus(logStatus).message(message)
                 .lastVolumeChangeElapsedMs(lastVolumeChangeElapsedMs).lastDecision(lastDecision)
+                .thresholds(configuredTargetLoudness, effectiveTargetLoudness,
+                        configuredPeakThresholdDbfs, effectivePeakThresholdDbfs, manualThresholdOffsetDb)
+                .controller(lastControllerAction, lastControllerReason,
+                        lastReactionLatencyMs, lastEmergencyLatencyMs)
+                .meterAgeMs(currentMeterAgeMs).unexpectedZero(unexpectedZero)
                 .hybrid(pcmState, sourceConfidence, meteringCapability, volumeControlCapability,
                         dspTransportCapability, sourcePackage, sourceLabel, appRuleLabel, downgradeReason)
                 .bandLevels(bandLevels).diagnostics(items);
@@ -83,6 +115,12 @@ final class RuntimeState {
         String routeLabel="", profileName="", logStatus="", message="Остановлено", backendLabel="";
         long lastVolumeChangeElapsedMs, lastReactionLatencyMs=-1L;
         ControlDecision lastDecision;
+        float configuredTargetLoudness=Float.NaN, effectiveTargetLoudness=Float.NaN;
+        float configuredPeakThresholdDbfs=Float.NaN, effectivePeakThresholdDbfs=Float.NaN;
+        float manualThresholdOffsetDb;
+        long meterAgeMs, lastEmergencyLatencyMs=-1L;
+        String lastControllerAction="", lastControllerReason="";
+        boolean unexpectedZero;
         PcmAvailabilityState pcmState=PcmAvailabilityState.IDLE;
         EngineCapabilities.SourceIdentityConfidence sourceConfidence=EngineCapabilities.SourceIdentityConfidence.UNKNOWN;
         EngineCapabilities.MeteringCapability meteringCapability=EngineCapabilities.MeteringCapability.NONE;
@@ -108,6 +146,18 @@ final class RuntimeState {
         Builder message(String v){message=v;return this;}
         Builder lastVolumeChangeElapsedMs(long v){lastVolumeChangeElapsedMs=v;return this;}
         Builder lastDecision(ControlDecision v){lastDecision=v;return this;}
+        Builder thresholds(float configuredTarget, float effectiveTarget,
+                           float configuredPeak, float effectivePeak, float manualOffset) {
+            configuredTargetLoudness=configuredTarget; effectiveTargetLoudness=effectiveTarget;
+            configuredPeakThresholdDbfs=configuredPeak; effectivePeakThresholdDbfs=effectivePeak;
+            manualThresholdOffsetDb=Math.min(0f, manualOffset); return this;
+        }
+        Builder controller(String action, String reason, long reactionLatency, long emergencyLatency) {
+            lastControllerAction=action; lastControllerReason=reason;
+            lastReactionLatencyMs=reactionLatency; lastEmergencyLatencyMs=emergencyLatency; return this;
+        }
+        Builder meterAgeMs(long v){meterAgeMs=Math.max(0L,v);return this;}
+        Builder unexpectedZero(boolean v){unexpectedZero=v;return this;}
         Builder hybrid(PcmAvailabilityState pcm,
                        EngineCapabilities.SourceIdentityConfidence confidence,
                        EngineCapabilities.MeteringCapability metering,

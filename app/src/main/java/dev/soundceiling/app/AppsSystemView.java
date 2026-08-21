@@ -67,6 +67,10 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
     private void showList() {
         root.removeAllViews();
         addHeader();
+        addSystemStreams();
+        TextView appTitle = text("Приложения", 20, true);
+        appTitle.setPadding(0, dp(20), 0, dp(8));
+        root.addView(appTitle);
         search = new EditText(getContext());
         search.setHint("Поиск приложений");
         search.setSingleLine(true);
@@ -80,10 +84,6 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
         });
 
         addFilters();
-        addSystemStreams();
-        TextView appTitle = text("Приложения", 20, true);
-        appTitle.setPadding(0, dp(20), 0, dp(8));
-        root.addView(appTitle);
         appsHost = new LinearLayout(getContext());
         appsHost.setOrientation(LinearLayout.VERTICAL);
         root.addView(appsHost);

@@ -1,7 +1,6 @@
 package dev.soundceiling.app;
 
 import android.content.Context;
-import android.graphics.Color;
 import android.os.SystemClock;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -59,22 +58,33 @@ final class StatusCardView extends LinearLayout {
 
         if (state.captureStatus == RuntimeState.CaptureStatus.ERROR
                 || state.controlActivity == RuntimeState.ControlActivity.ERROR) {
-            setBackgroundColor(Color.rgb(91, 35, 35));
+            applyPalette(UiTheme.errorSurface(getContext()), UiTheme.errorText(getContext()));
         } else if (state.captureStatus == RuntimeState.CaptureStatus.STARTING
                 || state.captureStatus == RuntimeState.CaptureStatus.WAITING_SIGNAL
                 || state.pcmState == PcmAvailabilityState.BLOCKED
                 || state.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.MIXED) {
-            setBackgroundColor(Color.rgb(86, 72, 31));
+            applyPalette(UiTheme.warningSurface(getContext()), UiTheme.warningText(getContext()));
         } else if (state.running && state.signalPresent) {
-            setBackgroundColor(Color.rgb(30, 78, 51));
+            applyPalette(UiTheme.successSurface(getContext()), UiTheme.successText(getContext()));
         } else {
-            setBackgroundColor(Color.rgb(48, 51, 58));
+            applyPalette(UiTheme.neutralStatusSurface(getContext()), UiTheme.neutralStatusText(getContext()));
         }
+    }
+
+    private void applyPalette(int surface, int text) {
+        setBackgroundColor(surface);
+        engine.setTextColor(text);
+        capture.setTextColor(text);
+        signal.setTextColor(text);
+        controller.setTextColor(text);
+        media.setTextColor(text);
+        capabilities.setTextColor(text);
+        changed.setTextColor(text);
     }
 
     private TextView row(float sp) {
         TextView v = new TextView(getContext());
-        v.setTextColor(Color.WHITE);
+        v.setTextColor(UiTheme.neutralStatusText(getContext()));
         v.setTextSize(sp);
         v.setPadding(0, dp(2), 0, dp(2));
         return v;

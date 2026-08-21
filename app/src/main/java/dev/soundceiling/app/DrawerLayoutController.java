@@ -51,16 +51,15 @@ final class DrawerLayoutController {
         title.setPadding(dp(8), 0, dp(8), dp(16));
         panel.addView(title);
 
-        addNav("Простой режим", AppDestination.SIMPLE);
-        addNav("Расширенный режим", AppDestination.ADVANCED);
+        addNav("Основное", AppDestination.SIMPLE);
+        addNav("Расширенные", AppDestination.ADVANCED);
         addNav("Приложения и системные звуки", AppDestination.APPS_SYSTEM);
         addNav("Профили устройств", AppDestination.DEVICE_PROFILES);
         addNav("Эквалайзер", AppDestination.EQ);
         addNav("Калибровка и тест", AppDestination.CALIBRATION);
         addNav("Диагностика", AppDestination.DIAGNOSTICS);
         addNav("Оформление", AppDestination.APPEARANCE);
-        addAction("Открыть папку логов", () -> listener.onOpenLogs());
-        addAction("Поделиться последним логом", () -> listener.onShareLatestLog());
+        addAction("Логи", () -> listener.onOpenLogs());
         addNav("О приложении", AppDestination.ABOUT);
 
         int width = Math.min(Math.round(activity.getResources().getDisplayMetrics().widthPixels * 0.84f), dp(340));
