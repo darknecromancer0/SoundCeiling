@@ -77,6 +77,16 @@ final class AdaptiveVolumeEnvelope {
         return Math.max(0, currentIndex) < recoverableCeilingIndex(Integer.MAX_VALUE);
     }
 
+    float automaticAttenuationDb(int currentIndex, int safetyCeilingIndex,
+                                 ControlVolumeCurve curve) {
+        if (curve == null) return 0f;
+        int current = DbMath.clamp(currentIndex, curve.minIndex(), curve.maxIndex());
+        int reference = DbMath.clamp(recoverableCeilingIndex(safetyCeilingIndex),
+                curve.minIndex(), curve.maxIndex());
+        if (current >= reference) return 0f;
+        return Math.min(0f, curve.gainDbForIndex(current) - curve.gainDbForIndex(reference));
+    }
+
     float desiredManualOffsetDb() {
         return Math.min(0f, desiredManualOffsetDb);
     }
