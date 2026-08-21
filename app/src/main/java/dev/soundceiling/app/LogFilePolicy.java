@@ -1,0 +1,3 @@
+package dev.soundceiling.app;
+import java.util.*;
+final class LogFilePolicy{static final long MAX_BYTES=2L*1024L*1024L;static String partName(String id,int part){return "SoundCeiling-"+id+(part<=1?"":"-part"+part)+".log";}static boolean wouldRotate(long bytes,String line){return bytes+line.getBytes(java.nio.charset.StandardCharsets.UTF_8).length+1>MAX_BYTES;}static List<String> retainedSessionIds(List<String> names,int limit){TreeSet<String> ids=new TreeSet<>();for(String n:names){int s=n.indexOf("SoundCeiling-");if(s<0)continue;String id=n.substring(s+13).replaceFirst("-part\\d+\\.log$","").replaceFirst("\\.log$","");ids.add(id);}List<String> all=new ArrayList<>(ids);return all.subList(Math.max(0,all.size()-Math.max(0,limit)),all.size());}private LogFilePolicy(){}}
