@@ -4,6 +4,7 @@ public final class V060FastLoudnessPureTest {
     public static void main(String[] args) {
         fastKWeightedControlLeadsDisplayMeter();
         fastRmsControlRespondsWithinAbout70ms();
+        transientBaselineUsesElapsedTimeNotCallCount();
         System.out.println("V060FastLoudnessPureTest: PASS");
     }
 
@@ -46,6 +47,30 @@ public final class V060FastLoudnessPureTest {
         }
         if (Math.abs(reading.rawBlockPeakDb - (-3f)) > .001f) {
             throw new AssertionError("raw peak must remain first-block immediate: " + reading.rawBlockPeakDb);
+        }
+    }
+
+    private static void transientBaselineUsesElapsedTimeNotCallCount() {
+        TransientGuard tenMs = new TransientGuard(6f, 10f);
+        tenMs.update(0L, -30f);
+        TransientGuard.Event ten = null;
+        for (long t = 10L; t <= 60L; t += 10L) ten = tenMs.update(t, -15f);
+
+        TransientGuard twentyMs = new TransientGuard(6f, 10f);
+        twentyMs.update(0L, -30f);
+        TransientGuard.Event twenty = null;
+        for (long t = 20L; t <= 60L; t += 20L) twenty = twentyMs.update(t, -15f);
+
+        if (ten == null || twenty == null) throw new AssertionError("transient baseline reading missing");
+        float cadenceDifference = Math.abs(ten.baselineDb - twenty.baselineDb);
+        if (cadenceDifference > .8f) {
+            throw new AssertionError("50 ms transient baseline must depend on elapsed time, not block count: "
+                    + "10ms=" + ten.baselineDb + " 20ms=" + twenty.baselineDb
+                    + " diff=" + cadenceDifference);
+        }
+        if (!(ten.baselineDb > -22f)) {
+            throw new AssertionError("after 60 ms sustained high level baseline should materially adapt: "
+                    + ten.baselineDb);
         }
     }
 }
