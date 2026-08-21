@@ -19,6 +19,7 @@ final class StatusText {
         return switch (s.controlActivity) {
             case HOLDING -> "Регулятор: удерживает";
             case DECREASING -> "Регулятор: снижает";
+            case RECOVERING -> "Регулятор: плавно восстанавливает громкость";
             case MINIMUM_LIMIT -> "Регулятор: ограничен слышимым минимумом";
             case MAXIMUM_LIMIT -> "Регулятор: ограничен максимумом";
             case ERROR -> "Регулятор: ошибка";
