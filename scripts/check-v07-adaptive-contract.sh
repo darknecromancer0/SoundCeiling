@@ -21,5 +21,19 @@ require "$PKG/SafeVolumeController.java" 'SafetyGuard.clampAutomatic'
 require "$PKG/SafeVolumeController.java" 'SafetyGuard.clampRecovery'
 require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
 
+# Task 4: service provenance and runtime telemetry must use the adaptive envelope.
+require "$PKG/RuntimeState.java" 'RECOVERING'
+require "$PKG/RuntimeState.java" 'userCeilingIndex'
+require "$PKG/RuntimeState.java" 'automaticAttenuationDb'
+require "$PKG/NormalizerService.java" 'AdaptiveVolumeEnvelope volumeEnvelope'
+require "$PKG/NormalizerService.java" 'volumeEnvelope.onUserChange'
+require "$PKG/NormalizerService.java" 'volumeEnvelope.onAppWriteAck'
+require "$PKG/NormalizerService.java" 'volumeEnvelope.recoverableCeilingIndex'
+require "$PKG/NormalizerService.java" 'volumeEnvelope.hasRecoverableAttenuation'
+require "$PKG/NormalizerService.java" 'safeVolume.applyRecovery'
+require "$PKG/NormalizerService.java" 'VolumeWriteTracker.WriteOrigin.NORMALIZER_UP'
+require "$PKG/NormalizerService.java" 'RuntimeState.ControlActivity.RECOVERING'
+require "$PKG/NormalizerService.java" '.envelope('
+
 # Later task-specific requirements are appended here only when their RED test is introduced.
-echo "v0.7 adaptive control checkpoint: PASS"
+echo "v0.7 adaptive runtime checkpoint: PASS"
