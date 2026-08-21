@@ -9,12 +9,8 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
-import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
-import android.media.AudioFormat;
 import android.media.AudioManager;
-import android.media.AudioPlaybackCaptureConfiguration;
-import android.media.AudioRecord;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
@@ -23,7 +19,9 @@ import android.os.SystemClock;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class NormalizerService extends Service {
@@ -33,17 +31,20 @@ public class NormalizerService extends Service {
     static final String ACTION_STOP = "dev.soundceiling.app.STOP";
     static final String ACTION_QUIET = "dev.soundceiling.app.QUIET";
 
-    private static final String CHANNEL = "sound_ceiling_v04";
+    private static final String CHANNEL = "sound_ceiling_v05";
     private static final int NOTIFICATION_ID = 41;
-    private static final int SAMPLE_RATE = 48_000;
-    private static final int CHANNELS = 2;
+    private static final int SAMPLE_RATE = PcmCaptureBackend.SAMPLE_RATE;
+    private static final int CHANNELS = PcmCaptureBackend.CHANNELS;
     private static final int CAPTURE_BLOCK_SHORTS = 960;
 
     private final AtomicBoolean workerRunning = new AtomicBoolean();
     private final AtomicBoolean stopping = new AtomicBoolean();
     private AudioManager audio;
-    private AudioRecord record;
     private MediaProjection projection;
+    private PcmCaptureBackend pcmCapture;
+    private HybridRuntimeResolver hybridRuntime;
+    private HybridRuntimeResolver.Snapshot hybridSnapshot;
+    private SystemStreamController systemStreams;
     private ControlVolumeCurve controlCurve;
     private MeasurementVolumeCurve measurementCurve;
     private VolumeApplier applier;
@@ -54,6 +55,8 @@ public class NormalizerService extends Service {
     private ControlProfile controlProfile;
     private String controlProfileFingerprint = "";
     private TransientGuard transientGuard;
+    private float transientWarningConfig = Float.NaN;
+    private float transientEmergencyConfig = Float.NaN;
     private final LoudnessControlPolicy.State loudnessState = new LoudnessControlPolicy.State();
     private GlobalVisualizerBackend visualizer;
     private OptionalDspController optionalDsp;
@@ -64,12 +67,14 @@ public class NormalizerService extends Service {
     private SessionLogger logger;
     private AudioDeviceInfo currentDevice;
     private DeviceProfile currentProfile;
+    private DeviceProfileV2 currentProfileV2;
     private int currentDeviceType;
     private long lastChange;
     private long lastRouteCheck;
     private long lastNotificationUpdate;
     private long lastSettingsRefresh;
     private long lastBandUpdate;
+    private long lastSystemStreamCheck;
     private float[] lastBands = new float[5];
     private int lastAppliedNonzero = -1;
 
@@ -83,8 +88,11 @@ public class NormalizerService extends Service {
         applier = new VolumeApplier(audio);
         writeTracker = new VolumeWriteTracker(300L);
         safeVolume = new SafeVolumeController(applier, writeTracker);
+        systemStreams = new SystemStreamController(audio);
         visualizer = new GlobalVisualizerBackend();
         optionalDsp = new OptionalDspController();
+        hybridRuntime = new HybridRuntimeResolver(this, audio);
+        hybridRuntime.start();
         refreshControlSettings(SystemClock.elapsedRealtime(), true);
         int initial = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
         writeTracker.observeInitial(initial);
@@ -107,12 +115,13 @@ public class NormalizerService extends Service {
         if (workerRunning.get()) return START_NOT_STICKY;
 
         fastOnlyMode = intent != null && intent.getBooleanExtra(EXTRA_FAST_ONLY, false);
+        hybridRuntime.newEpoch();
         startForegroundNow();
         RuntimeState starting = baseState(new RuntimeState.Builder(),
                 audio.getStreamVolume(AudioManager.STREAM_MUSIC))
                 .running(true).captureStatus(RuntimeState.CaptureStatus.STARTING)
                 .controlActivity(RuntimeState.ControlActivity.IDLE)
-                .message(fastOnlyMode ? "Запуск быстрого safety-режима…" : "Запуск точного захвата…")
+                .message(fastOnlyMode ? "Запуск Safe fallback…" : "Запуск Smart PCM…")
                 .build();
         RuntimeStateStore.publish(starting);
         updateNotification(starting);
@@ -128,12 +137,12 @@ public class NormalizerService extends Service {
                             "visualizer_unavailable:" + clean(visualizer.failure()));
             tryOpenLogger();
             startWorker(this::loopFastGuard, "SoundCeilingFastGuard");
-            DiagnosticLog.event("service_start", "mode=fast backend=" + backendStatus.label());
+            DiagnosticLog.event("service_start", "mode=fallback backend=" + backendStatus.label());
             return START_NOT_STICKY;
         }
 
         if (intent == null) {
-            stopSafe("Нет разрешения MediaProjection", true);
+            enterFallback(visualizerReady, "projection_intent_missing");
             return START_NOT_STICKY;
         }
         int code = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED);
@@ -141,7 +150,7 @@ public class NormalizerService extends Service {
         if (Build.VERSION.SDK_INT >= 33) data = intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent.class);
         else data = intent.getParcelableExtra(EXTRA_RESULT_DATA);
         if (code != Activity.RESULT_OK || data == null) {
-            stopSafe("Разрешение захвата не получено", true);
+            enterFallback(visualizerReady, "projection_permission_denied");
             return START_NOT_STICKY;
         }
 
@@ -152,46 +161,49 @@ public class NormalizerService extends Service {
             projection.registerCallback(new MediaProjection.Callback() {
                 @Override public void onStop() {
                     DiagnosticLog.event("projection_stop", "Android stopped MediaProjection");
-                    stopSafe("Android остановил точный захват", false);
+                    if (workerRunning.get()) switchToFallback("projection_stopped");
                 }
             }, null);
-            AudioPlaybackCaptureConfiguration cap = new AudioPlaybackCaptureConfiguration.Builder(projection)
-                    .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                    .addMatchingUsage(AudioAttributes.USAGE_GAME)
-                    .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
-                    .build();
-            AudioFormat fmt = new AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
-                    .build();
-            int min = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO,
-                    AudioFormat.ENCODING_PCM_16BIT);
-            record = new AudioRecord.Builder().setAudioFormat(fmt)
-                    .setBufferSizeInBytes(Math.max(19_200, min * 4))
-                    .setAudioPlaybackCaptureConfig(cap).build();
-            record.startRecording();
+            PcmCaptureRequest request = hybridRuntime.prepareCaptureRequest();
+            pcmCapture = PcmCaptureBackend.open(projection, request);
             backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.PLAYBACK_CAPTURE, true,
-                    visualizerReady ? "precision_pcm+output_mix_guard" : "precision_pcm");
+                    request.targeted() ? "targeted_uid_pcm" : "mixed_pcm_downward_only");
             tryOpenLogger();
             startWorker(this::loopPlaybackCapture, "SoundCeilingAudio");
-            DiagnosticLog.event("service_start", "mode=precision backend=" + backendStatus.label());
+            DiagnosticLog.event("service_start", "mode=smart_pcm backend=" + backendStatus.label()
+                    + " targetUid=" + request.targetUid);
         } catch (RuntimeException e) {
             DiagnosticLog.event("service_start_error", "errorClass=" + e.getClass().getSimpleName());
-            if (visualizerReady) {
-                fastOnlyMode = true;
-                backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.VISUALIZER, true,
-                        "projection_failed_fallback:" + e.getClass().getSimpleName());
-                tryOpenLogger();
-                startWorker(this::loopFastGuard, "SoundCeilingFallbackGuard");
-            } else {
-                backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.MEDIA_ONLY, true,
-                        "projection_failed:" + e.getClass().getSimpleName());
-                tryOpenLogger();
-                startWorker(this::loopFastGuard, "SoundCeilingMediaGuard");
-            }
+            enterFallback(visualizerReady, "projection_failed:" + e.getClass().getSimpleName());
         }
         return START_NOT_STICKY;
+    }
+
+    private void enterFallback(boolean visualizerReady, String reason) {
+        fastOnlyMode = true;
+        backendStatus = visualizerReady
+                ? new AudioBackendStatus(AudioBackendStatus.Tier.VISUALIZER, true, reason)
+                : new AudioBackendStatus(AudioBackendStatus.Tier.MEDIA_ONLY, true, reason);
+        tryOpenLogger();
+        startWorker(this::loopFastGuard, "SoundCeilingFallbackGuard");
+        DiagnosticLog.event("engine_mode_switch", "to=fallback reason=" + reason);
+    }
+
+    private synchronized void switchToFallback(String reason) {
+        if (!workerRunning.get()) return;
+        if (pcmCapture != null) {
+            pcmCapture.close();
+            pcmCapture = null;
+        }
+        fastOnlyMode = true;
+        backendStatus = visualizer != null && visualizer.isOpen()
+                ? new AudioBackendStatus(AudioBackendStatus.Tier.VISUALIZER, true, reason)
+                : new AudioBackendStatus(AudioBackendStatus.Tier.MEDIA_ONLY, true, reason);
+        Thread previous = worker;
+        if (previous != null && previous != Thread.currentThread()) previous.interrupt();
+        worker = new Thread(this::loopFastGuard, "SoundCeilingFallbackGuard");
+        worker.start();
+        DiagnosticLog.event("engine_mode_switch", "to=fallback reason=" + reason);
     }
 
     private void startWorker(Runnable runnable, String name) {
@@ -207,19 +219,19 @@ public class NormalizerService extends Service {
         FrequencyBandTracker bands = new FrequencyBandTracker(SAMPLE_RATE, CHANNELS);
         String stopReason = "Остановлено";
         boolean stopError = false;
-        while (workerRunning.get()) {
+        while (workerRunning.get() && !fastOnlyMode) {
             int n;
             try {
-                n = record.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
+                n = pcmCapture == null ? -1 : pcmCapture.read(buffer);
             } catch (RuntimeException e) {
                 DiagnosticLog.event("capture_exception", "errorClass=" + e.getClass().getSimpleName());
-                stopReason = "Ошибка чтения аудио";
-                stopError = true;
-                break;
+                switchToFallback("capture_exception:" + e.getClass().getSimpleName());
+                return;
             }
             if (n < 0) {
                 DiagnosticLog.event("capture_error", "code=" + n);
-                continue;
+                switchToFallback("capture_read_error:" + n);
+                return;
             }
             if (n == 0) continue;
 
@@ -241,7 +253,16 @@ public class NormalizerService extends Service {
             long now = SystemClock.elapsedRealtime();
             refreshRoute(false);
             refreshControlSettings(now, false);
+            DeviceProfileV2 deviceProfile = currentDeviceProfileV2();
+            enforceSystemStreams(deviceProfile, now);
             int current = observeVolumeAndEnforce(now);
+
+            GlobalVisualizerBackend.Reading outputMix = visualizer.isOpen() ? visualizer.read() : null;
+            boolean outputMixEvidence = outputMix != null && outputMix.valid;
+            hybridSnapshot = hybridRuntime.resolvePcm(pcmCapture, true, signal, outputMixEvidence,
+                    controlProfile, deviceProfile, now);
+            ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
+            refreshTransientGuard(effectiveProfile);
 
             if (manualSafety.isManualSafetyPause() && current <= safetySettings.minIndex) {
                 publishState(current, signal, rms, loud, blockPeak, Float.NaN, Float.NaN,
@@ -250,68 +271,72 @@ public class NormalizerService extends Service {
                 continue;
             }
 
-            int requested = current;
-            String reason = "hold";
+            int emergencyTarget = current;
             boolean emergency = false;
+            String reason = "hold";
+            TransientGuard.Event transientEvent = TransientGuard.Event.none(blockRms);
 
-            int peakTarget = PeakSafetyDetector.safeTargetForSourcePeak(blockPeak, current,
-                    controlCurve, controlProfile.sourcePeakThresholdDbfs,
-                    safetySettings.minIndex, safetySettings.maxIndex);
-            if (peakTarget < requested) {
-                requested = peakTarget;
-                reason = "raw_peak_emergency";
-                emergency = true;
-            }
-
-            TransientGuard.Event transientEvent = transientGuard.update(now, blockRms);
-            if (transientEvent.severity == TransientGuard.Severity.WARNING) {
-                int target = Math.max(safetySettings.minIndex, current - 1);
-                manualSafety.shrinkEffectiveMax(target, now);
-                if (target < requested) requested = target;
-                reason = "transient_warning";
-            } else if (transientEvent.severity == TransientGuard.Severity.EMERGENCY) {
-                int extraSteps = Math.max(2,
-                        (int) Math.ceil(Math.max(0f, transientEvent.deltaDb - controlProfile.transientWarningDb) / 3f));
-                int target = Math.max(safetySettings.minIndex, current - extraSteps);
-                manualSafety.shrinkEffectiveMax(target, now);
-                if (target < requested) requested = target;
-                reason = "transient_emergency";
-                emergency = true;
-            }
-
-            GlobalVisualizerBackend.Reading outputMix = visualizer.isOpen() ? visualizer.read() : null;
-            if (outputMix != null && outputMix.valid && outputMix.peakDb > controlProfile.sourcePeakThresholdDbfs) {
-                int target = PeakSafetyDetector.safeTargetForSourcePeak(outputMix.peakDb, current,
-                        controlCurve, controlProfile.sourcePeakThresholdDbfs,
+            if (hybridSnapshot.policy.sourceControlEnabled) {
+                int peakTarget = PeakSafetyDetector.safeTargetForSourcePeak(blockPeak, current,
+                        controlCurve, effectiveProfile.sourcePeakThresholdDbfs,
                         safetySettings.minIndex, safetySettings.maxIndex);
-                if (target < requested) {
-                    requested = target;
-                    reason = "output_mix_peak_emergency";
+                if (peakTarget < emergencyTarget) {
+                    emergencyTarget = peakTarget;
+                    reason = "raw_peak_emergency";
                     emergency = true;
+                }
+
+                transientEvent = transientGuard.update(now, blockRms);
+                if (transientEvent.severity == TransientGuard.Severity.WARNING) {
+                    int target = Math.max(safetySettings.minIndex, current - 1);
+                    manualSafety.shrinkEffectiveMax(target, now);
+                    emergencyTarget = Math.min(emergencyTarget, target);
+                    reason = "transient_warning";
+                } else if (transientEvent.severity == TransientGuard.Severity.EMERGENCY) {
+                    int extraSteps = Math.max(2,
+                            (int) Math.ceil(Math.max(0f, transientEvent.deltaDb
+                                    - effectiveProfile.transientWarningDb) / 3f));
+                    int target = Math.max(safetySettings.minIndex, current - extraSteps);
+                    manualSafety.shrinkEffectiveMax(target, now);
+                    emergencyTarget = Math.min(emergencyTarget, target);
+                    reason = "transient_emergency";
+                    emergency = true;
+                }
+
+                if (outputMixEvidence && outputMix.peakDb > effectiveProfile.sourcePeakThresholdDbfs) {
+                    int target = PeakSafetyDetector.safeTargetForSourcePeak(outputMix.peakDb, current,
+                            controlCurve, effectiveProfile.sourcePeakThresholdDbfs,
+                            safetySettings.minIndex, safetySettings.maxIndex);
+                    if (target < emergencyTarget) {
+                        emergencyTarget = target;
+                        reason = "output_mix_peak_emergency";
+                        emergency = true;
+                    }
                 }
             }
 
             boolean missingSplProfile = Prefs.splMode(this) && currentProfile == null;
             ControlDecision legacyDecision = null;
-            if (!emergency && requested == current && !missingSplProfile) {
+            int comfortTarget = current;
+            if (!emergency && !missingSplProfile && hybridSnapshot.policy.sourceControlEnabled) {
                 if (Prefs.splMode(this)) {
                     float measuredGain = measurementCurve.gainDbForIndex(current, currentDeviceType);
                     DecisionEngine.Input input = DecisionEngine.Input.spl(now, rms.controlRmsDb,
                             rms.peakHoldDb, signal, current, measuredGain,
                             currentProfile.calibrationOffsetDb, Prefs.targetSpl(this), Prefs.splCeiling(this),
-                            controlProfile.normalizationPreset != NormalizationPreset.OFF,
-                            controlProfile.normalizationStrength, controlProfile.maxMediaPercent,
-                            controlProfile.autoMute, Prefs.speedPreset(this),
+                            effectiveProfile.normalizationPreset != NormalizationPreset.OFF,
+                            effectiveProfile.normalizationStrength, effectiveProfile.maxMediaPercent,
+                            effectiveProfile.autoMute, Prefs.speedPreset(this),
                             loudnessState.lastUpAtMs, loudnessState.lastDownAtMs,
                             loudnessState.loudHoldUntilMs);
                     legacyDecision = DecisionEngine.decide(input, controlCurve);
-                    requested = legacyDecision.requestedIndex;
+                    comfortTarget = legacyDecision.requestedIndex;
                     reason = legacyDecision.reason;
                 } else {
                     LoudnessControlPolicy.Result normal = LoudnessControlPolicy.decide(now,
                             loud.lufsLike, blockPeak, !manualSafety.isPausedForRaise(), current,
-                            controlCurve, controlProfile, loudnessState);
-                    requested = normal.requestedIndex;
+                            controlCurve, effectiveProfile, loudnessState);
+                    comfortTarget = normal.requestedIndex;
                     reason = normal.reason;
                 }
             } else if (missingSplProfile) {
@@ -319,7 +344,17 @@ public class NormalizerService extends Service {
                 DiagnosticLog.event("missing_spl_profile", "route=" + DeviceDetector.label(currentDevice));
             }
 
-            if (manualSafety.isPausedForRaise() && requested > current) requested = current;
+            int policyMaxIndex = Math.min(manualSafety.effectiveMax(),
+                    controlCurve.capIndexFromPercent(hybridSnapshot.policy.maxMediaPercent));
+            HybridEngineCoordinator.ControlPlan plan = HybridEngineCoordinator.plan(
+                    current, emergencyTarget, comfortTarget, policyMaxIndex,
+                    hybridSnapshot.policy, manualSafety.isPausedForRaise(), emergency);
+            int requested = plan.requestedIndex;
+            if (plan.raiseBlocked && comfortTarget > current) {
+                DiagnosticLog.event("raise_blocked", "reason=" + plan.reason
+                        + " source=" + sourceSummary(hybridSnapshot));
+            }
+
             int applied = safeVolume.applyRequested(requested, current, safetySettings,
                     manualSafety.effectiveMax(), now);
             long reactionLatency = emergency && applied < current
@@ -327,7 +362,7 @@ public class NormalizerService extends Service {
             if (applied < current) {
                 lastChange = now;
                 loudnessState.lastDownAtMs = now;
-                loudnessState.loudHoldUntilMs = now + controlProfile.holdAfterLoudMs;
+                loudnessState.loudHoldUntilMs = now + effectiveProfile.holdAfterLoudMs;
             } else if (applied > current) {
                 lastChange = now;
                 loudnessState.lastUpAtMs = now;
@@ -335,10 +370,11 @@ public class NormalizerService extends Service {
             if (applied > controlCurve.minIndex()) lastAppliedNonzero = applied;
 
             if (applied != current || emergency || transientEvent.severity != TransientGuard.Severity.NONE) {
-                DiagnosticLog.event("v04_control", String.format(Locale.US,
-                        "reason=%s current=%d requested=%d applied=%d rawPeak=%.2f loudness=%.2f transient=%.2f latencyMs=%d",
-                        reason, current, requested, applied, blockPeak, loud.lufsLike,
-                        transientEvent.deltaDb, reactionLatency));
+                DiagnosticLog.event("hybrid_control", String.format(Locale.US,
+                        "reason=%s plan=%s current=%d requested=%d applied=%d rawPeak=%.2f loudness=%.2f transient=%.2f latencyMs=%d source=%s pcm=%s confidence=%s",
+                        reason, plan.reason, current, requested, applied, blockPeak, loud.lufsLike,
+                        transientEvent.deltaDb, reactionLatency, sourceSummary(hybridSnapshot),
+                        hybridSnapshot.pcmState, hybridSnapshot.sources.confidence));
             }
 
             float estRms = Float.NaN;
@@ -355,36 +391,48 @@ public class NormalizerService extends Service {
                     : RuntimeState.ControlActivity.HOLDING;
             String message = missingSplProfile ? "Нет SPL-калибровки · safety работает"
                     : emergency ? "Аварийная защита сработала"
+                    : plan.raiseBlocked && comfortTarget > current ? "Авто-повышение приостановлено · " + plan.reason
                     : manualSafety.isPausedForRaise() ? "Ручное снижение · авто-повышение приостановлено"
-                    : signal ? (Prefs.splMode(this) ? "Работает · dB SPL" : "Работает · LUFS-like")
-                    : "Ожидание звука";
+                    : StatusText.engine(baseState(new RuntimeState.Builder(), applied).running(true).build());
             publishState(applied, signal, rms, loud, blockPeak, estRms, estPeak, activity,
                     message, legacyDecision, bands, buffer, n, reactionLatency);
         }
-        stopSafe(stopReason, stopError);
+        if (!fastOnlyMode) stopSafe(stopReason, stopError);
     }
 
     private void loopFastGuard() {
-        while (workerRunning.get()) {
+        while (workerRunning.get() && fastOnlyMode) {
             long detectedAt = SystemClock.elapsedRealtime();
             refreshRoute(false);
             refreshControlSettings(detectedAt, false);
+            DeviceProfileV2 deviceProfile = currentDeviceProfileV2();
+            enforceSystemStreams(deviceProfile, detectedAt);
             int current = observeVolumeAndEnforce(detectedAt);
             GlobalVisualizerBackend.Reading reading = visualizer.isOpen() ? visualizer.read()
                     : new GlobalVisualizerBackend.Reading(false, DbMath.SILENCE_DBFS, DbMath.SILENCE_DBFS);
             boolean signal = reading.valid && reading.peakDb > -58f;
-            int requested = current;
+            hybridSnapshot = hybridRuntime.resolveFallback(reading.valid, controlProfile,
+                    deviceProfile, detectedAt);
+            ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
+
+            int emergencyTarget = current;
             boolean emergency = false;
             if (!manualSafety.isManualSafetyPause() && reading.valid
-                    && reading.peakDb > controlProfile.sourcePeakThresholdDbfs) {
-                requested = PeakSafetyDetector.safeTargetForSourcePeak(reading.peakDb, current,
-                        controlCurve, controlProfile.sourcePeakThresholdDbfs,
+                    && hybridSnapshot.policy.sourceControlEnabled
+                    && reading.peakDb > effectiveProfile.sourcePeakThresholdDbfs) {
+                emergencyTarget = PeakSafetyDetector.safeTargetForSourcePeak(reading.peakDb, current,
+                        controlCurve, effectiveProfile.sourcePeakThresholdDbfs,
                         safetySettings.minIndex, safetySettings.maxIndex);
-                emergency = requested < current;
+                emergency = emergencyTarget < current;
             }
+            int policyMaxIndex = Math.min(manualSafety.effectiveMax(),
+                    controlCurve.capIndexFromPercent(hybridSnapshot.policy.fallbackMaxPercent));
+            HybridEngineCoordinator.ControlPlan plan = HybridEngineCoordinator.plan(
+                    current, emergencyTarget, current, policyMaxIndex, hybridSnapshot.policy,
+                    manualSafety.isPausedForRaise(), emergency);
             int applied = current;
             if (!(manualSafety.isManualSafetyPause() && current <= safetySettings.minIndex)) {
-                applied = safeVolume.applyRequested(requested, current, safetySettings,
+                applied = safeVolume.applyRequested(plan.requestedIndex, current, safetySettings,
                         manualSafety.effectiveMax(), detectedAt);
             }
             long latency = emergency && applied < current
@@ -402,19 +450,19 @@ public class NormalizerService extends Service {
                     .loudness(reading.peakDb, reading.rmsDb)
                     .reactionLatencyMs(latency)
                     .message(manualSafety.isManualSafetyPause() ? "Приостановлено ручной громкостью"
-                            : reading.valid ? "Быстрый safety · без точного LUFS"
-                            : "Media guard · анализ звука недоступен")
+                            : StatusText.engine(baseState(new RuntimeState.Builder(), applied).running(true).build()))
                     .build();
             RuntimeStateStore.publish(state);
             updateNotification(state);
             if (emergency && applied < current) {
                 DiagnosticLog.event("fast_peak_guard", "current=" + current + " applied=" + applied
-                        + " peak=" + reading.peakDb + " latencyMs=" + latency);
+                        + " peak=" + reading.peakDb + " latencyMs=" + latency
+                        + " source=" + sourceSummary(hybridSnapshot));
             }
             try { Thread.sleep(reading.valid ? 20L : 50L); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
         }
-        stopSafe("Остановлено", false);
+        if (workerRunning.get()) stopSafe("Остановлено", false);
     }
 
     private int observeVolumeAndEnforce(long now) {
@@ -482,14 +530,28 @@ public class NormalizerService extends Service {
     }
 
     private RuntimeState.Builder baseState(RuntimeState.Builder builder, int volume) {
-        return builder.volume(volume, controlCurve.maxIndex())
+        RuntimeState.Builder out = builder.volume(volume, controlCurve.maxIndex())
                 .safety(manualSafety != null && manualSafety.isManualSafetyPause(),
                         manualSafety == null ? safetySettings.maxIndex : manualSafety.effectiveMax(),
                         safetySettings.safetyLockEnabled, safetySettings.safetyLockIndex)
                 .backendLabel(backendStatus.label())
                 .routeLabel(DeviceDetector.label(currentDevice))
-                .profileName(currentProfile == null ? "" : currentProfile.name)
+                .profileName(currentProfileV2 != null ? currentProfileV2.name
+                        : currentProfile == null ? "" : currentProfile.name)
                 .logStatus(logger == null ? "" : logger.status());
+        if (hybridSnapshot != null) {
+            SourceDescriptor exact = hybridSnapshot.exactSource;
+            out.hybrid(hybridSnapshot.pcmState, hybridSnapshot.sources.confidence,
+                    hybridSnapshot.capabilities.metering, hybridSnapshot.capabilities.volumeControl,
+                    hybridSnapshot.capabilities.dspTransport,
+                    exact == null ? "" : exact.packageName,
+                    exact == null ? sourceSummary(hybridSnapshot) : exact.displayName,
+                    hybridSnapshot.exactAppPolicy == null ? hybridSnapshot.sources.confidence.name()
+                            : hybridSnapshot.exactAppPolicy.mode.name(),
+                    hybridSnapshot.policy.raiseBlockReason.isEmpty()
+                            ? hybridSnapshot.capabilities.reason : hybridSnapshot.policy.raiseBlockReason);
+        }
+        return out;
     }
 
     private void refreshControlSettings(long now, boolean force) {
@@ -509,10 +571,32 @@ public class NormalizerService extends Service {
                     nextSafety.recoveryIntervalMs, now);
         }
         safetySettings = nextSafety;
-        transientGuard = new TransientGuard(next.transientWarningDb, next.transientEmergencyDb);
+        refreshTransientGuard(next);
         DiagnosticLog.event("settings_reload", "max=" + nextSafety.maxIndex + " lock="
                 + nextSafety.safetyLockEnabled + ":" + nextSafety.safetyLockIndex
                 + " preset=" + next.normalizationPreset.key);
+    }
+
+    private void refreshTransientGuard(ControlProfile profile) {
+        if (transientGuard == null
+                || Float.compare(transientWarningConfig, profile.transientWarningDb) != 0
+                || Float.compare(transientEmergencyConfig, profile.transientEmergencyDb) != 0) {
+            transientWarningConfig = profile.transientWarningDb;
+            transientEmergencyConfig = profile.transientEmergencyDb;
+            transientGuard = new TransientGuard(transientWarningConfig, transientEmergencyConfig);
+        }
+    }
+
+    private ControlProfile profileForPolicy(EffectivePolicy p) {
+        return new ControlProfile(controlProfile.minMediaIndex, p.maxMediaPercent,
+                controlProfile.safetyLockEnabled, controlProfile.safetyLockPercent,
+                controlProfile.quietIndex, controlProfile.normalizationPreset,
+                p.targetLoudness, controlProfile.toleranceLu, p.normalizationStrength,
+                controlProfile.downwardAttackMs, controlProfile.upwardReleaseMs,
+                controlProfile.holdAfterLoudMs, controlProfile.maxDownSteps,
+                controlProfile.maxUpSteps, p.sourcePeakThresholdDbfs,
+                p.transientWarningDb, p.transientEmergencyDb, controlProfile.autoMute,
+                controlProfile.recoveryIntervalMs);
     }
 
     private SafetySettings toSafetySettings(ControlProfile profile) {
@@ -534,7 +618,7 @@ public class NormalizerService extends Service {
     private void openLogger() throws IOException {
         MeasurementVolumeCurve.Snapshot m = measurementCurve.snapshot(currentDeviceType);
         String header = String.format(Locale.US,
-                "HEADER version=0.4.0 manufacturer=%s model=%s sdk=%d route=%s backend=%s min=%d max=%d current=%d safetyLock=%s safetyIndex=%d quiet=%d preset=%s targetLoudness=%.1f tolerance=%.1f peakThreshold=%.1f splMode=%s targetSpl=%.1f splCeiling=%.1f rawCurve=%s measuredCurve=%s controlCurve=%s",
+                "HEADER version=0.5.0 manufacturer=%s model=%s sdk=%d route=%s backend=%s min=%d max=%d current=%d safetyLock=%s safetyIndex=%d quiet=%d preset=%s targetLoudness=%.1f tolerance=%.1f peakThreshold=%.1f splMode=%s targetSpl=%.1f splCeiling=%.1f rawCurve=%s measuredCurve=%s controlCurve=%s",
                 clean(Build.MANUFACTURER), clean(Build.MODEL), Build.VERSION.SDK_INT,
                 clean(DeviceDetector.label(currentDevice)), clean(backendStatus.label()),
                 safetySettings.minIndex, safetySettings.maxIndex,
@@ -564,10 +648,59 @@ public class NormalizerService extends Service {
             currentDevice = detected;
             currentDeviceType = DeviceDetector.type(detected);
             currentProfile = ProfileStore.find(this, detected);
-            DiagnosticLog.event("route_change", "route=" + DeviceDetector.label(detected));
+            currentProfileV2 = DeviceProfileV2Store.find(this, newKey);
+            if (currentProfileV2 == null && currentProfile != null) {
+                currentProfileV2 = DeviceProfileMigrator.fromV04(currentProfile);
+                DeviceProfileV2Store.save(this, currentProfileV2);
+            }
+            DiagnosticLog.event("route_change", "route=" + DeviceDetector.label(detected)
+                    + " profile=" + (currentProfileV2 == null ? "default" : currentProfileV2.key));
         } else if (currentProfile == null) {
             currentProfile = ProfileStore.find(this, detected);
         }
+    }
+
+    private DeviceProfileV2 currentDeviceProfileV2() {
+        if (currentProfileV2 != null) return currentProfileV2;
+        String key = DeviceDetector.key(currentDevice);
+        String label = DeviceDetector.label(currentDevice);
+        String product = currentDevice == null || currentDevice.getProductName() == null
+                ? "Android output" : currentDevice.getProductName().toString();
+        float calibration = currentProfile == null ? 0f : currentProfile.calibrationOffsetDb;
+        currentProfileV2 = new DeviceProfileV2(key, label, currentDeviceType, product,
+                calibration, controlProfile.maxMediaPercent,
+                Math.min(50, controlProfile.maxMediaPercent), SystemStreamPolicies.defaults(),
+                Prefs.activeProfileKey(this), Collections.emptyMap(),
+                DeviceProfileV2.SCHEMA_VERSION, System.currentTimeMillis());
+        DeviceProfileV2Store.save(this, currentProfileV2);
+        return currentProfileV2;
+    }
+
+    private void enforceSystemStreams(DeviceProfileV2 deviceProfile, long now) {
+        if (now - lastSystemStreamCheck < 500L || deviceProfile == null) return;
+        lastSystemStreamCheck = now;
+        for (Map.Entry<SystemStreamPolicy.Kind, SystemStreamPolicy> entry
+                : deviceProfile.streamPolicies().entrySet()) {
+            if (entry.getKey() == SystemStreamPolicy.Kind.MEDIA || !entry.getValue().enabled) continue;
+            SystemStreamController.Result result = systemStreams.enforce(entry.getKey(), entry.getValue());
+            if (result.changed) {
+                DiagnosticLog.event("system_stream_cap", "kind=" + entry.getKey()
+                        + " from=" + result.observedIndex + " to=" + result.appliedIndex);
+            } else if (!result.supported) {
+                DiagnosticLog.event("system_stream_unavailable", "kind=" + entry.getKey()
+                        + " reason=" + result.reason);
+            }
+        }
+    }
+
+    private static String sourceSummary(HybridRuntimeResolver.Snapshot snapshot) {
+        if (snapshot == null || snapshot.sources.sources().isEmpty()) return "unknown";
+        StringBuilder out = new StringBuilder();
+        for (SourceDescriptor source : snapshot.sources.sources()) {
+            if (out.length() > 0) out.append('+');
+            out.append(source.packageName);
+        }
+        return out.toString();
     }
 
     private void startForegroundNow() {
@@ -589,8 +722,7 @@ public class NormalizerService extends Service {
             level = String.format(Locale.US, "%.1f LUFS-like", state.sourceLoudness);
         else if (state.running) level = String.format(Locale.US, "Peak %.1f dBFS", state.rawPeakDbfs);
         else level = "Контроль громкости";
-        String text = level + " · " + StatusText.controller(state).replace("Регулятор: ", "")
-                + " · " + StatusText.media(state);
+        String text = StatusText.engine(state) + " · " + level + " · " + StatusText.media(state);
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
         PendingIntent quiet = PendingIntent.getService(this, 4101,
                 new Intent(this, NormalizerService.class).setAction(ACTION_QUIET), pendingFlags);
@@ -598,7 +730,7 @@ public class NormalizerService extends Service {
                 new Intent(this, NormalizerService.class).setAction(ACTION_STOP), pendingFlags);
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_sound_ceiling_notification)
-                .setContentTitle("Sound Ceiling v0.4.0")
+                .setContentTitle("Sound Ceiling v0.5.0")
                 .setContentText(text)
                 .setOngoing(state.running)
                 .addAction(R.drawable.ic_sound_ceiling_notification, "Quiet now", quiet)
@@ -622,10 +754,9 @@ public class NormalizerService extends Service {
         DiagnosticLog.event("service_stop", "reason=" + clean(reason));
         if (worker != null && worker != Thread.currentThread()) worker.interrupt();
         worker = null;
-        if (record != null) {
-            try { record.stop(); } catch (RuntimeException ignored) {}
-            try { record.release(); } catch (RuntimeException ignored) {}
-            record = null;
+        if (pcmCapture != null) {
+            pcmCapture.close();
+            pcmCapture = null;
         }
         if (projection != null) {
             MediaProjection p = projection;
@@ -651,8 +782,10 @@ public class NormalizerService extends Service {
     @Override public void onDestroy() {
         workerRunning.set(false);
         if (worker != null) worker.interrupt();
+        if (pcmCapture != null) pcmCapture.close();
         if (visualizer != null) visualizer.close();
         if (optionalDsp != null) optionalDsp.close();
+        if (hybridRuntime != null) hybridRuntime.close();
         super.onDestroy();
     }
 
