@@ -2,6 +2,8 @@ package dev.soundceiling.app;
 
 import android.media.AudioManager;
 
+import java.util.EnumMap;
+
 /** Downward-only controller for explicitly opted-in non-Media Android streams. */
 final class SystemStreamController {
     static final class Result {
@@ -21,6 +23,9 @@ final class SystemStreamController {
     }
 
     private final AudioManager audio;
+    private final SystemStreamAttemptGate attempts = new SystemStreamAttemptGate();
+    private final EnumMap<SystemStreamPolicy.Kind, String> unsupportedReasons =
+            new EnumMap<>(SystemStreamPolicy.Kind.class);
 
     SystemStreamController(AudioManager audio) {
         this.audio = audio;
@@ -33,10 +38,13 @@ final class SystemStreamController {
         if (!policy.enabled) {
             return new Result(true, false, -1, -1, "system_stream_disabled");
         }
+        if (!attempts.shouldAttempt(kind, policy)) {
+            return new Result(false, false, -1, -1,
+                    unsupportedReasons.getOrDefault(kind, "system_stream_unavailable"));
+        }
         int stream = streamFor(kind);
         if (stream < 0) {
-            logAvailability(kind, false, "public_stream_unavailable");
-            return new Result(false, false, -1, -1, "system_stream_unavailable");
+            return markUnsupported(kind, "system_stream_unavailable:public_stream_unavailable");
         }
         try {
             int min = audio.getStreamMinVolume(stream);
@@ -45,23 +53,23 @@ final class SystemStreamController {
             int cap = min + Math.round((max - min) * (policy.ceilingPercent / 100f));
             cap = Math.max(min, Math.min(max, cap));
             if (current <= cap) {
-                logAvailability(kind, true, "available");
                 return new Result(true, false, current, current, "within_stream_ceiling");
             }
             audio.setStreamVolume(stream, cap, 0);
-            logAvailability(kind, true, "available");
             return new Result(true, true, current, cap, "system_stream_cap");
         } catch (RuntimeException e) {
-            String reason = "system_stream_unavailable:" + e.getClass().getSimpleName();
-            logAvailability(kind, false, reason);
-            return new Result(false, false, -1, -1, reason);
+            return markUnsupported(kind,
+                    "system_stream_unavailable:" + e.getClass().getSimpleName());
         }
     }
 
-    private static void logAvailability(SystemStreamPolicy.Kind kind, boolean supported, String reason) {
+    private Result markUnsupported(SystemStreamPolicy.Kind kind, String reason) {
+        attempts.markUnsupported(kind);
+        unsupportedReasons.put(kind, reason);
         DiagnosticLog.transition("system_stream_unavailable",
-                kind.name() + ":" + supported + ":" + reason,
-                "kind=" + kind + " active=" + !supported + " reason=" + reason);
+                kind.name() + ":" + reason,
+                "kind=" + kind + " active=true reason=" + reason);
+        return new Result(false, false, -1, -1, reason);
     }
 
     private static int streamFor(SystemStreamPolicy.Kind kind) {
