@@ -25,6 +25,10 @@ jobs:
         run: bash ./scripts/check-v05-app-contract.sh
       - name: Check source invariants
         run: ./scripts/check-source-invariants.sh
+      - name: Check v0.5 targeted PCM contract
+        run: bash ./scripts/check-v05-pcm-contract.sh
+      - name: Check v0.5 microphone isolation
+        run: bash ./scripts/check-v05-microphone-invariant.sh
       - name: Check legacy UI contract
         run: bash ./scripts/check-ui-contract.sh
       - name: Check v0.4 UI contract
