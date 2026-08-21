@@ -5,6 +5,7 @@ on:
     paths:
       - "scripts/v06-dev-apply.py"
       - "scripts/v06-dev-ui-apply.py"
+      - "scripts/v06-dev-cleanup.py"
       - ".github/workflows/v06-dev-apply.yml"
 permissions:
   contents: write
@@ -20,6 +21,8 @@ jobs:
         run: python scripts/v06-dev-apply.py
       - name: Apply deterministic UI patch
         run: python scripts/v06-dev-ui-apply.py
+      - name: Normalize dev patch output
+        run: python scripts/v06-dev-cleanup.py
       - name: Commit patch if needed
         shell: bash
         run: |
@@ -30,5 +33,5 @@ jobs:
           git config user.name "soundceiling-dev-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/dev/soundceiling/app tests scripts
-          git commit -m "refactor: align v0.6 unified one-way UI"
+          git commit -m "chore: normalize v0.6 development patches"
           git push origin HEAD:feature/v0.6-one-way-adaptive
