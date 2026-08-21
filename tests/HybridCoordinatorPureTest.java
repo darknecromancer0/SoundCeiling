@@ -5,8 +5,8 @@ public final class HybridCoordinatorPureTest {
         testEmergencyDownAlwaysWins();
         testUncertainPolicyCannotRaise();
         testOffSourceHoldsComfortChanges();
-        testExactPolicyMayRaiseWithinMax();
-        testManualPauseBlocksRaise();
+        testExactPolicyStillCannotRaise();
+        testManualPauseExplainsHold();
         System.out.println("HybridCoordinatorPureTest: PASS");
     }
 
@@ -33,19 +33,20 @@ public final class HybridCoordinatorPureTest {
         assertEquals(7, down.requestedIndex, "OFF source must not get source-specific shared-stream change");
     }
 
-    private static void testExactPolicyMayRaiseWithinMax() {
+    private static void testExactPolicyStillCannotRaise() {
         EffectivePolicy exact = policy(true, true, false, 55, "");
         HybridEngineCoordinator.ControlPlan p = HybridEngineCoordinator.plan(
                 3, 3, 7, 6, exact, false, false);
-        assertEquals(6, p.requestedIndex, "raise clamped to effective max index");
+        assertEquals(3, p.requestedIndex, "v0.6 exact policy still cannot auto-raise Media");
+        if (!p.raiseBlocked) throw new AssertionError("one-way hold should be explicit");
     }
 
-    private static void testManualPauseBlocksRaise() {
+    private static void testManualPauseExplainsHold() {
         EffectivePolicy exact = policy(true, true, false, 70, "");
         HybridEngineCoordinator.ControlPlan p = HybridEngineCoordinator.plan(
                 3, 3, 6, 10, exact, true, false);
         assertEquals(3, p.requestedIndex, "manual pause no raise");
-        if (!p.raiseBlocked) throw new AssertionError("manual pause should explain raise block");
+        if (!p.raiseBlocked) throw new AssertionError("manual pause should explain hold");
     }
 
     private static EffectivePolicy policy(boolean sourceControl, boolean raise, boolean limiter,
