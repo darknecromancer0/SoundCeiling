@@ -96,7 +96,7 @@ public class NormalizerService extends Service {
         refreshControlSettings(SystemClock.elapsedRealtime(), true);
         int initial = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
         writeTracker.observeInitial(initial);
-        manualSafety.observeUserIndex(initial, SystemClock.elapsedRealtime());
+        manualSafety.observeInitialIndex(initial, SystemClock.elapsedRealtime());
         refreshRoute(true);
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(
@@ -289,7 +289,6 @@ public class NormalizerService extends Service {
                 transientEvent = transientGuard.update(now, blockRms);
                 if (transientEvent.severity == TransientGuard.Severity.WARNING) {
                     int target = Math.max(safetySettings.minIndex, current - 1);
-                    manualSafety.shrinkEffectiveMax(target, now);
                     emergencyTarget = Math.min(emergencyTarget, target);
                     reason = "transient_warning";
                 } else if (transientEvent.severity == TransientGuard.Severity.EMERGENCY) {
@@ -297,7 +296,6 @@ public class NormalizerService extends Service {
                             (int) Math.ceil(Math.max(0f, transientEvent.deltaDb
                                     - effectiveProfile.transientWarningDb) / 3f));
                     int target = Math.max(safetySettings.minIndex, current - extraSteps);
-                    manualSafety.shrinkEffectiveMax(target, now);
                     emergencyTarget = Math.min(emergencyTarget, target);
                     reason = "transient_emergency";
                     emergency = true;
@@ -355,17 +353,20 @@ public class NormalizerService extends Service {
                         + " source=" + sourceSummary(hybridSnapshot));
             }
 
+            VolumeWriteTracker.WriteOrigin writeOrigin = VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN;
+            if (emergency) {
+                writeOrigin = reason.startsWith("transient")
+                        ? VolumeWriteTracker.WriteOrigin.TRANSIENT_EMERGENCY
+                        : VolumeWriteTracker.WriteOrigin.PEAK_EMERGENCY;
+            }
             int applied = safeVolume.applyRequested(requested, current, safetySettings,
-                    manualSafety.effectiveMax(), now);
+                    manualSafety.effectiveMax(), effectiveProfile.autoMute && emergency, now, writeOrigin);
             long reactionLatency = emergency && applied < current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
             if (applied < current) {
                 lastChange = now;
                 loudnessState.lastDownAtMs = now;
                 loudnessState.loudHoldUntilMs = now + effectiveProfile.holdAfterLoudMs;
-            } else if (applied > current) {
-                lastChange = now;
-                loudnessState.lastUpAtMs = now;
             }
             if (applied > controlCurve.minIndex()) lastAppliedNonzero = applied;
 
@@ -385,14 +386,13 @@ public class NormalizerService extends Service {
                 estPeak = rms.peakHoldDb + gain + currentProfile.calibrationOffsetDb;
             }
             RuntimeState.ControlActivity activity = applied < current ? RuntimeState.ControlActivity.DECREASING
-                    : applied > current ? RuntimeState.ControlActivity.RAISING
                     : manualSafety.isManualSafetyPause() ? RuntimeState.ControlActivity.MINIMUM_LIMIT
                     : applied >= safetySettings.hardMax() ? RuntimeState.ControlActivity.MAXIMUM_LIMIT
                     : RuntimeState.ControlActivity.HOLDING;
             String message = missingSplProfile ? "Нет SPL-калибровки · safety работает"
                     : emergency ? "Аварийная защита сработала"
-                    : plan.raiseBlocked && comfortTarget > current ? "Авто-повышение приостановлено · " + plan.reason
-                    : manualSafety.isPausedForRaise() ? "Ручное снижение · авто-повышение приостановлено"
+                    : plan.raiseBlocked && comfortTarget > current ? "Ниже Target · удержание"
+                    : manualSafety.isPausedForRaise() ? "Ручной уровень · автоматическое повышение отключено"
                     : StatusText.engine(baseState(new RuntimeState.Builder(), applied).running(true).build());
             publishState(applied, signal, rms, loud, blockPeak, estRms, estPeak, activity,
                     message, legacyDecision, bands, buffer, n, reactionLatency);
@@ -433,7 +433,9 @@ public class NormalizerService extends Service {
             int applied = current;
             if (!(manualSafety.isManualSafetyPause() && current <= safetySettings.minIndex)) {
                 applied = safeVolume.applyRequested(plan.requestedIndex, current, safetySettings,
-                        manualSafety.effectiveMax(), detectedAt);
+                        manualSafety.effectiveMax(), effectiveProfile.autoMute && emergency, detectedAt,
+                        emergency ? VolumeWriteTracker.WriteOrigin.PEAK_EMERGENCY
+                                : VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN);
             }
             long latency = emergency && applied < current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
@@ -469,10 +471,23 @@ public class NormalizerService extends Service {
         int current;
         try { current = audio.getStreamVolume(AudioManager.STREAM_MUSIC); }
         catch (RuntimeException e) { return safetySettings.minIndex; }
-        VolumeWriteTracker.Origin origin = writeTracker.classifyObserved(current, now);
-        if (origin == VolumeWriteTracker.Origin.USER) {
+        VolumeWriteTracker.Observation observation = writeTracker.observe(current, now);
+        if (observation.kind == VolumeWriteTracker.ObservationKind.USER_CHANGE) {
             manualSafety.observeUserIndex(current, now);
-            DiagnosticLog.event("user_volume_change", "index=" + current);
+            DiagnosticLog.event("user_volume_change", "previous=" + observation.previousIndex
+                    + " index=" + current);
+        } else if (observation.kind == VolumeWriteTracker.ObservationKind.APP_WRITE_ACK) {
+            DiagnosticLog.event("app_write_ack", "origin=" + observation.writeOrigin
+                    + " previous=" + observation.previousIndex
+                    + " expected=" + observation.expectedIndex
+                    + " observed=" + observation.observedIndex
+                    + " latencyMs=" + observation.latencyMs);
+        } else if (observation.kind == VolumeWriteTracker.ObservationKind.APP_WRITE_MISMATCH) {
+            DiagnosticLog.event("automatic_write_mismatch", "origin=" + observation.writeOrigin
+                    + " previous=" + observation.previousIndex
+                    + " expected=" + observation.expectedIndex
+                    + " observed=" + observation.observedIndex
+                    + " latencyMs=" + observation.latencyMs);
         }
         manualSafety.tick(now);
         if (current > safetySettings.hardMax()) {
@@ -480,8 +495,11 @@ public class NormalizerService extends Service {
             DiagnosticLog.event("safety_lock_clamp", "observed=" + current + " applied=" + applied);
             return applied;
         }
-        if (current == controlCurve.minIndex() && lastAppliedNonzero > controlCurve.minIndex()) {
-            DiagnosticLog.event("external_zero_detected", "previous=" + lastAppliedNonzero + " current=" + current);
+        if (current == controlCurve.minIndex()
+                && lastAppliedNonzero > controlCurve.minIndex()
+                && observation.kind == VolumeWriteTracker.ObservationKind.APP_WRITE_MISMATCH) {
+            DiagnosticLog.event("external_zero_detected", "previous=" + lastAppliedNonzero
+                    + " current=" + current + " reason=write_mismatch");
         }
         return current;
     }
@@ -494,14 +512,15 @@ public class NormalizerService extends Service {
         SafetySettings quietSettings = new SafetySettings(controlCurve.minIndex(), safetySettings.maxIndex,
                 safetySettings.safetyLockEnabled, safetySettings.safetyLockIndex, quiet,
                 safetySettings.recoveryIntervalMs);
-        int applied = safeVolume.applyRequested(quiet, current, quietSettings, quiet, now);
+        int applied = safeVolume.applyRequested(quiet, current, quietSettings, quiet, false, now,
+                VolumeWriteTracker.WriteOrigin.QUIET_NOW);
         manualSafety.quietNow(applied, now);
         DiagnosticLog.event("quiet_now", "from=" + current + " applied=" + applied);
         RuntimeState state = baseState(new RuntimeState.Builder(), applied)
                 .running(workerRunning.get()).captureStatus(workerRunning.get()
                         ? RuntimeState.CaptureStatus.RUNNING : RuntimeState.CaptureStatus.STOPPED)
                 .controlActivity(RuntimeState.ControlActivity.MINIMUM_LIMIT)
-                .message("Quiet now · авто-повышение приостановлено").build();
+                .message("Quiet now · уровень только снижается или удерживается").build();
         RuntimeStateStore.publish(state);
         updateNotification(state);
     }
