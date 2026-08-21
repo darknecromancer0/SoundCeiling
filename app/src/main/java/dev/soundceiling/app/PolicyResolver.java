@@ -22,9 +22,7 @@ final class PolicyResolver {
         if (pcmState == null) throw new IllegalArgumentException("pcmState == null");
 
         int baseMax = Math.min(globalProfile.maxMediaPercent, deviceProfile.mediaCeilingPercent);
-        if (mediaPolicy != null) {
-            baseMax = Math.min(baseMax, mediaPolicy.ceilingPercent);
-        }
+        if (mediaPolicy != null) baseMax = Math.min(baseMax, mediaPolicy.ceilingPercent);
         int baseFallback = Math.min(baseMax, deviceProfile.fallbackCeilingPercent);
 
         MultiSourceResolver.Result sourceResult = MultiSourceResolver.resolve(
@@ -48,7 +46,8 @@ final class PolicyResolver {
         float transientWarning = globalProfile.transientWarningDb;
         float transientEmergency = globalProfile.transientEmergencyDb;
         boolean limiterOnly = sourceResult.limiterOnly;
-        if (exactPolicy != null && exactPolicy.mode == AppRule.Mode.CUSTOM) {
+        boolean exactCustom = exactPolicy != null && exactPolicy.mode == AppRule.Mode.CUSTOM;
+        if (exactCustom) {
             target = exactPolicy.targetLoudness;
             strength = exactPolicy.normalizationStrength;
             peakThreshold = exactPolicy.sourcePeakThresholdDbfs;
@@ -75,7 +74,9 @@ final class PolicyResolver {
             allowRaise = false;
             blockReason = "normalization_off";
         } else {
-            ConfidenceGate.Result confidence = ConfidenceGate.evaluate(sources, capabilities, pcmState);
+            ConfidenceGate.Result confidence = exactCustom
+                    ? ConfidenceGate.evaluateExactSource(sources, capabilities, pcmState)
+                    : ConfidenceGate.evaluateGlobalPcm(sources, capabilities, pcmState);
             if (!confidence.allowed) {
                 allowRaise = false;
                 blockReason = confidence.reason;
@@ -89,7 +90,8 @@ final class PolicyResolver {
             blockReason = "source_transition_hold";
         }
 
-        String resolution = sourceResult.reason + ";max=" + max + ";fallback=" + fallback;
+        String scope = exactCustom ? "exact_custom" : sources.sources().isEmpty() ? "global_unknown_source" : "global_shared";
+        String resolution = sourceResult.reason + ";scope=" + scope + ";max=" + max + ";fallback=" + fallback;
         return new EffectivePolicy(sourceControl, allowRaise, limiterOnly, max, fallback,
                 target, strength, peakThreshold, transientWarning, transientEmergency,
                 blockReason, resolution);
