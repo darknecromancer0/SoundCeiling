@@ -45,7 +45,7 @@ final class DrawerLayoutController {
         panel.setVisibility(View.GONE);
 
         TextView title = new TextView(activity);
-        title.setText("Sound Ceiling v0.4.0");
+        title.setText("Sound Ceiling v" + BuildConfig.VERSION_NAME);
         title.setTextSize(22);
         title.setTextColor(UiTheme.primaryText(activity));
         title.setPadding(dp(8), 0, dp(8), dp(16));
