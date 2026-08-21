@@ -37,6 +37,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SafetyGuard.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ManualSafetyController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ManualThresholdFollower.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AdaptiveVolumeEnvelope.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/UnexpectedZeroPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PeakSafetyDetector.java" \
@@ -80,7 +81,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/tests/EqLinkPureTest.java" \
  "$ROOT/tests/V060OneWayPureTest.java" \
  "$ROOT/tests/V060FastLoudnessPureTest.java" \
- "$ROOT/tests/V060RuntimeStatePureTest.java"
+ "$ROOT/tests/V060RuntimeStatePureTest.java" \
+ "$ROOT/tests/V070AdaptiveEnvelopePureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
 java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
 java -cp "$OUT" dev.soundceiling.app.LoudnessPolicyPeakThresholdTest
@@ -94,3 +96,4 @@ java -cp "$OUT" dev.soundceiling.app.EqLinkPureTest
 java -cp "$OUT" dev.soundceiling.app.V060OneWayPureTest
 java -cp "$OUT" dev.soundceiling.app.V060FastLoudnessPureTest
 java -cp "$OUT" dev.soundceiling.app.V060RuntimeStatePureTest
+java -cp "$OUT" dev.soundceiling.app.V070AdaptiveEnvelopePureTest
