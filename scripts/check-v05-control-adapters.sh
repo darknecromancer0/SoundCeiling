@@ -16,6 +16,9 @@ grep -Fq 'int verified = audio.getStreamVolume(stream)' "$PKG/SystemStreamContro
   echo "SystemStreamController must re-read the stream after a write" >&2; exit 1; }
 grep -Fq 'stream_write_not_applied' "$PKG/SystemStreamController.java" || {
   echo "SystemStreamController must degrade when Android/OEM ignores a stream write" >&2; exit 1; }
+if grep -Fq 'DiagnosticLog.event("system_stream_unavailable"' "$PKG/NormalizerService.java"; then
+  echo "System stream unavailable logging must be owned by the adapter to avoid duplicate transitions" >&2; exit 1
+fi
 if grep -Eq 'setStreamVolume|AudioTrack|DynamicsProcessing|Equalizer' "$PKG/UnsupportedPerAppVolumeController.java" "$PKG/UnsupportedDspTransport.java"; then
   echo "Unsupported adapters must not simulate control" >&2; exit 1
 fi
