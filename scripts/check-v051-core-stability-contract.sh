@@ -44,7 +44,7 @@ require "$PKG/EqView.java" 'Link Strength'
 # Logical log sessions and explicit storage UX.
 require "$PKG/LogStorage.java" 'Downloads/SoundCeilingLogs'
 require "$PKG/LogSessionsActivity.java" 'Одна работа SoundCeiling = одна сессия'
-require "$PKG/LogSessionsActivity.java" 'Выбрать папку логов'
+require "$PKG/LogSessionsActivity.java" 'Выбрать папку'
 require "$PKG/LogSessionsActivity.java" 'Default location'
 require "$PKG/LogAccess.java" 'LogSessionsActivity.class'
 require "$PKG/LogFilePolicy.java" 'Keep or delete all rotated parts of a session together'
