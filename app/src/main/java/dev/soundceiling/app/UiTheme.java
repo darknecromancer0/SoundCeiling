@@ -32,12 +32,12 @@ final class UiTheme {
 
     static void applyToTree(View view) {
         Context context = view.getContext();
-        view.setBackgroundColor(view instanceof ViewGroup ? background(context) : view.getSolidColor());
-        if (view instanceof TextView) ((TextView) view).setTextColor(primaryText(context));
         if (view instanceof ViewGroup) {
+            view.setBackgroundColor(background(context));
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) applyToTree(group.getChildAt(i));
         }
+        if (view instanceof TextView) ((TextView) view).setTextColor(primaryText(context));
     }
 
     private UiTheme() {}
