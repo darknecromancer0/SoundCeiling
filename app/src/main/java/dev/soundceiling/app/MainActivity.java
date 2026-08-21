@@ -1,3 +1,288 @@
 package dev.soundceiling.app;
-import android.Manifest;import android.app.*;import android.content.*;import android.content.pm.PackageManager;import android.graphics.*;import android.media.projection.MediaProjectionManager;import android.os.*;import android.view.*;import android.widget.*;
-public class MainActivity extends Activity{private static final int AUDIO=100,PROJECTION=101;private final Handler handler=new Handler(Looper.getMainLooper());private LinearLayout content;private TextView status;private Button start;private AppDestination destination;private final Runnable tick=new Runnable(){public void run(){render();handler.postDelayed(this,200);}};public void onCreate(Bundle b){super.onCreate(b);setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);setContentView(build());navigate(AppDestination.fromPreference(Prefs.uiMode(this)));}protected void onResume(){super.onResume();handler.post(tick);}protected void onPause(){handler.removeCallbacks(tick);super.onPause();}private View build(){LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(20),dp(18),dp(20));Button menu=new Button(this);menu.setText("☰  Меню");menu.setOnClickListener(v->showMenu());root.addView(menu);content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);root.addView(content,new LinearLayout.LayoutParams(-1,0,1));return root;}private void showMenu(){String[] labels={"Простой режим","Расширенный режим","Калибровка и тест","Открыть папку логов","Поделиться последним логом","О приложении"};new AlertDialog.Builder(this).setItems(labels,(d,w)->{if(w==0)navigate(AppDestination.SIMPLE);else if(w==1)navigate(AppDestination.ADVANCED);else if(w==2)navigate(AppDestination.CALIBRATION);else if(w==3)LogAccess.openFolder(this);else if(w==4)LogAccess.shareLatest(this);else navigate(AppDestination.ABOUT);}).show();}private void navigate(AppDestination d){destination=d;Prefs.get(this).edit().putString(Prefs.UI_MODE,d.key).apply();content.removeAllViews();ScrollView scroll=new ScrollView(this);LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(0,dp(14),0,dp(30));scroll.addView(box);TextView title=t(d==AppDestination.SIMPLE?"Sound Ceiling · Простой режим":d==AppDestination.ADVANCED?"Расширенный режим":d==AppDestination.CALIBRATION?"Калибровка и тест":"О приложении",26);box.addView(title);if(d==AppDestination.ABOUT){box.addView(t("Sound Ceiling v0.3.0\n\nЛоги: Download/SoundCeiling/Logs\nЛоги не содержат и не отправляют аудио.\n\nОграничения: защищённый звук может запрещать захват; приложение не является системным EQ или посэмпловым brickwall limiter.",15));}else if(d==AppDestination.CALIBRATION){box.addView(t("Проверить динамик\n\nКалибровочный тон 1 кГц · -30 dBFS · 3 сек\nДля точной SPL-калибровки используйте внешний измеритель.",16));Button tone=new Button(this);tone.setText("▶ Проверить динамик");tone.setOnClickListener(v->new ToneController(this).play(ToneController.Kind.SPEAKER_CHECK,Prefs.maxVolumePercent(this),new ToneController.Listener(){public void onTick(ToneController.Kind k,int r,int i){tone.setText("Тон: "+r+"…");}public void onComplete(ToneController.Result r){tone.setText("▶ Проверить динамик");}public void onError(ToneController.Kind k,String e){tone.setText("Ошибка: "+e);}}));box.addView(tone);}else{SeekBar comfort=new SeekBar(this);comfort.setMax(100);comfort.setProgress(ComfortScale.percentForTarget(Prefs.targetRms(this)));TextView label=t("Комфорт: "+comfort.getProgress()+"%",16);box.addView(label);box.addView(comfort);comfort.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int p,boolean user){if(user){Prefs.get(MainActivity.this).edit().putFloat(Prefs.TARGET_RMS,ComfortScale.targetRmsDbfs(p)).apply();label.setText("Комфорт: "+p+"% · "+ComfortScale.targetRmsDbfs(p)+" dBFS");}}public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){}});SeekBar max=new SeekBar(this);max.setMax(100);max.setProgress(Prefs.maxVolumePercent(this));box.addView(t("Максимальная Media-громкость",16));box.addView(max);max.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int p,boolean u){if(u)Prefs.get(MainActivity.this).edit().putInt(Prefs.MAX_VOLUME_PERCENT,Math.max(10,p)).apply();}public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){}});if(d==AppDestination.ADVANCED)box.addView(t("Скорость: быстро / баланс / мягко\nАнализ частот — показывает захваченный звук, но не изменяет его.\nАвто-mute по умолчанию выключен.",14));start=new Button(this);start.setText("Запустить");start.setOnClickListener(v->startStop());box.addView(start);status=t("Остановлено",15);box.addView(status);}content.addView(scroll,new LinearLayout.LayoutParams(-1,-1));render();}private void render(){RuntimeState s=RuntimeStateStore.get();if(start!=null){start.setText(s.running?"Остановить":"Запустить");status.setText(StatusText.capture(s)+"\n"+StatusText.signal(s)+"\n"+StatusText.controller(s)+" · "+StatusText.media(s));}}private void startStop(){if(RuntimeStateStore.get().running){startService(new Intent(this,NormalizerService.class).setAction(NormalizerService.ACTION_STOP));return;}if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},AUDIO);return;}requestProjection();}private void requestProjection(){MediaProjectionManager m=(MediaProjectionManager)getSystemService(Context.MEDIA_PROJECTION_SERVICE);startActivityForResult(m.createScreenCaptureIntent(),PROJECTION);}public void onRequestPermissionsResult(int r,String[] p,int[] g){super.onRequestPermissionsResult(r,p,g);if(r==AUDIO&&g.length>0&&g[0]==PackageManager.PERMISSION_GRANTED)requestProjection();}protected void onActivityResult(int r,int c,Intent data){super.onActivityResult(r,c,data);if(r==PROJECTION&&c==RESULT_OK&&data!=null)startForegroundService(new Intent(this,NormalizerService.class).putExtra(NormalizerService.EXTRA_RESULT_CODE,c).putExtra(NormalizerService.EXTRA_RESULT_DATA,data));}private TextView t(String s,float size){TextView v=new TextView(this);v.setText(s);v.setTextSize(size);v.setTextColor(Color.WHITE);v.setPadding(0,dp(8),0,dp(8));return v;}private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}}
+
+import android.Manifest;
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
+import android.media.projection.MediaProjectionManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+public class MainActivity extends Activity {
+    private static final int REQ_RECORD_AUDIO = 100;
+    private static final int REQ_MEDIA_PROJECTION = 101;
+    private static final int REQ_NOTIFICATIONS = 102;
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private AudioManager audio;
+    private MeasurementVolumeCurve measurementCurve;
+    private ToneController toneController;
+    private DrawerLayoutController drawer;
+    private FrameLayout screenHost;
+    private RuntimeScreen activeScreen;
+    private CalibrationView calibrationView;
+    private ToneController.Result lastCalibrationResult;
+
+    private final Runnable uiTick = new Runnable() {
+        @Override public void run() {
+            RuntimeState state = RuntimeStateStore.get();
+            if (activeScreen != null) activeScreen.render(state);
+            handler.postDelayed(this, 200L);
+        }
+    };
+
+    @Override protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        measurementCurve = new MeasurementVolumeCurve(audio);
+        toneController = new ToneController(this);
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
+        setContentView(buildShell());
+        navigate(AppDestination.fromPreference(Prefs.uiMode(this)));
+        maybeRequestNotificationPermission();
+    }
+
+    private View buildShell() {
+        LinearLayout main = new LinearLayout(this);
+        main.setOrientation(LinearLayout.VERTICAL);
+        main.setBackgroundColor(Color.rgb(16, 17, 20));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setPadding(dp(12), dp(10), dp(12), dp(8));
+        Button menu = new Button(this);
+        menu.setAllCaps(false);
+        menu.setText("☰");
+        menu.setTextSize(22);
+        top.addView(menu, new LinearLayout.LayoutParams(dp(56), dp(48)));
+        TextView title = new TextView(this);
+        title.setText("Sound Ceiling v0.3.0");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(19);
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        titleLp.leftMargin = dp(8);
+        top.addView(title, titleLp);
+        main.addView(top, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        screenHost = new FrameLayout(this);
+        main.addView(screenHost, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        drawer = new DrawerLayoutController(this, main, new DrawerLayoutController.Listener() {
+            @Override public void onNavigate(AppDestination destination) { navigate(destination); }
+            @Override public void onOpenLogs() { LogAccess.openFolder(MainActivity.this); }
+            @Override public void onShareLatestLog() { LogAccess.shareLatest(MainActivity.this); }
+        });
+        menu.setOnClickListener(v -> drawer.open());
+        return drawer.root();
+    }
+
+    private void navigate(AppDestination destination) {
+        Prefs.get(this).edit().putString(Prefs.UI_MODE, destination.key).apply();
+        screenHost.removeAllViews();
+        activeScreen = null;
+        calibrationView = null;
+        View screen;
+        switch (destination) {
+            case ADVANCED:
+                AdvancedModeView advanced = new AdvancedModeView(this, this::startStop);
+                activeScreen = advanced;
+                screen = advanced;
+                break;
+            case CALIBRATION:
+                calibrationView = new CalibrationView(this, new CalibrationView.Listener() {
+                    @Override public void onStopForTone(ToneController.Kind kind) {
+                        if (RuntimeStateStore.get().running) {
+                            startService(new Intent(MainActivity.this, NormalizerService.class)
+                                    .setAction(NormalizerService.ACTION_STOP));
+                        } else {
+                            playTone(kind);
+                        }
+                    }
+                    @Override public void onPlayTone(ToneController.Kind kind) { playTone(kind); }
+                    @Override public void onSaveCalibration(int measuredSpl) { saveCalibration(measuredSpl); }
+                    @Override public void onDeleteCalibration() { deleteCalibration(); }
+                });
+                activeScreen = calibrationView;
+                screen = calibrationView;
+                break;
+            case ABOUT:
+                screen = buildAboutView();
+                break;
+            case SIMPLE:
+            default:
+                SimpleModeView simple = new SimpleModeView(this, this::startStop);
+                activeScreen = simple;
+                screen = simple;
+                break;
+        }
+        screenHost.addView(screen, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        if (activeScreen != null) activeScreen.render(RuntimeStateStore.get());
+    }
+
+    private View buildAboutView() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(Color.rgb(16, 17, 20));
+        TextView text = new TextView(this);
+        text.setText("Sound Ceiling v0.3.0\n\n"
+                + "Логи: Download/SoundCeiling/Logs\n"
+                + "Логи не содержат и не отправляют аудио.\n\n"
+                + "Sound Ceiling анализирует разрешённый Android AudioPlaybackCapture и управляет Media-громкостью. "
+                + "Защищённый/DRM-звук и приложения, запретившие захват, могут быть недоступны для анализа.\n\n"
+                + "Ограничения: приложение не является системным EQ или посэмпловым brickwall limiter. "
+                + "Очень короткий первый пик может пройти до применения нового Media-шага.");
+        text.setTextColor(Color.WHITE);
+        text.setTextSize(16);
+        text.setLineSpacing(0, 1.12f);
+        text.setPadding(dp(22), dp(24), dp(22), dp(32));
+        scroll.addView(text);
+        return scroll;
+    }
+
+    private void startStop() {
+        RuntimeState state = RuntimeStateStore.get();
+        if (state.running) {
+            startService(new Intent(this, NormalizerService.class).setAction(NormalizerService.ACTION_STOP));
+            return;
+        }
+        if (Prefs.splMode(this)) {
+            AudioDeviceInfo device = DeviceDetector.detectOutputDevice(audio);
+            if (ProfileStore.find(this, device) == null) {
+                Toast.makeText(this,
+                        "Для режима dB SPL сначала откалибруйте текущий аудиовыход",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
+            return;
+        }
+        requestProjection();
+    }
+
+    private void playTone(ToneController.Kind kind) {
+        toneController.play(kind, Prefs.maxVolumePercent(this), new ToneController.Listener() {
+            @Override public void onTick(ToneController.Kind k, int secondsRemaining, int playbackIndex) {
+                if (calibrationView != null) calibrationView.onToneTick(k, secondsRemaining, playbackIndex);
+            }
+            @Override public void onComplete(ToneController.Result result) {
+                if (result.kind == ToneController.Kind.CALIBRATION) lastCalibrationResult = result;
+                if (calibrationView != null) calibrationView.onToneComplete(result);
+            }
+            @Override public void onError(ToneController.Kind k, String error) {
+                if (calibrationView != null) calibrationView.onToneError(k, error);
+            }
+        });
+    }
+
+    private void saveCalibration(int measuredSpl) {
+        ToneController.Result result = lastCalibrationResult != null
+                ? lastCalibrationResult : toneController.lastCalibrationResult();
+        if (result == null || result.kind != ToneController.Kind.CALIBRATION) {
+            Toast.makeText(this, "Сначала запустите калибровочный тон.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        AudioDeviceInfo device = result.routedDevice != null
+                ? result.routedDevice : DeviceDetector.detectOutputDevice(audio);
+        int deviceType = DeviceDetector.type(device);
+        float volumeGainDb = measurementCurve.gainDbForIndex(result.playbackIndex, deviceType);
+        float calibrationOffset = measuredSpl - ToneController.CALIBRATION_RMS_DBFS - volumeGainDb;
+        DeviceProfile profile = new DeviceProfile(
+                DeviceDetector.key(device), DeviceDetector.label(device), deviceType,
+                DeviceDetector.productName(device), calibrationOffset, System.currentTimeMillis());
+        ProfileStore.save(this, profile);
+        Prefs.get(this).edit().putInt(Prefs.LAST_MEASURED_SPL, measuredSpl).apply();
+        DiagnosticLog.event("calibration_saved", "route=" + DeviceDetector.label(device)
+                + " playbackIndex=" + result.playbackIndex + " measuredSpl=" + measuredSpl);
+        lastCalibrationResult = null;
+        Toast.makeText(this, "Профиль сохранён для " + profile.name, Toast.LENGTH_SHORT).show();
+        if (calibrationView != null) calibrationView.render(RuntimeStateStore.get());
+    }
+
+    private void deleteCalibration() {
+        AudioDeviceInfo device = DeviceDetector.detectOutputDevice(audio);
+        DeviceProfile profile = ProfileStore.find(this, device);
+        if (profile == null) {
+            Toast.makeText(this, "Для текущего выхода профиля нет.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ProfileStore.delete(this, profile.key);
+        DiagnosticLog.event("calibration_deleted", "route=" + DeviceDetector.label(device));
+        Toast.makeText(this, "Профиль удалён.", Toast.LENGTH_SHORT).show();
+    }
+
+    private void requestProjection() {
+        MediaProjectionManager manager =
+                (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+        startActivityForResult(manager.createScreenCaptureIntent(), REQ_MEDIA_PROJECTION);
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_RECORD_AUDIO && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            requestProjection();
+        }
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_MEDIA_PROJECTION && resultCode == RESULT_OK && data != null) {
+            Intent service = new Intent(this, NormalizerService.class)
+                    .putExtra(NormalizerService.EXTRA_RESULT_CODE, resultCode)
+                    .putExtra(NormalizerService.EXTRA_RESULT_DATA, data);
+            startForegroundService(service);
+        }
+    }
+
+    private void maybeRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+        }
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        handler.removeCallbacks(uiTick);
+        handler.post(uiTick);
+    }
+
+    @Override protected void onPause() {
+        handler.removeCallbacks(uiTick);
+        super.onPause();
+    }
+
+    @Override protected void onDestroy() {
+        handler.removeCallbacks(uiTick);
+        toneController.cancel();
+        super.onDestroy();
+    }
+
+    @Override public void onBackPressed() {
+        if (drawer != null && drawer.handleBack()) return;
+        super.onBackPressed();
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+}
