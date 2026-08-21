@@ -8,6 +8,8 @@ public final class V051RegressionPureTest {
         testPeakGuardUsesProjectedOutputPeak();
         testInitialMinimumDoesNotPauseAutomaticRaise();
         testGlobalMixedPcmCanRaiseWithoutExactSource();
+        testQuietNowNeverRaises();
+        testTargetChangesDesiredNormalizationGain();
         System.out.println("V051RegressionPureTest: PASS");
     }
 
@@ -71,6 +73,40 @@ public final class V051RegressionPureTest {
                 "healthy ACTIVE PCM_MIXED must permit Global normalization without exact app identity");
         assertEquals("", policy.raiseBlockReason,
                 "Global mixed PCM should not be marked as source_not_exact");
+    }
+
+    private static void testQuietNowNeverRaises() {
+        assertEquals(1, QuietNowPolicy.targetIndex(1, 6, 1, 10),
+                "Quiet Now must hold when configured quiet index is above current volume");
+        assertEquals(3, QuietNowPolicy.targetIndex(7, 3, 1, 10),
+                "Quiet Now must reduce to configured quiet index when current is louder");
+        assertEquals(1, QuietNowPolicy.targetIndex(7, 0, 1, 10),
+                "Quiet Now respects the audible minimum unless mute is explicitly supported elsewhere");
+    }
+
+    private static void testTargetChangesDesiredNormalizationGain() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        ControlProfile base = BuiltInProfiles.balanced();
+        ControlProfile quieterTarget = profileWithTarget(base, -24f);
+        ControlProfile louderTarget = profileWithTarget(base, -14f);
+        LoudnessControlPolicy.Result quiet = LoudnessControlPolicy.decide(
+                5_000L, -28f, -12f, true, 4, curve, quieterTarget,
+                new LoudnessControlPolicy.State());
+        LoudnessControlPolicy.Result loud = LoudnessControlPolicy.decide(
+                5_000L, -28f, -12f, true, 4, curve, louderTarget,
+                new LoudnessControlPolicy.State());
+        assertTrue(loud.desiredGainDb > quiet.desiredGainDb + 5f,
+                "raising Target must materially increase the normalizer's desired gain");
+    }
+
+    private static ControlProfile profileWithTarget(ControlProfile base, float target) {
+        return new ControlProfile(base.minMediaIndex, base.maxMediaPercent,
+                base.safetyLockEnabled, base.safetyLockPercent, base.quietIndex,
+                NormalizationPreset.CUSTOM, target, base.toleranceLu,
+                base.normalizationStrength, base.downwardAttackMs, base.upwardReleaseMs,
+                base.holdAfterLoudMs, base.maxDownSteps, base.maxUpSteps,
+                base.sourcePeakThresholdDbfs, base.transientWarningDb,
+                base.transientEmergencyDb, base.autoMute, base.recoveryIntervalMs);
     }
 
     private static void assertTrue(boolean value, String message) {
