@@ -12,7 +12,8 @@ require "$GRADLE" 'versionName="0.5.1"'
 require "$WORKFLOW" 'SoundCeiling-v0.5.1-debug-apk'
 require "$README" 'v0.5.1'
 
-# Core control-loop repairs from Samsung field logs.
+# Core control-loop repairs from Samsung field logs. These checks preserve the
+# v0.5.1 fixes while allowing v0.6 to replace bidirectional normalization.
 require "$PKG/TransientGuard.java" 'REARM_MS'
 require "$PKG/PeakSafetyDetector.java" 'gainDbForIndex'
 require "$PKG/ManualSafetyController.java" 'observeInitialIndex'
@@ -20,7 +21,7 @@ require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
 require "$PKG/SafeVolumeController.java" 'QuietNowPolicy.targetIndex'
 require "$PKG/SafeVolumeController.java" 'DiagnosticLog.event("volume_change"'
 require "$ROOT/tests/V051RegressionPureTest.java" 'healthy ACTIVE PCM_MIXED'
-require "$ROOT/tests/V051RegressionPureTest.java" 'raising Target must materially increase'
+require "$ROOT/tests/V051RegressionPureTest.java" 'Target changes must never create an automatic Media raise in v0.6'
 
 # UI responsiveness, themes and understandable controls.
 require "$PKG/AppsSystemView.java" 'loadAppsAsync'
