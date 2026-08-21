@@ -1,3 +1,336 @@
 package dev.soundceiling.app;
-import android.app.*;import android.content.*;import android.content.pm.ServiceInfo;import android.media.*;import android.media.projection.*;import android.os.*;import java.util.concurrent.atomic.AtomicBoolean;
-public class NormalizerService extends Service{static final String EXTRA_RESULT_CODE="result_code",EXTRA_RESULT_DATA="result_data",ACTION_STOP="dev.soundceiling.app.STOP";private static final String CHANNEL="sound_ceiling_v03";private final AtomicBoolean workerRunning=new AtomicBoolean();private AudioManager audio;private AudioRecord record;private MediaProjection projection;private ControlVolumeCurve curve;private VolumeApplier applier;private Thread worker;private long lastRaise,lastDecrease,loudHold,lastChange;public void onCreate(){super.onCreate();audio=(AudioManager)getSystemService(Context.AUDIO_SERVICE);curve=new ControlVolumeCurve(audio.getStreamMinVolume(AudioManager.STREAM_MUSIC),audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC));applier=new VolumeApplier(audio);NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel(CHANNEL,"Sound Ceiling",NotificationManager.IMPORTANCE_LOW));}public int onStartCommand(Intent intent,int flags,int id){if(intent!=null&&ACTION_STOP.equals(intent.getAction())){stopSafe("Остановлено пользователем");return START_NOT_STICKY;}startForegroundNow();if(intent==null)return START_NOT_STICKY;int code=intent.getIntExtra(EXTRA_RESULT_CODE,Activity.RESULT_CANCELED);Intent data=Build.VERSION.SDK_INT>=33?intent.getParcelableExtra(EXTRA_RESULT_DATA,Intent.class):intent.getParcelableExtra(EXTRA_RESULT_DATA);if(code!=Activity.RESULT_OK||data==null){stopSafe("Разрешение захвата не получено");return START_NOT_STICKY;}try{MediaProjectionManager pm=(MediaProjectionManager)getSystemService(Context.MEDIA_PROJECTION_SERVICE);projection=pm.getMediaProjection(code,data);AudioPlaybackCaptureConfiguration cap=new AudioPlaybackCaptureConfiguration.Builder(projection).addMatchingUsage(AudioAttributes.USAGE_MEDIA).addMatchingUsage(AudioAttributes.USAGE_GAME).addMatchingUsage(AudioAttributes.USAGE_UNKNOWN).build();AudioFormat fmt=new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(48000).setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build();record=new AudioRecord.Builder().setAudioFormat(fmt).setBufferSizeInBytes(19200).setAudioPlaybackCaptureConfig(cap).build();record.startRecording();workerRunning.set(true);worker=new Thread(this::loop,"SoundCeilingAudio");worker.start();}catch(RuntimeException e){stopSafe("Ошибка запуска: "+e.getClass().getSimpleName());}return START_NOT_STICKY;}private void loop(){short[] b=new short[4800];LoudnessTracker tracker=new LoudnessTracker();FrequencyBandTracker bands=new FrequencyBandTracker(48000,2);while(workerRunning.get()){int n;try{n=record.read(b,0,b.length,AudioRecord.READ_BLOCKING);}catch(RuntimeException e){break;}if(n<=0)continue;double sq=0;int peak=0;for(int i=0;i<n;i++){int a=Math.abs((int)b[i]);peak=Math.max(peak,a);double x=b[i]/32768.0;sq+=x*x;}LoudnessTracker.Reading r=tracker.update(sq/Math.max(1,n),DbMath.amplitudeToDbfs(peak/32768.0),n/(48000.0*2));boolean signal=r.peakHoldDb>-58f&&r.controlRmsDb>-62f;int current=audio.getStreamVolume(AudioManager.STREAM_MUSIC);long now=SystemClock.elapsedRealtime();DecisionEngine.Input in=DecisionEngine.Input.dbfs(now,r.controlRmsDb,r.peakHoldDb,signal,current,Prefs.targetRms(this),Prefs.peakCeiling(this),Prefs.normalize(this),Prefs.compressionPercent(this)/100f,Prefs.maxVolumePercent(this),Prefs.allowAutoMute(this),Prefs.speedPreset(this),lastRaise,lastDecrease,loudHold);ControlDecision d=DecisionEngine.decide(in,curve);int applied=d.requestedIndex==current?current:applier.apply(d,curve.minIndex(),curve.maxIndex());d=d.withAppliedIndex(applied);if(applied!=current)lastChange=now;if(d.action==ControlDecision.Action.RAISE)lastRaise=now;if(d.action==ControlDecision.Action.DECREASE){lastDecrease=now;loudHold=now+650;}RuntimeState.ControlActivity ca=d.safetyReason==ControlDecision.SafetyReason.AUDIBLE_FLOOR?RuntimeState.ControlActivity.MINIMUM_LIMIT:d.action==ControlDecision.Action.RAISE?RuntimeState.ControlActivity.RAISING:d.action==ControlDecision.Action.DECREASE?RuntimeState.ControlActivity.DECREASING:d.action==ControlDecision.Action.CAP?RuntimeState.ControlActivity.MAXIMUM_LIMIT:RuntimeState.ControlActivity.HOLDING;RuntimeStateStore.publish(new RuntimeState.Builder().running(true).captureStatus(signal?RuntimeState.CaptureStatus.RUNNING:RuntimeState.CaptureStatus.WAITING_SIGNAL).controlActivity(ca).signalPresent(signal).levels(r.controlRmsDb,r.peakHoldDb,Float.NaN,Float.NaN).volume(applied,curve.maxIndex()).routeLabel(DeviceDetector.label(DeviceDetector.detectOutputDevice(audio))).message(signal?"Работает":"Ожидание звука").lastVolumeChangeElapsedMs(lastChange).lastDecision(d).bandLevels(bands.update(b,n)).build());}stopSafe("Остановлено");}private void startForegroundNow(){Notification n=new Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.ic_lock_silent_mode_off).setContentTitle("Sound Ceiling v0.3.0").setContentText("Контроль громкости").setOngoing(true).build();if(Build.VERSION.SDK_INT>=34)startForeground(41,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);else startForeground(41,n);}private synchronized void stopSafe(String reason){workerRunning.set(false);if(record!=null){try{record.stop();}catch(RuntimeException ignored){}record.release();record=null;}if(projection!=null){MediaProjection p=projection;projection=null;try{p.stop();}catch(RuntimeException ignored){}}RuntimeStateStore.publish(RuntimeState.stopped(reason));stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}public IBinder onBind(Intent i){return null;}public void onDestroy(){workerRunning.set(false);super.onDestroy();}}
+
+import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ServiceInfo;
+import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioPlaybackCaptureConfiguration;
+import android.media.AudioRecord;
+import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionManager;
+import android.os.Build;
+import android.os.IBinder;
+import android.os.SystemClock;
+
+import java.io.IOException;
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+public class NormalizerService extends Service {
+    static final String EXTRA_RESULT_CODE = "result_code";
+    static final String EXTRA_RESULT_DATA = "result_data";
+    static final String ACTION_STOP = "dev.soundceiling.app.STOP";
+
+    private static final String CHANNEL = "sound_ceiling_v03";
+    private static final int NOTIFICATION_ID = 41;
+
+    private final AtomicBoolean workerRunning = new AtomicBoolean();
+    private final AtomicBoolean stopping = new AtomicBoolean();
+    private AudioManager audio;
+    private AudioRecord record;
+    private MediaProjection projection;
+    private ControlVolumeCurve controlCurve;
+    private MeasurementVolumeCurve measurementCurve;
+    private VolumeApplier applier;
+    private Thread worker;
+    private SessionLogger logger;
+    private AudioDeviceInfo currentDevice;
+    private DeviceProfile currentProfile;
+    private int currentDeviceType;
+    private long lastRaise;
+    private long lastDecrease;
+    private long loudHold;
+    private long lastChange;
+    private long lastRouteCheck;
+    private int lastAppliedNonzero = -1;
+
+    @Override public void onCreate() {
+        super.onCreate();
+        audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        controlCurve = new ControlVolumeCurve(
+                audio.getStreamMinVolume(AudioManager.STREAM_MUSIC),
+                audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+        measurementCurve = new MeasurementVolumeCurve(audio);
+        applier = new VolumeApplier(audio);
+        refreshRoute(true);
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        nm.createNotificationChannel(new NotificationChannel(
+                CHANNEL, "Sound Ceiling", NotificationManager.IMPORTANCE_LOW));
+    }
+
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            stopSafe("Остановлено пользователем", false);
+            return START_NOT_STICKY;
+        }
+        startForegroundNow();
+        RuntimeStateStore.publish(new RuntimeState.Builder()
+                .running(true).captureStatus(RuntimeState.CaptureStatus.STARTING)
+                .controlActivity(RuntimeState.ControlActivity.IDLE)
+                .volume(audio.getStreamVolume(AudioManager.STREAM_MUSIC), controlCurve.maxIndex())
+                .routeLabel(DeviceDetector.label(currentDevice)).message("Запуск захвата…").build());
+        if (workerRunning.get()) return START_NOT_STICKY;
+        if (intent == null) {
+            stopSafe("Нет разрешения MediaProjection", true);
+            return START_NOT_STICKY;
+        }
+        int code = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED);
+        Intent data;
+        if (Build.VERSION.SDK_INT >= 33) {
+            data = intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent.class);
+        } else {
+            data = intent.getParcelableExtra(EXTRA_RESULT_DATA);
+        }
+        if (code != Activity.RESULT_OK || data == null) {
+            stopSafe("Разрешение захвата не получено", true);
+            return START_NOT_STICKY;
+        }
+        try {
+            openLogger();
+            MediaProjectionManager pm = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+            projection = pm.getMediaProjection(code, data);
+            if (projection == null) throw new IllegalStateException("MediaProjection == null");
+            projection.registerCallback(new MediaProjection.Callback() {
+                @Override public void onStop() {
+                    DiagnosticLog.event("projection_stop", "Android stopped MediaProjection");
+                    stopSafe("Android остановил захват", false);
+                }
+            }, null);
+            AudioPlaybackCaptureConfiguration cap = new AudioPlaybackCaptureConfiguration.Builder(projection)
+                    .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                    .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                    .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+                    .build();
+            AudioFormat fmt = new AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(48_000)
+                    .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+                    .build();
+            int min = AudioRecord.getMinBufferSize(48_000, AudioFormat.CHANNEL_IN_STEREO,
+                    AudioFormat.ENCODING_PCM_16BIT);
+            record = new AudioRecord.Builder().setAudioFormat(fmt)
+                    .setBufferSizeInBytes(Math.max(19_200, min * 4))
+                    .setAudioPlaybackCaptureConfig(cap).build();
+            record.startRecording();
+            workerRunning.set(true);
+            stopping.set(false);
+            worker = new Thread(this::loop, "SoundCeilingAudio");
+            worker.start();
+            DiagnosticLog.event("service_start", "route=" + DeviceDetector.label(currentDevice));
+        } catch (RuntimeException | IOException e) {
+            DiagnosticLog.event("service_start_error", "errorClass=" + e.getClass().getSimpleName());
+            stopSafe("Ошибка запуска: " + e.getClass().getSimpleName(), true);
+        }
+        return START_NOT_STICKY;
+    }
+
+    private void openLogger() throws IOException {
+        MeasurementVolumeCurve.Snapshot m = measurementCurve.snapshot(currentDeviceType);
+        String header = String.format(Locale.US,
+                "HEADER version=0.3.0 manufacturer=%s model=%s sdk=%d route=%s min=%d max=%d current=%d targetRms=%.1f peakCeiling=%.1f targetSpl=%.1f splCeiling=%.1f maxPercent=%d normalize=%s splMode=%s strength=%d ui=%s speed=%s autoMute=%s measurementFallback=%s measurementReason=%s",
+                clean(Build.MANUFACTURER), clean(Build.MODEL), Build.VERSION.SDK_INT,
+                clean(DeviceDetector.label(currentDevice)), controlCurve.minIndex(), controlCurve.maxIndex(),
+                audio.getStreamVolume(AudioManager.STREAM_MUSIC), Prefs.targetRms(this), Prefs.peakCeiling(this),
+                Prefs.targetSpl(this), Prefs.splCeiling(this), Prefs.maxVolumePercent(this),
+                Prefs.normalize(this), Prefs.splMode(this), Prefs.compressionPercent(this),
+                Prefs.uiMode(this), Prefs.speedPreset(this).key, Prefs.allowAutoMute(this),
+                m.fallbackUsed, clean(m.validationReason));
+        logger = SessionLogger.start(this, header);
+        DiagnosticLog.attach(logger);
+    }
+
+    private static String clean(String s) {
+        return s == null ? "" : s.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ');
+    }
+
+    private void loop() {
+        short[] buffer = new short[4_800];
+        LoudnessTracker tracker = new LoudnessTracker();
+        FrequencyBandTracker bands = new FrequencyBandTracker(48_000, 2);
+        String stopReason = "Остановлено";
+        boolean stopError = false;
+        while (workerRunning.get()) {
+            int n;
+            try {
+                n = record.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
+            } catch (RuntimeException e) {
+                DiagnosticLog.event("capture_exception", "errorClass=" + e.getClass().getSimpleName());
+                stopReason = "Ошибка чтения аудио";
+                stopError = true;
+                break;
+            }
+            if (n < 0) {
+                DiagnosticLog.event("capture_error", "code=" + n);
+                continue;
+            }
+            if (n == 0) continue;
+
+            double sq = 0.0;
+            int peak = 0;
+            for (int i = 0; i < n; i++) {
+                int a = Math.abs((int) buffer[i]);
+                peak = Math.max(peak, a);
+                double x = buffer[i] / 32768.0;
+                sq += x * x;
+            }
+            LoudnessTracker.Reading r = tracker.update(
+                    sq / Math.max(1, n), DbMath.amplitudeToDbfs(peak / 32768.0),
+                    n / (48_000.0 * 2.0));
+            boolean signal = r.peakHoldDb > -58f && r.controlRmsDb > -62f;
+            long now = SystemClock.elapsedRealtime();
+            refreshRoute(false);
+            int current = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+
+            if (signal && !Prefs.allowAutoMute(this) && current == controlCurve.minIndex()
+                    && lastAppliedNonzero > controlCurve.minIndex()) {
+                DiagnosticLog.event("external_zero_detected",
+                        "previous=" + lastAppliedNonzero + " current=" + current);
+            }
+
+            ControlDecision decision;
+            if (Prefs.splMode(this) && currentProfile == null) {
+                DecisionEngine.Input input = DecisionEngine.Input.dbfs(now, r.controlRmsDb, r.peakHoldDb,
+                        false, current, Prefs.targetRms(this), Prefs.peakCeiling(this),
+                        false, 0f, Prefs.maxVolumePercent(this), Prefs.allowAutoMute(this),
+                        Prefs.speedPreset(this), lastRaise, lastDecrease, loudHold);
+                decision = DecisionEngine.decide(input, controlCurve);
+            } else {
+                DecisionEngine.Input input;
+                if (Prefs.splMode(this)) {
+                    float measuredGain = measurementCurve.gainDbForIndex(current, currentDeviceType);
+                    input = DecisionEngine.Input.spl(now, r.controlRmsDb, r.peakHoldDb, signal, current,
+                            measuredGain, currentProfile.calibrationOffsetDb, Prefs.targetSpl(this),
+                            Prefs.splCeiling(this), Prefs.normalize(this),
+                            Prefs.compressionPercent(this) / 100f, Prefs.maxVolumePercent(this),
+                            Prefs.allowAutoMute(this), Prefs.speedPreset(this), lastRaise, lastDecrease, loudHold);
+                } else {
+                    input = DecisionEngine.Input.dbfs(now, r.controlRmsDb, r.peakHoldDb, signal, current,
+                            Prefs.targetRms(this), Prefs.peakCeiling(this), Prefs.normalize(this),
+                            Prefs.compressionPercent(this) / 100f, Prefs.maxVolumePercent(this),
+                            Prefs.allowAutoMute(this), Prefs.speedPreset(this), lastRaise, lastDecrease, loudHold);
+                }
+                decision = DecisionEngine.decide(input, controlCurve);
+            }
+
+            int applied = decision.requestedIndex == current ? current
+                    : applier.apply(decision, controlCurve.minIndex(), controlCurve.maxIndex());
+            decision = decision.withAppliedIndex(applied);
+            if (logger != null) logger.decision(decision);
+            if (applied != current) lastChange = now;
+            if (applied > controlCurve.minIndex()) lastAppliedNonzero = applied;
+            if (decision.action == ControlDecision.Action.RAISE) lastRaise = now;
+            if (decision.action == ControlDecision.Action.DECREASE) {
+                lastDecrease = now;
+                loudHold = now + 650L;
+            }
+
+            boolean rejectedFloor = signal && !Prefs.allowAutoMute(this)
+                    && applied == controlCurve.minIndex();
+            float estRms = Float.NaN;
+            float estPeak = Float.NaN;
+            if (currentProfile != null) {
+                float gain = measurementCurve.gainDbForIndex(applied, currentDeviceType);
+                estRms = r.controlRmsDb + gain + currentProfile.calibrationOffsetDb;
+                estPeak = r.peakHoldDb + gain + currentProfile.calibrationOffsetDb;
+            }
+            RuntimeState.ControlActivity activity = rejectedFloor ? RuntimeState.ControlActivity.ERROR
+                    : decision.safetyReason == ControlDecision.SafetyReason.AUDIBLE_FLOOR
+                    ? RuntimeState.ControlActivity.MINIMUM_LIMIT
+                    : decision.action == ControlDecision.Action.RAISE ? RuntimeState.ControlActivity.RAISING
+                    : decision.action == ControlDecision.Action.DECREASE ? RuntimeState.ControlActivity.DECREASING
+                    : decision.action == ControlDecision.Action.CAP ? RuntimeState.ControlActivity.MAXIMUM_LIMIT
+                    : RuntimeState.ControlActivity.HOLDING;
+            String message = rejectedFloor ? "Media снова сброшена внешней системой"
+                    : Prefs.splMode(this) && currentProfile == null
+                    ? "Нет SPL-калибровки для текущего выхода"
+                    : signal ? (Prefs.splMode(this) ? "Работает · dB SPL" : "Работает · dBFS")
+                    : "Ожидание звука";
+            RuntimeStateStore.publish(new RuntimeState.Builder()
+                    .running(true)
+                    .captureStatus(rejectedFloor ? RuntimeState.CaptureStatus.ERROR
+                            : signal ? RuntimeState.CaptureStatus.RUNNING : RuntimeState.CaptureStatus.WAITING_SIGNAL)
+                    .controlActivity(activity).signalPresent(signal)
+                    .levels(r.controlRmsDb, r.peakHoldDb, estRms, estPeak)
+                    .volume(applied, controlCurve.maxIndex())
+                    .routeLabel(DeviceDetector.label(currentDevice))
+                    .profileName(currentProfile == null ? "" : currentProfile.name)
+                    .logStatus(logger == null ? "" : logger.status())
+                    .message(message).lastVolumeChangeElapsedMs(lastChange)
+                    .lastDecision(decision).bandLevels(bands.update(buffer, n)).build());
+        }
+        stopSafe(stopReason, stopError);
+    }
+
+    private void refreshRoute(boolean force) {
+        long now = SystemClock.elapsedRealtime();
+        if (!force && now - lastRouteCheck < 800L) return;
+        lastRouteCheck = now;
+        AudioDeviceInfo detected = DeviceDetector.detectOutputDevice(audio);
+        String oldKey = currentDevice == null ? "" : DeviceDetector.key(currentDevice);
+        String newKey = DeviceDetector.key(detected);
+        if (force || !oldKey.equals(newKey)) {
+            currentDevice = detected;
+            currentDeviceType = DeviceDetector.type(detected);
+            currentProfile = ProfileStore.find(this, detected);
+            DiagnosticLog.event("route_change", "route=" + DeviceDetector.label(detected));
+        } else if (currentProfile == null) {
+            currentProfile = ProfileStore.find(this, detected);
+        }
+    }
+
+    private void startForegroundNow() {
+        RuntimeState s = RuntimeStateStore.get();
+        String text = s.running ? StatusText.capture(s) + " · " + StatusText.media(s) : "Контроль громкости";
+        Notification n = new Notification.Builder(this, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
+                .setContentTitle("Sound Ceiling v0.3.0").setContentText(text).setOngoing(true).build();
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+        } else {
+            startForeground(NOTIFICATION_ID, n);
+        }
+    }
+
+    private synchronized void stopSafe(String reason, boolean error) {
+        if (!stopping.compareAndSet(false, true)) return;
+        workerRunning.set(false);
+        DiagnosticLog.event("service_stop", "reason=" + clean(reason));
+        if (record != null) {
+            try { record.stop(); } catch (RuntimeException ignored) {}
+            try { record.release(); } catch (RuntimeException ignored) {}
+            record = null;
+        }
+        if (projection != null) {
+            MediaProjection p = projection;
+            projection = null;
+            try { p.stop(); } catch (RuntimeException ignored) {}
+        }
+        if (logger != null) {
+            SessionLogger old = logger;
+            logger = null;
+            DiagnosticLog.detach(old);
+            old.close();
+        }
+        RuntimeStateStore.publish(error
+                ? new RuntimeState.Builder().running(false).captureStatus(RuntimeState.CaptureStatus.ERROR)
+                    .controlActivity(RuntimeState.ControlActivity.ERROR).message(reason).build()
+                : RuntimeState.stopped(reason));
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf();
+    }
+
+    @Override public void onDestroy() {
+        workerRunning.set(false);
+        super.onDestroy();
+    }
+
+    @Override public IBinder onBind(Intent intent) { return null; }
+}
