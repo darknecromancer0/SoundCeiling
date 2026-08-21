@@ -59,8 +59,7 @@ final class DrawerLayoutController {
         addNav("Калибровка и тест", AppDestination.CALIBRATION);
         addNav("Диагностика", AppDestination.DIAGNOSTICS);
         addNav("Оформление", AppDestination.APPEARANCE);
-        addAction("Открыть папку логов", () -> listener.onOpenLogs());
-        addAction("Поделиться последним логом", () -> listener.onShareLatestLog());
+        addAction("Логи", () -> listener.onOpenLogs());
         addNav("О приложении", AppDestination.ABOUT);
 
         int width = Math.min(Math.round(activity.getResources().getDisplayMetrics().widthPixels * 0.84f), dp(340));
