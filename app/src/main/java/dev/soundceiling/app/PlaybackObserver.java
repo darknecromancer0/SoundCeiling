@@ -49,9 +49,12 @@ final class PlaybackObserver implements AutoCloseable {
     private void publish(List<AudioPlaybackConfiguration> configs) {
         ArrayList<Integer> usages = new ArrayList<>();
         int activePlayers = 0;
+        // AudioManager#getActivePlaybackConfigurations() and the callback payload already
+        // contain the currently active configurations. AudioPlaybackConfiguration does not
+        // expose a public isActive() method, so do not invent a second activity test here.
         if (configs != null) {
             for (AudioPlaybackConfiguration config : configs) {
-                if (config == null || !config.isActive()) continue;
+                if (config == null) continue;
                 activePlayers++;
                 AudioAttributes attributes = config.getAudioAttributes();
                 if (attributes != null) usages.add(attributes.getUsage());
