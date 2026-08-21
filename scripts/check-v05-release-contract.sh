@@ -7,9 +7,11 @@ README="$ROOT/README.md"
 
 require(){ local file="$1"; local needle="$2"; grep -Fq "$needle" "$file" || { echo "Missing v0.5 release contract: $(basename "$file") -> $needle" >&2; exit 1; }; }
 
-require "$GRADLE" 'versionName="0.5.0"'
-require "$WORKFLOW" 'SoundCeiling-v0.5.0-debug-apk'
-require "$README" 'v0.5.0'
+# This is a family-level regression gate. Patch releases such as 0.5.1 must not
+# be forced back to 0.5.0 just to keep the v0.5 architecture checks alive.
+require "$GRADLE" 'versionName="0.5.'
+require "$WORKFLOW" 'SoundCeiling-v0.5.'
+require "$README" 'v0.5.'
 
 for gate in \
   './scripts/run-pure-tests.sh' \
@@ -34,4 +36,4 @@ if grep -Fq 'SoundCeiling-v0.4.0-debug-apk' "$WORKFLOW"; then
   exit 1
 fi
 
-echo "v0.5 release contract: PASS"
+echo "v0.5 release family contract: PASS"
