@@ -41,7 +41,7 @@ final class EqView extends ScrollView implements RuntimeScreen {
             short[] range = equalizer.getBandLevelRange();
             for (int i = 0; i < FREQUENCIES_HZ.length; i++) addBand(root, i, range[0], range[1]);
             capability.setText("DSP/EQ capability: experimental global session active");
-        } catch (RuntimeException | UnsupportedOperationException e) {
+        } catch (RuntimeException e) {
             if (equalizer != null) {
                 try { equalizer.release(); } catch (RuntimeException ignored) {}
                 equalizer = null;
