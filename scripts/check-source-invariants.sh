@@ -33,8 +33,8 @@ if [[ -f "$PKG/SystemStreamController.java" ]]; then
     echo "SystemStreamController must not write Media stream" >&2; exit 1
   fi
 fi
-for token in 'PeakSafetyDetector' 'TransientGuard' 'ManualSafetyController' 'VolumeWriteTracker' 'LoudnessMeter' 'ACTION_QUIET' 'safeVolume'; do
-  grep -q "$token" "$PKG/NormalizerService.java" || { echo "NormalizerService missing v0.4 integration: $token" >&2; exit 1; }
+for token in 'PeakSafetyDetector' 'TransientGuard' 'ManualThresholdFollower' 'VolumeWriteTracker' 'LoudnessMeter' 'ACTION_QUIET' 'safeVolume'; do
+  grep -q "$token" "$PKG/NormalizerService.java" || { echo "NormalizerService missing control integration: $token" >&2; exit 1; }
 done
 grep -q 'DiagnosticLog.anomaly' "$PKG/RuntimeStateStore.java" || {
   echo "RuntimeStateStore must feed automatic anomalies to the black-box logger" >&2; exit 1;
