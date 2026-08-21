@@ -2,9 +2,9 @@ package dev.soundceiling.app;
 
 /** Tracks the user's manual volume intent and opens the automation ceiling slowly. */
 final class ManualSafetyController {
-    private final int minIndex;
-    private final int configuredMax;
-    private final long recoveryIntervalMs;
+    private int minIndex;
+    private int configuredMax;
+    private long recoveryIntervalMs;
     private int effectiveMax;
     private int lastUserIndex = -1;
     private long lastRecoveryAtMs;
@@ -12,10 +12,26 @@ final class ManualSafetyController {
     private boolean manualSafetyPause;
 
     ManualSafetyController(int minIndex, int configuredMax, long recoveryIntervalMs) {
-        this.minIndex = Math.min(minIndex, configuredMax);
-        this.configuredMax = Math.max(minIndex, configuredMax);
-        this.recoveryIntervalMs = Math.max(100L, recoveryIntervalMs);
-        this.effectiveMax = this.configuredMax;
+        configureRaw(minIndex, configuredMax, recoveryIntervalMs);
+        effectiveMax = this.configuredMax;
+    }
+
+    void reconfigure(int newMinIndex, int newConfiguredMax, long newRecoveryIntervalMs, long nowMs) {
+        boolean preserveEnvelope = pausedForRaise || manualSafetyPause;
+        boolean wasManualPause = manualSafetyPause;
+        int oldEffectiveMax = effectiveMax;
+        configureRaw(newMinIndex, newConfiguredMax, newRecoveryIntervalMs);
+        if (preserveEnvelope) {
+            effectiveMax = Math.min(configuredMax, Math.max(0, oldEffectiveMax));
+            manualSafetyPause = wasManualPause && lastUserIndex >= 0 && lastUserIndex <= minIndex;
+            if (manualSafetyPause) effectiveMax = Math.min(effectiveMax, Math.max(0, lastUserIndex));
+            pausedForRaise = manualSafetyPause || effectiveMax < configuredMax;
+        } else {
+            effectiveMax = configuredMax;
+            manualSafetyPause = false;
+            pausedForRaise = false;
+        }
+        lastRecoveryAtMs = nowMs;
     }
 
     void observeUserIndex(int index, long nowMs) {
@@ -68,6 +84,12 @@ final class ManualSafetyController {
     int effectiveMax() { return effectiveMax; }
     boolean isPausedForRaise() { return pausedForRaise; }
     boolean isManualSafetyPause() { return manualSafetyPause; }
+
+    private void configureRaw(int min, int max, long recoveryMs) {
+        minIndex = Math.min(min, max);
+        configuredMax = Math.max(min, max);
+        recoveryIntervalMs = Math.max(100L, recoveryMs);
+    }
 
     private static int clamp(int value, int low, int high) {
         return Math.max(low, Math.min(high, value));
