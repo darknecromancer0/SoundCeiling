@@ -33,7 +33,9 @@ final class SessionLogger implements AutoCloseable {
 
     static SessionLogger start(Context context, String header) throws IOException {
         SessionLogger logger = new SessionLogger(context);
-        String fixedHeader = header == null ? "HEADER" : header.replace("version=0.5.0", "version=" + BuildConfig.VERSION_NAME);
+        String fixedHeader = header == null ? "HEADER" : header
+                .replace("version=0.5.0", "version=" + BuildConfig.VERSION_NAME)
+                .replace("version=0.6.0", "version=" + BuildConfig.VERSION_NAME);
         logger.write(fixedHeader + " logSession=" + logger.id + " logLocation=" + clean(LogStorage.activeLocation(context)));
         logger.write("LOG_INFO One SoundCeiling run is one logical session. Rotated part files belong to this session and are grouped in Open logs.");
         return logger;
