@@ -106,4 +106,28 @@ reject "$PKG/AdvancedModeView.java" 'section("Поведение · только
 require "$PKG/AdvancedModeView.java" 'Без неё обычная защита и нормализация продолжают работать'
 reject "$PKG/AdvancedModeView.java" 'Без неё обычный PCM, Peak, LUFS-like, Ceiling и нормализация работают нормально.'
 
+# Task 10: theme-aware spectrum and EQ visualization must be readable and unclipped.
+require "$PKG/UiTheme.java" 'meterTrack(Context context)'
+require "$PKG/UiTheme.java" 'meterFill(Context context)'
+require "$PKG/UiTheme.java" 'meterGrid(Context context)'
+require "$PKG/FrequencyMeterView.java" 'UiTheme.meterTrack(getContext())'
+require "$PKG/FrequencyMeterView.java" 'UiTheme.meterFill(getContext())'
+require "$PKG/FrequencyMeterView.java" 'UiTheme.secondaryText(context)'
+require "$PKG/FrequencyMeterView.java" 'setClipChildren(false)'
+require "$PKG/FrequencyMeterView.java" 'label.setIncludeFontPadding(true)'
+reject "$PKG/FrequencyMeterView.java" 'Color.LTGRAY'
+reject "$PKG/FrequencyMeterView.java" 'Color.rgb(54, 58, 66)'
+require "$PKG/EqVisualizationMath.java" 'final class EqVisualizationMath'
+require "$PKG/EqResponseView.java" 'final class EqResponseView'
+require "$PKG/EqResponseView.java" 'EqVisualizationMath.normalizedLevel'
+require "$PKG/EqView.java" 'private final FrequencyMeterView liveSpectrum'
+require "$PKG/EqView.java" 'private final EqResponseView responseView'
+require "$PKG/EqView.java" 'Живой спектр'
+require "$PKG/EqView.java" 'Сила коррекции EQ'
+require "$PKG/EqView.java" 'liveSpectrum.renderBands(state.bandLevels())'
+require "$PKG/EqView.java" 'updateEqVisualization()'
+require "$PKG/AdvancedModeView.java" 'frequencyMeter.setMinimumHeight(dp(166))'
+require "$PKG/AdvancedModeView.java" 'new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)'
+reject "$PKG/AdvancedModeView.java" 'new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(155))'
+
 echo "v0.7 adaptive runtime checkpoint: PASS"
