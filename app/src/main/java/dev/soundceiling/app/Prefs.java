@@ -34,7 +34,8 @@ final class Prefs {
             TRANSIENT_EMERGENCY="transient_emergency",
             RECOVERY_INTERVAL_MS="recovery_interval_ms",
             ACTIVE_PROFILE="active_profile",
-            THEME_MODE="theme_mode";
+            THEME_MODE="theme_mode",
+            CONTROL_SCALE="control_scale";
 
     static SharedPreferences get(Context c) {
         return c.getSharedPreferences(FILE, Context.MODE_PRIVATE);
@@ -81,6 +82,11 @@ final class Prefs {
     static String activeProfile(Context c){return get(c).getString(ACTIVE_PROFILE,"");}
     static String activeProfileKey(Context c){return activeProfile(c);}
     static String themeMode(Context c){return get(c).getString(THEME_MODE,"system");}
+    static ControlScale controlScale(Context c) {
+        SharedPreferences p = get(c);
+        if (p.contains(CONTROL_SCALE)) return ControlScale.fromKey(p.getString(CONTROL_SCALE, ControlScale.MEDIA_PERCENT.key));
+        return splMode(c) ? ControlScale.CALIBRATED_SPL : ControlScale.MEDIA_PERCENT;
+    }
 
     static ControlProfile currentControlProfile(Context c) {
         return new ControlProfile(minMediaIndex(c), maxVolumePercent(c), safetyLockEnabled(c),
