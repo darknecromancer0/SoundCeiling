@@ -28,6 +28,7 @@ final class TransientGuard {
     private static final float SILENCE_RESET_DBFS = -60f;
     private final float warningDeltaDb;
     private final float emergencyDeltaDb;
+    private final float hardPeakCeilingDbfs;
     private boolean initialized;
     private boolean playbackActive;
     private float baselineDb;
@@ -38,8 +39,18 @@ final class TransientGuard {
     private long lastUpdateMs = Long.MIN_VALUE;
 
     TransientGuard(float warningDeltaDb, float emergencyDeltaDb) {
+        this(warningDeltaDb, emergencyDeltaDb, 0f);
+    }
+
+    TransientGuard(float warningDeltaDb, float emergencyDeltaDb, float hardPeakCeilingDbfs) {
         this.warningDeltaDb = Math.max(0f, warningDeltaDb);
         this.emergencyDeltaDb = Math.max(this.warningDeltaDb, emergencyDeltaDb);
+        this.hardPeakCeilingDbfs = Float.isFinite(hardPeakCeilingDbfs)
+                ? hardPeakCeilingDbfs : 0f;
+    }
+
+    boolean hardPeakViolation(float projectedPeakDbfs) {
+        return Float.isFinite(projectedPeakDbfs) && projectedPeakDbfs > hardPeakCeilingDbfs;
     }
 
     /** Arms a short delta-only warmup on each inactive -> active playback transition. */

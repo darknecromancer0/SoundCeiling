@@ -10,6 +10,24 @@ final class TransientAttenuationPolicy {
                 minIndex, hardMaxIndex, DEFAULT_MAX_STEPS);
     }
 
+    /** Absolute hard-peak path used by the stable normalization controller. */
+    static int safeTargetForProjectedPeak(int currentIndex, ControlVolumeCurve curve,
+                                          float projectedPeakDbfs,
+                                          float hardPeakCeilingDbfs,
+                                          int minIndex, int hardMaxIndex) {
+        int min = DbMath.clamp(minIndex, curve.minIndex(), curve.maxIndex());
+        int hardMax = DbMath.clamp(hardMaxIndex, min, curve.maxIndex());
+        int current = DbMath.clamp(currentIndex, min, hardMax);
+        if (!Float.isFinite(projectedPeakDbfs) || !Float.isFinite(hardPeakCeilingDbfs)
+                || projectedPeakDbfs <= hardPeakCeilingDbfs) {
+            return current;
+        }
+        float attenuationDb = projectedPeakDbfs - hardPeakCeilingDbfs;
+        float safeGainDb = curve.gainDbForIndex(current) - attenuationDb;
+        int target = curve.bestIndexAtOrBelowGain(safeGainDb, hardMax);
+        return DbMath.clamp(Math.min(current, target), min, hardMax);
+    }
+
     static int safeTarget(int currentIndex, ControlVolumeCurve curve, float deltaDb,
                           float emergencyThresholdDb, int minIndex, int hardMaxIndex,
                           int maxStepsThisDecision) {

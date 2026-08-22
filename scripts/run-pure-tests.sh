@@ -7,6 +7,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DbMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/GainPlanner.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LoudnessTracker.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AsymmetricLoudnessEnvelope.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LoudnessMeter.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizationPreset.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlDefaults.java" \
@@ -18,6 +19,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeCurveMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlVolumeCurve.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CaptureReferenceEstimator.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/OutputGainPlanner.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ControlCommand.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/StableOutputController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ComfortScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TargetScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/OutputCeilingState.java" \
@@ -85,6 +89,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071RouteCurvePureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071CaptureReferencePureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071LinkedLockPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071NormalizationCorePureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -152,3 +157,4 @@ java -cp "$OUT" dev.soundceiling.app.V071TraceRegressionPureTest
 java -cp "$OUT" dev.soundceiling.app.V071RouteCurvePureTest
 java -cp "$OUT" dev.soundceiling.app.V071CaptureReferencePureTest
 java -cp "$OUT" dev.soundceiling.app.V071LinkedLockPureTest
+java -cp "$OUT" dev.soundceiling.app.V071NormalizationCorePureTest

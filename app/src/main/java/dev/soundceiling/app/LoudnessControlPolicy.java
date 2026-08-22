@@ -2,6 +2,10 @@ package dev.soundceiling.app;
 
 /** Pure adaptive-envelope loudness controller. Emergency peak/transient protection is separate. */
 final class LoudnessControlPolicy {
+    static OutputGainPlanner.Plan plan(OutputGainPlanner.Input input) {
+        return OutputGainPlanner.plan(input);
+    }
+
     static final class State {
         long lastDownAtMs;
         long lastUpAtMs;
