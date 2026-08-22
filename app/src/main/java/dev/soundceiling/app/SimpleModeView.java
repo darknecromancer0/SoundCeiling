@@ -52,6 +52,10 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         LinearLayout targetRow = new LinearLayout(context);
         targetRow.setOrientation(LinearLayout.HORIZONTAL);
         comfortLabel = section();
+        comfortLabel.setIncludeFontPadding(true);
+        comfortLabel.setPadding(0, dp(4), dp(8), dp(6));
+        targetRow.setMinimumHeight(dp(52));
+        targetRow.setClipChildren(false);
         targetRow.addView(comfortLabel, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
         targetRow.addView(helpButton(HelpText.TARGET_LOUDNESS), new LinearLayout.LayoutParams(dp(46), dp(42)));
         root.addView(targetRow);
