@@ -89,7 +89,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/tests/V070VolumeProvenancePureTest.java" \
  "$ROOT/tests/V070CalibrationSafetyPureTest.java" \
  "$ROOT/tests/V070TargetScalePureTest.java" \
- "$ROOT/tests/V070HelpTextPureTest.java"
+ "$ROOT/tests/V070HelpTextPureTest.java" \
+ "$ROOT/tests/V070StatusModePureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
 java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
 java -cp "$OUT" dev.soundceiling.app.LoudnessPolicyPeakThresholdTest
@@ -109,3 +110,4 @@ java -cp "$OUT" dev.soundceiling.app.V070VolumeProvenancePureTest
 java -cp "$OUT" dev.soundceiling.app.V070CalibrationSafetyPureTest
 java -cp "$OUT" dev.soundceiling.app.V070TargetScalePureTest
 java -cp "$OUT" dev.soundceiling.app.V070HelpTextPureTest
+java -cp "$OUT" dev.soundceiling.app.V070StatusModePureTest
