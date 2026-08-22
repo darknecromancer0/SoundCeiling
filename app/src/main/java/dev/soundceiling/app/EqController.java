@@ -52,7 +52,7 @@ final class EqController {
             }
             equalizer.setEnabled(true);
             available = true;
-            status = "EQ active · Android Equalizer attached · Verified DSP transport: unavailable";
+            status = "EQ active · independent module · Android Equalizer attached · Verified DSP transport: unavailable";
         } catch (RuntimeException e) {
             available = false;
             status = "DSP/EQ unavailable: " + e.getClass().getSimpleName()
