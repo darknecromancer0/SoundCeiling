@@ -2,6 +2,7 @@ package dev.soundceiling.app;
 
 final class HelpText {
     static final String MIN_MEDIA="MIN_MEDIA", MAX_MEDIA="MAX_MEDIA", SAFETY_LOCK="SAFETY_LOCK", QUIET_NOW="QUIET_NOW",
+            QUIET_LEVEL="QUIET_LEVEL", MAX_DOWN_STEPS="MAX_DOWN_STEPS",
             SOURCE_PEAK="SOURCE_PEAK", TRANSIENT_WARNING="TRANSIENT_WARNING", TRANSIENT_EMERGENCY="TRANSIENT_EMERGENCY",
             TARGET_LOUDNESS="TARGET_LOUDNESS", NORMALIZATION_STRENGTH="NORMALIZATION_STRENGTH", TOLERANCE="TOLERANCE",
             DOWN_ATTACK="DOWN_ATTACK", UP_RELEASE="UP_RELEASE", HOLD="HOLD", RECOVERY="RECOVERY", AUTO_MUTE="AUTO_MUTE",
@@ -12,6 +13,7 @@ final class HelpText {
         if (MAX_MEDIA.equals(key)) return "Maximum — обычная верхняя граница Media. Ни нормализация, ни Quiet Now не должны поднимать звук выше неё.";
         if (SAFETY_LOCK.equals(key)) return "Safety Lock — дополнительный жёсткий потолок перед записью Media. Он может только удержать или снизить громкость и никогда не служит целью для повышения.";
         if (QUIET_NOW.equals(key)) return "Quiet Now — одноразовая команда сделать текущую Media-громкость не выше настроенного Quiet Now level. Если звук уже тише, кнопка ничего не повышает.";
+        if (QUIET_LEVEL.equals(key)) return "Quiet Now level — верхний предел Media для кнопки Quiet Now. Команда может только снизить текущую громкость до этого предела; если Media уже ниже, она не повышает её.";
         if (SOURCE_PEAK.equals(key)) return "Peak — самый высокий короткий всплеск сигнала. Порог задаётся в dBFS. SoundCeiling сравнивает не только исходный peak, а ожидаемый peak после текущего положения системной громкости.";
         if (TRANSIENT_WARNING.equals(key)) return "Transient — внезапный скачок уровня относительно недавнего звука. Warning реагирует на заметный скачок, но не должен срабатывать непрерывно на уже установившейся громкости.";
         if (TRANSIENT_EMERGENCY.equals(key)) return "Emergency transient — очень резкий новый скачок. Это аварийная реакция, а не постоянный режим limiter. После события база адаптируется и защита перевооружается.";
@@ -19,6 +21,7 @@ final class HelpText {
         if (NORMALIZATION_STRENGTH.equals(key)) return "Normalization strength — какая доля рассчитанного снижения применяется, когда звук выше Target. 0% отключает обычную нормализацию, 100% запрашивает полное безопасное снижение. Тихий материал этот параметр не усиливает.";
         if (TOLERANCE.equals(key)) return "Tolerance — зона около Target, где громкость не трогается. Большая зона уменьшает мелкие движения ползунка, маленькая делает нормализацию точнее и активнее.";
         if (DOWN_ATTACK.equals(key)) return "Downward attack — задержка обычного снижения слишком громкого материала. Аварийный peak/transient путь работает отдельно и быстрее.";
+        if (MAX_DOWN_STEPS.equals(key)) return "Max down steps — максимум шагов системного Media, на которые обычный контроллер может снизить громкость за один цикл решения. Меньше — плавнее, больше — быстрее. Аварийная peak/transient защита работает отдельным путём.";
         if (UP_RELEASE.equals(key)) return "Legacy-параметр старых профилей. В one-way engine 0.6 автоматического движения Media вверх нет, поэтому эта величина не показывается в активных настройках.";
         if (HOLD.equals(key)) return "Legacy-параметр старых профилей. One-way engine 0.6 не использует его для восстановления Media вверх.";
         if (RECOVERY.equals(key)) return "Legacy-параметр старого manual envelope. В 0.6 ручное снижение меняет dB-пороги, а восстановление этих порогов никогда не двигает Media вверх.";
