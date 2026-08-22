@@ -57,10 +57,10 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         root.addView(targetRow);
         SeekBar comfortSeek = new SeekBar(context);
         comfortSeek.setMin(0); comfortSeek.setMax(100);
-        comfortSeek.setProgress(percentForLoudness(Prefs.targetLoudness(context)));
+        comfortSeek.setProgress(TargetScale.percentForLoudness(Prefs.targetLoudness(context)));
         root.addView(comfortSeek); updateComfortLabel(comfortSeek.getProgress());
         comfortSeek.setOnSeekBarChangeListener(listener((seek, progress) -> {
-            float target = loudnessForPercent(progress);
+            float target = TargetScale.loudnessForPercent(progress);
             Prefs.get(getContext()).edit().putFloat(Prefs.TARGET_LOUDNESS, target)
                     .putFloat(Prefs.TARGET_RMS, target)
                     .putString(Prefs.NORMALIZATION_PRESET, NormalizationPreset.CUSTOM.key)
@@ -160,7 +160,8 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
 
     private void updateComfortLabel(int percent) {
         String word = percent <= 30 ? "тихо" : percent <= 75 ? "комфортно" : "громче";
-        comfortLabel.setText(String.format(Locale.US, "Target: %d%% · %s · %.1f LUFS-like", percent, word, loudnessForPercent(percent)));
+        comfortLabel.setText(String.format(Locale.US, "Target: %d%% · %s · %.1f LUFS-like", percent, word,
+                TargetScale.loudnessForPercent(percent)));
     }
     private void updateMinLabel(int index, int max) { minLabel.setText("Minimum: " + index + "/" + max + " · только нижняя граница"); }
     private void updateMaxLabel(int percent) { maxLabel.setText("Maximum: " + percent + "% · верхняя граница Media"); }
@@ -168,8 +169,6 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         String word = percent == 0 ? "выкл" : percent < 45 ? "мягко" : percent < 80 ? "средне" : "жёстко";
         normalizeLabel.setText("Normalization: " + percent + "% · " + word + " · только вниз");
     }
-    private static float loudnessForPercent(int percent) { return -28f + Math.max(0, Math.min(100, percent)) * 0.16f; }
-    private static int percentForLoudness(float loudness) { return Math.max(0, Math.min(100, Math.round((loudness + 28f) / 0.16f))); }
     private TextView section() { return text("", 16, true); }
     private Button helpButton(String key) {
         Button b = new Button(getContext()); b.setAllCaps(false); b.setText("?"); b.setTextSize(16);
