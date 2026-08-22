@@ -5,7 +5,7 @@ public final class V070TransientFieldRegressionPureTest {
     public static void main(String[] args) {
         longObservationGapMustInvalidateTransientBaseline();
         shortMusicalTroughMustNotCreateEmergency();
-        shortContinuousEdgeStillTriggers();
+        shortContinuousEdgeConfirmsThenTriggers();
         System.out.println("V070TransientFieldRegressionPureTest: PASS");
     }
 
@@ -34,12 +34,15 @@ public final class V070TransientFieldRegressionPureTest {
                 "a 200 ms musical trough must not collapse the reference and turn the next beat into emergency");
     }
 
-    private static void shortContinuousEdgeStillTriggers() {
+    private static void shortContinuousEdgeConfirmsThenTriggers() {
         TransientGuard guard = new TransientGuard(6f, 10f);
         guard.update(0L, -30f);
-        TransientGuard.Event edge = guard.update(10L, -15f);
-        assertSame(TransientGuard.Severity.EMERGENCY, edge.severity,
-                "continuous +15 dB edge must remain protected");
+        TransientGuard.Event candidate = guard.update(10L, -15f);
+        assertSame(TransientGuard.Severity.WARNING, candidate.severity,
+                "first continuous +15 dB edge must enter confirmation instead of dropping Media immediately");
+        TransientGuard.Event confirmed = guard.update(55L, -15f);
+        assertSame(TransientGuard.Severity.EMERGENCY, confirmed.severity,
+                "continuous +15 dB edge that persists beyond confirmation must remain protected");
     }
 
     private static void assertSame(Object expected, Object actual, String message) {
