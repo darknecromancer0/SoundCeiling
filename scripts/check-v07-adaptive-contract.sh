@@ -103,7 +103,7 @@ require "$PKG/SimpleModeView.java" 'Ручное снижение пользов
 reject "$PKG/SimpleModeView.java" 'Один one-way движок'
 reject "$PKG/SimpleModeView.java" 'normalizeLabel.setText("Normalization: " + percent + "% · " + word + " · только вниз")'
 require "$PKG/AdvancedModeView.java" 'Восстановление возвращает только ранее сделанное SoundCeiling снижение'
-require "$PKG/AdvancedModeView.java" 'section("Поведение · снижение и восстановление")'
+require "$PKG/AdvancedModeView.java" 'section("Динамика нормализации")'
 reject "$PKG/AdvancedModeView.java" 'section("Поведение · только снижение")'
 require "$PKG/AdvancedModeView.java" 'Без неё обычная защита и нормализация продолжают работать'
 reject "$PKG/AdvancedModeView.java" 'Без неё обычный PCM, Peak, LUFS-like, Ceiling и нормализация работают нормально.'
@@ -138,10 +138,12 @@ require "$PKG/MediaLevelScale.java" 'percentForIndex(int index, int minIndex, in
 require "$PKG/SimpleModeView.java" 'minSeek.setMin(0); minSeek.setMax(100)'
 require "$PKG/SimpleModeView.java" 'MediaLevelScale.indexForPercent'
 require "$PKG/SimpleModeView.java" 'MediaLevelScale.percentForIndex'
-require "$PKG/AdvancedModeView.java" 'section("Основа потолка")'
+require "$PKG/AdvancedModeView.java" 'section("Шкала управления")'
 require "$PKG/AdvancedModeView.java" 'HelpText.CEILING_BASIS'
-require "$PKG/AdvancedModeView.java" 'addCeilingBasis("Media %", false)'
-require "$PKG/AdvancedModeView.java" 'addCeilingBasis("dB SPL", true)'
+require "$PKG/AdvancedModeView.java" 'addControlScale("Media %", ControlScale.MEDIA_PERCENT)'
+require "$PKG/AdvancedModeView.java" 'addControlScale("Digital dB", ControlScale.DIGITAL_DB)'
+require "$PKG/AdvancedModeView.java" 'addControlScale("Calibrated dB SPL", ControlScale.CALIBRATED_SPL)'
+require "$PKG/Prefs.java" 'CONTROL_SCALE'
 require "$PKG/AdvancedModeView.java" 'MediaLevelScale.indexForPercent'
 require "$PKG/AdvancedModeView.java" 'MediaLevelScale.percentForIndex'
 require "$PKG/AdvancedModeView.java" 'Prefs.SPL_MODE'
@@ -151,5 +153,13 @@ require "$PKG/NormalizerService.java" 'boolean missingSplProfile = Prefs.splMode
 require "$PKG/NormalizerService.java" 'DecisionEngine.Input.spl'
 require "$PKG/NormalizerService.java" 'HybridEngineCoordinator.plan('
 require "$PKG/NormalizerService.java" 'recoveryAllowed'
+
+# Durable log index: successfully created parts remain visible even when later discovery is empty.
+require "$PKG/LogSessionIndexModel.java" 'class LogSessionIndexModel'
+require "$PKG/LogSessionIndex.java" 'class LogSessionIndex'
+require "$PKG/SessionLogger.java" 'LogSessionIndex.recordPart'
+require "$PKG/LogStorage.java" 'LogSessionIndex.records(context)'
+require "$PKG/LogStorage.java" 'LogSessionIndexModel.reconcile'
+require "$PKG/LogAccess.java" 'LogSessionIndex.removeUri'
 
 echo "v0.7 adaptive runtime checkpoint: PASS"
