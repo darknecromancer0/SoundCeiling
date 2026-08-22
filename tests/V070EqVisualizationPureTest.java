@@ -11,6 +11,15 @@ public final class V070EqVisualizationPureTest {
         assertEquals(50, EqVisualizationMath.strengthPercent(new int[]{0,750,0,-300,0}, -1500, 1500), "half strength");
         assertEquals(100, EqVisualizationMath.strengthPercent(new int[]{0,600,0,0,0}, -1200, 600), "asymmetric boost strength");
         assertEquals(100, EqVisualizationMath.strengthPercent(new int[]{-1200,0,0,0,0}, -1200, 600), "asymmetric cut strength");
+        assertArrayEquals(new int[]{500,250,0,-250,-500},
+                EqVisualizationMath.appliedLevels(new int[]{1000,500,0,-500,-1000}, 50),
+                "50 percent EQ amount");
+        assertArrayEquals(new int[]{0,0,0,0,0},
+                EqVisualizationMath.appliedLevels(new int[]{1000,500,0,-500,-1000}, 0),
+                "zero EQ amount bypasses configured curve");
+        assertArrayEquals(new int[]{1000,500,0,-500,-1000},
+                EqVisualizationMath.appliedLevels(new int[]{1000,500,0,-500,-1000}, 150),
+                "EQ amount clamps to 100 percent");
         System.out.println("V070EqVisualizationPureTest: PASS");
     }
 
@@ -19,5 +28,11 @@ public final class V070EqVisualizationPureTest {
     }
     private static void assertEquals(int expected, int actual, String message) {
         if (expected != actual) throw new AssertionError(message + ": expected=" + expected + " actual=" + actual);
+    }
+    private static void assertArrayEquals(int[] expected, int[] actual, String message) {
+        if (!java.util.Arrays.equals(expected, actual)) {
+            throw new AssertionError(message + ": expected=" + java.util.Arrays.toString(expected)
+                    + " actual=" + java.util.Arrays.toString(actual));
+        }
     }
 }
