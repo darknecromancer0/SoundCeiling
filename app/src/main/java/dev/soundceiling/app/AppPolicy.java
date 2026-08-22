@@ -61,8 +61,9 @@ final class AppPolicy {
                 dspPreference, deviceOverrideKey);
     }
 
+    /** Legacy downwardOnly/limiterOnly data remains readable but cannot revoke v0.7 owned recovery. */
     boolean allowsBoundedRecovery() {
-        return mode != AppRule.Mode.OFF && !downwardOnly;
+        return mode != AppRule.Mode.OFF;
     }
 
     boolean allowsAutomaticRaise() { return allowsBoundedRecovery(); } // temporary source alias
