@@ -64,4 +64,10 @@ require "$PKG/AdvancedModeView.java" 'TargetScale.loudnessForPercent(p)'
 reject "$PKG/AdvancedModeView.java" 'Math.round(Prefs.targetLoudness(context) + 30f)'
 reject "$PKG/AdvancedModeView.java" '-30f + p'
 
+# Task 7: every Advanced help button must explain the control it is attached to.
+require "$PKG/AdvancedModeView.java" 'quietIndex = addSlider("Quiet Now level", HelpText.QUIET_LEVEL'
+require "$PKG/AdvancedModeView.java" 'maxDownSteps = addSlider("Max down steps", HelpText.MAX_DOWN_STEPS'
+reject "$PKG/AdvancedModeView.java" 'quietIndex = addSlider("Quiet Now level", HelpText.MIN_MEDIA'
+reject "$PKG/AdvancedModeView.java" 'maxDownSteps = addSlider("Max down steps", HelpText.DOWN_ATTACK'
+
 echo "v0.7 adaptive runtime checkpoint: PASS"
