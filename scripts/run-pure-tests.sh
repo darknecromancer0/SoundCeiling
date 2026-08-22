@@ -27,6 +27,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/FrequencyBandTracker.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/RuntimeState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/StatusText.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/HelpText.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFormatter.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFilePolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DiagnosticItem.java" \
@@ -87,7 +88,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/tests/V070RuntimeTelemetryPureTest.java" \
  "$ROOT/tests/V070VolumeProvenancePureTest.java" \
  "$ROOT/tests/V070CalibrationSafetyPureTest.java" \
- "$ROOT/tests/V070TargetScalePureTest.java"
+ "$ROOT/tests/V070TargetScalePureTest.java" \
+ "$ROOT/tests/V070HelpTextPureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
 java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
 java -cp "$OUT" dev.soundceiling.app.LoudnessPolicyPeakThresholdTest
@@ -106,3 +108,4 @@ java -cp "$OUT" dev.soundceiling.app.V070RuntimeTelemetryPureTest
 java -cp "$OUT" dev.soundceiling.app.V070VolumeProvenancePureTest
 java -cp "$OUT" dev.soundceiling.app.V070CalibrationSafetyPureTest
 java -cp "$OUT" dev.soundceiling.app.V070TargetScalePureTest
+java -cp "$OUT" dev.soundceiling.app.V070HelpTextPureTest
