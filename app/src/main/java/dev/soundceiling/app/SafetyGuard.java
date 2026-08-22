@@ -24,8 +24,9 @@ final class SafetyGuard {
 
     /**
      * v0.7 recovery-only clamp. It can only HOLD or move upward from the current observed value,
-     * and it can never cross the user-authorized envelope, effective policy ceiling, or hard max.
-     * Configured Minimum is deliberately not used as an upward target.
+     * never by more than one Android Media index per write, and it can never cross the
+     * user-authorized envelope, effective policy ceiling, or hard max. Configured Minimum is
+     * deliberately not used as an upward target.
      */
     static int clampRecovery(int requestedIndex, int currentIndex, SafetySettings settings,
                              int effectiveMax, int userEnvelopeCeiling) {
@@ -33,7 +34,8 @@ final class SafetyGuard {
         int upper = Math.min(settings.hardMax(), Math.max(0, effectiveMax));
         upper = Math.min(upper, Math.max(0, userEnvelopeCeiling));
         if (upper <= current) return current;
-        return Math.max(current, Math.min(upper, requestedIndex));
+        int oneStepUpper = Math.min(upper, current + 1);
+        return Math.max(current, Math.min(oneStepUpper, requestedIndex));
     }
 
     private SafetyGuard() {}
