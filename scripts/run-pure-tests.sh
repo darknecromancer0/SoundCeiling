@@ -19,6 +19,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlVolumeCurve.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ComfortScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TargetScale.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/MediaLevelScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SpeedPreset.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AudibleFloorPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlDecision.java" \
@@ -92,7 +93,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/tests/V070TargetScalePureTest.java" \
  "$ROOT/tests/V070HelpTextPureTest.java" \
  "$ROOT/tests/V070StatusModePureTest.java" \
- "$ROOT/tests/V070EqVisualizationPureTest.java"
+ "$ROOT/tests/V070EqVisualizationPureTest.java" \
+ "$ROOT/tests/V070MediaLevelScalePureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
 java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
 java -cp "$OUT" dev.soundceiling.app.LoudnessPolicyPeakThresholdTest
@@ -114,3 +116,4 @@ java -cp "$OUT" dev.soundceiling.app.V070TargetScalePureTest
 java -cp "$OUT" dev.soundceiling.app.V070HelpTextPureTest
 java -cp "$OUT" dev.soundceiling.app.V070StatusModePureTest
 java -cp "$OUT" dev.soundceiling.app.V070EqVisualizationPureTest
+java -cp "$OUT" dev.soundceiling.app.V070MediaLevelScalePureTest
