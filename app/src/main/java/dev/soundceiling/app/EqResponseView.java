@@ -20,7 +20,12 @@ final class EqResponseView extends View {
     }
 
     void setLevels(int[] levels, int min, int max) {
-        levelsMb = levels == null ? new int[BAND_COUNT] : Arrays.copyOf(levels, BAND_COUNT);
+        setLevels(levels, 100, min, max);
+    }
+
+    void setLevels(int[] levels, int amountPercent, int min, int max) {
+        int[] configured = levels == null ? new int[BAND_COUNT] : Arrays.copyOf(levels, BAND_COUNT);
+        levelsMb = EqVisualizationMath.appliedLevels(configured, amountPercent);
         minMb = min;
         maxMb = max;
         invalidate();
