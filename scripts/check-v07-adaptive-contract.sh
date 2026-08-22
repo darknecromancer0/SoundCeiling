@@ -70,4 +70,32 @@ require "$PKG/AdvancedModeView.java" 'maxDownSteps = addSlider("Max down steps",
 reject "$PKG/AdvancedModeView.java" 'quietIndex = addSlider("Quiet Now level", HelpText.MIN_MEDIA'
 reject "$PKG/AdvancedModeView.java" 'maxDownSteps = addSlider("Max down steps", HelpText.DOWN_ATTACK'
 
+# Task 8: policy vocabulary must describe v0.7 semantics: bounded recovery, not generic auto-raise.
+require "$PKG/EffectivePolicy.java" 'allowBoundedRecovery'
+require "$PKG/EffectivePolicy.java" 'downwardOnly'
+require "$PKG/EffectivePolicy.java" 'recoveryBlockReason'
+reject "$PKG/EffectivePolicy.java" 'allowAutomaticRaise'
+reject "$PKG/EffectivePolicy.java" 'raiseBlockReason'
+reject "$PKG/EffectivePolicy.java" 'limiterOnly'
+require "$PKG/AppPolicy.java" 'allowsBoundedRecovery()'
+require "$PKG/AppPolicy.java" 'downwardOnly'
+reject "$PKG/AppPolicy.java" 'allowsAutomaticRaise()'
+reject "$PKG/AppPolicy.java" 'final boolean limiterOnly'
+require "$PKG/MultiSourceResolver.java" 'downwardOnly'
+reject "$PKG/MultiSourceResolver.java" 'limiterOnly'
+require "$PKG/PolicyResolver.java" 'allowBoundedRecovery'
+require "$PKG/PolicyResolver.java" 'recoveryBlockReason'
+reject "$PKG/PolicyResolver.java" 'allowRaise'
+reject "$PKG/PolicyResolver.java" 'blockReason'
+require "$PKG/HybridEngineCoordinator.java" 'policy.recoveryBlockReason'
+require "$PKG/HybridEngineCoordinator.java" '!policy.downwardOnly'
+reject "$PKG/HybridEngineCoordinator.java" 'policy.raiseBlockReason'
+reject "$PKG/HybridEngineCoordinator.java" 'policy.limiterOnly'
+require "$PKG/NormalizerService.java" 'policy.allowBoundedRecovery'
+require "$PKG/NormalizerService.java" 'policy.recoveryBlockReason'
+reject "$PKG/NormalizerService.java" 'policy.allowAutomaticRaise'
+reject "$PKG/NormalizerService.java" 'policy.raiseBlockReason'
+# Keep the legacy JSON key so saved app policies remain readable across the rename.
+require "$PKG/AppPolicyStore.java" '"limiterOnly"'
+
 echo "v0.7 adaptive runtime checkpoint: PASS"
