@@ -56,6 +56,17 @@ final class VolumeWriteTracker {
         boolean isTrustedAppAck() {
             return kind == ObservationKind.APP_WRITE_ACK;
         }
+
+        VolumeWriteOrigin authorityOrigin() {
+            if (kind == ObservationKind.USER_CHANGE) return VolumeWriteOrigin.USER;
+            if (writeOrigin == WriteOrigin.QUIET_NOW) return VolumeWriteOrigin.QUIET_NOW;
+            if (writeOrigin == WriteOrigin.PEAK_EMERGENCY
+                    || writeOrigin == WriteOrigin.TRANSIENT_EMERGENCY
+                    || writeOrigin == WriteOrigin.HARD_CAP) {
+                return VolumeWriteOrigin.HARD_PEAK_SAFETY;
+            }
+            return VolumeWriteOrigin.NORMALIZATION;
+        }
     }
 
     private static final class PendingWrite {

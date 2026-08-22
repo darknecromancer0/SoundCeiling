@@ -42,6 +42,7 @@ public class NormalizerService extends Service {
     private final LoudnessControlPolicy.State loudnessState = new LoudnessControlPolicy.State();
     private final ManualThresholdFollower manualThreshold = new ManualThresholdFollower();
     private final AdaptiveVolumeEnvelope volumeEnvelope = new AdaptiveVolumeEnvelope();
+    private final NormalizerControlCoordinator controlCoordinator = new NormalizerControlCoordinator();
     private AudioManager audio;
     private MediaProjection projection;
     private PcmCaptureBackend pcmCapture;
@@ -79,6 +80,7 @@ public class NormalizerService extends Service {
     private float[] lastBands = new float[5];
     private int lastAppliedNonzero = -1;
     private boolean unexpectedZeroThisPoll;
+    private VolumeWriteTracker.Observation lastVolumeObservation;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -374,11 +376,11 @@ public class NormalizerService extends Service {
                         ? VolumeWriteTracker.WriteOrigin.TRANSIENT_EMERGENCY
                         : VolumeWriteTracker.WriteOrigin.PEAK_EMERGENCY;
             }
-            int applied = recovering
-                    ? safeVolume.applyRecovery(requested, current, safetySettings, policyMaxIndex,
-                            recoveryCeiling, now)
-                    : safeVolume.applyRequested(requested, current, safetySettings,
-                            policyMaxIndex, effectiveProfile.autoMute && emergency, now, writeOrigin);
+            ControlCommand command = controlCoordinator.onFrame(controlFrame(now, current, blockPeak,
+                    loud.controlLoudnessDb, signal, hybridSnapshot.policy, effectiveProfile));
+            int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
+                    effectiveProfile.autoMute && emergency, now);
+            reason = command.reason();
             long reactionLatency = applied != current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
             if (applied < current) {
@@ -468,10 +470,10 @@ public class NormalizerService extends Service {
             HybridEngineCoordinator.ControlPlan plan = HybridEngineCoordinator.plan(
                     current, emergencyTarget, current, policyMaxIndex, hybridSnapshot.policy,
                     ordinaryNormalizationPaused, emergency);
-            int applied = safeVolume.applyRequested(plan.requestedIndex, current, safetySettings,
-                    policyMaxIndex, effectiveProfile.autoMute && emergency, detectedAt,
-                    emergency ? VolumeWriteTracker.WriteOrigin.PEAK_EMERGENCY
-                        : VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN);
+            ControlCommand command = controlCoordinator.onFrame(controlFrame(detectedAt, current,
+                    reading.peakDb, reading.rmsDb, signal, hybridSnapshot.policy, effectiveProfile));
+            int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
+                    effectiveProfile.autoMute && emergency, detectedAt);
             long latency = applied < current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
             RuntimeState.ControlActivity activity = applied < current ? RuntimeState.ControlActivity.DECREASING
@@ -485,7 +487,7 @@ public class NormalizerService extends Service {
                     .controlActivity(activity).signalPresent(signal)
                     .levels(reading.rmsDb, reading.peakDb, Float.NaN, Float.NaN)
                     .loudness(reading.peakDb, reading.rmsDb)
-                    .controller(activity.name(), emergency ? "fallback_peak_emergency" : plan.reason,
+                    .controller(activity.name(), command.reason(),
                             latency, emergency ? latency : -1L)
                     .message(ordinaryNormalizationPaused
                             ? "Media на минимуме · обычная нормализация ждет ручного повышения"
@@ -498,8 +500,7 @@ public class NormalizerService extends Service {
                         "origin=%s reason=%s current=%d requested=%d applied=%d min=%d max=%d hardMax=%d configuredPeak=%.2f effectivePeak=%.2f peak=%.2f latencyMs=%d manualOffsetDb=%.2f source=%s pcm=%s confidence=%s",
                         emergency ? VolumeWriteTracker.WriteOrigin.PEAK_EMERGENCY
                                 : VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN,
-                        emergency ? "fallback_peak_emergency" : plan.reason,
-                        current, plan.requestedIndex, applied, safetySettings.minIndex,
+                        command.reason(), current, command.mediaIndex(), applied, safetySettings.minIndex,
                         safetySettings.maxIndex, safetySettings.hardMax(),
                         hybridSnapshot.policy.sourcePeakThresholdDbfs,
                         effectiveProfile.sourcePeakThresholdDbfs, reading.peakDb, latency,
@@ -518,6 +519,7 @@ public class NormalizerService extends Service {
         try { current = audio.getStreamVolume(AudioManager.STREAM_MUSIC); }
         catch (RuntimeException e) { return safetySettings.minIndex; }
         VolumeWriteTracker.Observation observation = writeTracker.observe(current, now);
+        lastVolumeObservation = observation;
         unexpectedZeroThisPoll = UnexpectedZeroPolicy.isUnexpectedZero(current,
                 controlCurve.minIndex(), lastAppliedNonzero, observation);
         if (observation.kind == VolumeWriteTracker.ObservationKind.USER_CHANGE) {
@@ -568,6 +570,67 @@ public class NormalizerService extends Service {
         return current;
     }
 
+    private NormalizerControlCoordinator.Frame controlFrame(long now, int current,
+                                                              float rawPeakDbfs,
+                                                              float controlLoudnessDb,
+                                                              boolean rawProgramActive,
+                                                              EffectivePolicy policy,
+                                                              ControlProfile profile) {
+        VolumeWriteTracker.Observation observed = lastVolumeObservation;
+        int previous = observed == null ? current : observed.previousIndex;
+        return new NormalizerControlCoordinator.Frame.Builder(now, previous, current, controlCurve)
+                .rawPeakDbfs(rawPeakDbfs).controlLoudnessDb(controlLoudnessDb)
+                .captureReference(CaptureReferenceEstimator.Mode.POST_VOLUME)
+                .hardPeakCeilingDbfs(profile.sourcePeakThresholdDbfs)
+                .rawProgramActive(rawProgramActive)
+                .policyAllowsPositiveGain(policy.sourceControlEnabled
+                        && policy.allowAutomaticRaise)
+                .verifiedDsp(optionalDsp != null && optionalDsp.isVerifiedActive())
+                .observation(coordinatorObservation(observed), coordinatorOrigin(observed))
+                .build();
+    }
+
+    private static NormalizerControlCoordinator.VolumeObservation coordinatorObservation(
+            VolumeWriteTracker.Observation observation) {
+        if (observation == null) return NormalizerControlCoordinator.VolumeObservation.UNCHANGED;
+        switch (observation.kind) {
+            case USER_CHANGE: return NormalizerControlCoordinator.VolumeObservation.USER;
+            case APP_WRITE_ACK: return NormalizerControlCoordinator.VolumeObservation.APP_ACK;
+            case APP_WRITE_STALE: return NormalizerControlCoordinator.VolumeObservation.APP_STALE;
+            case APP_WRITE_MISMATCH: return NormalizerControlCoordinator.VolumeObservation.APP_MISMATCH;
+            case UNCHANGED:
+            default: return NormalizerControlCoordinator.VolumeObservation.UNCHANGED;
+        }
+    }
+
+    private static VolumeWriteOrigin coordinatorOrigin(
+            VolumeWriteTracker.Observation observation) {
+        return observation == null ? VolumeWriteOrigin.USER : observation.authorityOrigin();
+    }
+
+    /** The service is the only Android actuator bridge; the coordinator has already chosen it. */
+    private int applyCoordinatorCommand(ControlCommand command, int current, SafetySettings settings,
+                                        int effectiveMax, boolean allowBelowMinimum, long now) {
+        if (command == null || command.kind() == ControlCommand.Kind.NONE) return current;
+        if (command.kind() == ControlCommand.Kind.DSP_GAIN) {
+            DiagnosticLog.transition("dsp_gain_command", command.reason(),
+                    "requestedGainDb=" + command.requestedGainDb());
+            return current;
+        }
+        int target = command.mediaIndex();
+        if (target > current) {
+            return safeVolume.applyRecovery(target, current, settings, effectiveMax,
+                    volumeEnvelope.recoverableCeilingIndex(settings.hardMax()), now);
+        }
+        VolumeWriteTracker.WriteOrigin origin = command.reason().startsWith("quiet_now")
+                ? VolumeWriteTracker.WriteOrigin.QUIET_NOW
+                : command.reason().contains("HARD_PEAK")
+                ? VolumeWriteTracker.WriteOrigin.PEAK_EMERGENCY
+                : VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN;
+        return safeVolume.applyRequested(target, current, settings, effectiveMax,
+                allowBelowMinimum, now, origin);
+    }
+
     private void quietNow() {
         unexpectedZeroThisPoll = false;
         long now = SystemClock.elapsedRealtime();
@@ -577,8 +640,13 @@ public class NormalizerService extends Service {
         SafetySettings quietSettings = new SafetySettings(controlCurve.minIndex(), safetySettings.maxIndex,
                 safetySettings.safetyLockEnabled, safetySettings.safetyLockIndex, quiet,
                 safetySettings.recoveryIntervalMs);
-        int applied = safeVolume.applyRequested(quiet, current, quietSettings, quiet, false, now,
-                VolumeWriteTracker.WriteOrigin.QUIET_NOW);
+        ControlCommand quietCommand = controlCoordinator.onFrame(
+                new NormalizerControlCoordinator.Frame.Builder(now, current, current, controlCurve)
+                        .quietTargetIndex(quiet)
+                        .observation(NormalizerControlCoordinator.VolumeObservation.APP_ACK,
+                                VolumeWriteOrigin.QUIET_NOW)
+                        .build());
+        int applied = applyCoordinatorCommand(quietCommand, current, quietSettings, quiet, false, now);
         if (applied < current) {
             manualThreshold.onDeliberateLowering(current, applied, controlCurve, now);
             volumeEnvelope.onDeliberateLowering(current, applied, controlCurve, now);
@@ -616,6 +684,19 @@ public class NormalizerService extends Service {
                 .loudness(blockPeak, loud.lufsLike)
                 .controller(activity.name(), controllerReason, reactionLatency,
                         emergency ? reactionLatency : -1L)
+                .coordinator(controlCoordinator.snapshot().decisionReason().startsWith("dsp:")
+                                ? "DSP" : "MEDIA",
+                        optionalDsp != null && optionalDsp.isVerifiedActive(),
+                        controlCoordinator.snapshot().desiredGainDb(),
+                        controlCoordinator.snapshot().appliedGainDb(),
+                        blockPeak + controlCurve.gainDbForIndex(applied), loud.controlLoudnessDb,
+                        controlCoordinator.snapshot().measurementMode().name(),
+                        controlCoordinator.ceilingState().linked(),
+                        controlCoordinator.ceilingState().lowerDb(),
+                        controlCoordinator.ceilingState().upperDb(),
+                        controlCurve.deltaDb(applied, Math.min(controlCurve.maxIndex(), applied + 1)),
+                        controlCoordinator.snapshot().programActive(),
+                        controlCoordinator.snapshot().directionDwell())
                 .message(message).lastVolumeChangeElapsedMs(lastChange)
                 .lastDecision(decision).bandLevels(lastBands).build();
         RuntimeStateStore.publish(state);
@@ -632,6 +713,18 @@ public class NormalizerService extends Service {
                 .envelope(volumeEnvelope.userCeilingIndex(), safetySettings.hardMax(),
                         recoveryCeiling, volumeEnvelope.automaticAttenuationDb(
                                 volume, safetySettings.hardMax(), controlCurve))
+                .coordinator(controlCoordinator.snapshot().decisionReason().startsWith("dsp:")
+                                ? "DSP" : "MEDIA",
+                        optionalDsp != null && optionalDsp.isVerifiedActive(),
+                        controlCoordinator.snapshot().desiredGainDb(),
+                        controlCoordinator.snapshot().appliedGainDb(), Float.NaN, Float.NaN,
+                        controlCoordinator.snapshot().measurementMode().name(),
+                        controlCoordinator.ceilingState().linked(),
+                        controlCoordinator.ceilingState().lowerDb(),
+                        controlCoordinator.ceilingState().upperDb(),
+                        controlCurve.deltaDb(volume, Math.min(controlCurve.maxIndex(), volume + 1)),
+                        controlCoordinator.snapshot().programActive(),
+                        controlCoordinator.snapshot().directionDwell())
                 .backendLabel(backendStatus.label())
                 .routeLabel(DeviceDetector.label(currentDevice))
                 .profileName(currentProfileV2 != null ? currentProfileV2.name
@@ -761,6 +854,7 @@ public class NormalizerService extends Service {
             int observedMedia = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
             writeTracker.observeInitial(observedMedia);
             volumeEnvelope.onRouteEpochReset(observedMedia, safetySettings.hardMax(), now);
+            controlCoordinator.onRouteChanged();
             loudnessState.lastUpAtMs = 0L;
             loudnessState.lastDownAtMs = 0L;
             loudnessState.loudHoldUntilMs = 0L;
@@ -859,6 +953,7 @@ public class NormalizerService extends Service {
     private synchronized void stopSafe(String reason, boolean error) {
         if (!stopping.compareAndSet(false, true)) return;
         workerRunning.set(false);
+        controlCoordinator.onStopped();
         DiagnosticLog.event("service_stop", "reason=" + clean(reason));
         if (worker != null && worker != Thread.currentThread()) worker.interrupt();
         worker = null;
@@ -889,6 +984,7 @@ public class NormalizerService extends Service {
 
     @Override public void onDestroy() {
         workerRunning.set(false);
+        controlCoordinator.onStopped();
         if (worker != null) worker.interrupt();
         if (pcmCapture != null) pcmCapture.close();
         if (visualizer != null) visualizer.close();

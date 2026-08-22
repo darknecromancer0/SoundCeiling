@@ -38,6 +38,12 @@ final class RuntimeState {
     final EngineCapabilities.DspTransportCapability dspTransportCapability;
     final String sourcePackage, sourceLabel, appRuleLabel, downgradeReason;
 
+    // v0.7.1 coordinator truth: selected actuator, verified capability and pure decision inputs.
+    final String controlActuator, captureReferenceMode, directionDwell;
+    final boolean controlCapabilityVerified, linkedCeilings, programActive;
+    final float desiredGainDb, appliedGainDb, projectedPeakDbfs, controlLoudnessDb;
+    final float lowerOutputCeilingDb, upperOutputCeilingDb, routeStepGainDb;
+
     private final float[] bandLevels;
     private final DiagnosticItem[] diagnostics;
 
@@ -70,6 +76,13 @@ final class RuntimeState {
         meteringCapability=b.meteringCapability; volumeControlCapability=b.volumeControlCapability;
         dspTransportCapability=b.dspTransportCapability; sourcePackage=n(b.sourcePackage);
         sourceLabel=n(b.sourceLabel); appRuleLabel=n(b.appRuleLabel); downgradeReason=n(b.downgradeReason);
+        controlActuator=n(b.controlActuator); captureReferenceMode=n(b.captureReferenceMode);
+        directionDwell=n(b.directionDwell); controlCapabilityVerified=b.controlCapabilityVerified;
+        linkedCeilings=b.linkedCeilings; programActive=b.programActive;
+        desiredGainDb=b.desiredGainDb; appliedGainDb=b.appliedGainDb;
+        projectedPeakDbfs=b.projectedPeakDbfs; controlLoudnessDb=b.controlLoudnessDb;
+        lowerOutputCeilingDb=b.lowerOutputCeilingDb; upperOutputCeilingDb=b.upperOutputCeilingDb;
+        routeStepGainDb=b.routeStepGainDb;
         bandLevels=b.bandLevels.clone(); diagnostics=b.diagnostics.clone();
     }
 
@@ -103,6 +116,10 @@ final class RuntimeState {
                 .meterAgeMs(currentMeterAgeMs).unexpectedZero(unexpectedZero)
                 .hybrid(pcmState, sourceConfidence, meteringCapability, volumeControlCapability,
                         dspTransportCapability, sourcePackage, sourceLabel, appRuleLabel, downgradeReason)
+                .coordinator(controlActuator, controlCapabilityVerified, desiredGainDb, appliedGainDb,
+                        projectedPeakDbfs, controlLoudnessDb, captureReferenceMode, linkedCeilings,
+                        lowerOutputCeilingDb, upperOutputCeilingDb, routeStepGainDb, programActive,
+                        directionDwell)
                 .bandLevels(bandLevels).diagnostics(items);
         return b.build();
     }
@@ -139,6 +156,11 @@ final class RuntimeState {
         EngineCapabilities.VolumeControlCapability volumeControlCapability=EngineCapabilities.VolumeControlCapability.NONE;
         EngineCapabilities.DspTransportCapability dspTransportCapability=EngineCapabilities.DspTransportCapability.UNAVAILABLE;
         String sourcePackage="", sourceLabel="", appRuleLabel="Global", downgradeReason="";
+        String controlActuator="NONE", captureReferenceMode="UNKNOWN", directionDwell="idle";
+        boolean controlCapabilityVerified, linkedCeilings, programActive;
+        float desiredGainDb, appliedGainDb, projectedPeakDbfs=Float.NaN, controlLoudnessDb=Float.NaN;
+        float lowerOutputCeilingDb=OutputCeilingState.DEFAULT_DB;
+        float upperOutputCeilingDb=OutputCeilingState.DEFAULT_DB, routeStepGainDb;
         float[] bandLevels=new float[5];
         DiagnosticItem[] diagnostics=new DiagnosticItem[0];
 
@@ -190,6 +212,16 @@ final class RuntimeState {
             volumeControlCapability=control==null?EngineCapabilities.VolumeControlCapability.NONE:control;
             dspTransportCapability=dsp==null?EngineCapabilities.DspTransportCapability.UNAVAILABLE:dsp;
             sourcePackage=pkg;sourceLabel=label;appRuleLabel=appRule;downgradeReason=downgrade;return this;
+        }
+        Builder coordinator(String actuator, boolean verified, float desiredGain, float appliedGain,
+                            float projectedPeak, float loudness, String captureMode, boolean linked,
+                            float lowerCeiling, float upperCeiling, float routeStepGain,
+                            boolean active, String dwell) {
+            controlActuator=actuator; controlCapabilityVerified=verified;
+            desiredGainDb=desiredGain; appliedGainDb=appliedGain; projectedPeakDbfs=projectedPeak;
+            controlLoudnessDb=loudness; captureReferenceMode=captureMode; linkedCeilings=linked;
+            lowerOutputCeilingDb=lowerCeiling; upperOutputCeilingDb=upperCeiling;
+            routeStepGainDb=routeStepGain; programActive=active; directionDwell=dwell; return this;
         }
         Builder bandLevels(float[] v){bandLevels=v==null?new float[5]:v.clone();return this;}
         Builder diagnostics(List<DiagnosticItem> v){diagnostics=v==null?new DiagnosticItem[0]:v.toArray(new DiagnosticItem[0]);return this;}

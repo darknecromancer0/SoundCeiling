@@ -26,8 +26,7 @@ final class SafeVolumeController {
                        int effectiveMax, boolean allowBelowMinimum, long nowMs,
                        VolumeWriteTracker.WriteOrigin origin) {
         int current = Math.max(0, currentIndex);
-        boolean quietCommand = origin == VolumeWriteTracker.WriteOrigin.QUIET_NOW
-                || (requestedIndex == settings.quietIndex && effectiveMax == settings.quietIndex);
+        boolean quietCommand = origin == VolumeWriteTracker.WriteOrigin.QUIET_NOW;
         VolumeWriteTracker.WriteOrigin actualOrigin = quietCommand
                 ? VolumeWriteTracker.WriteOrigin.QUIET_NOW
                 : origin == null ? VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN : origin;
@@ -41,6 +40,9 @@ final class SafeVolumeController {
             if (quietCommand) {
                 DiagnosticLog.event("quiet_now_hold", "current=" + current
                         + " configured=" + requestedIndex + " reason=downward_hold");
+            } else if (current == settings.minIndex) {
+                DiagnosticLog.transition("zero_floor_hold", "at_stream_minimum",
+                        "current=" + current + " requested=" + requestedIndex);
             }
             return current;
         }
