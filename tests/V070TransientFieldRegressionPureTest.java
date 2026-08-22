@@ -36,6 +36,7 @@ public final class V070TransientFieldRegressionPureTest {
 
     private static void shortContinuousEdgeConfirmsThenTriggers() {
         TransientGuard guard = new TransientGuard(6f, 10f);
+        guard.prime(-30f);
         guard.update(0L, -30f);
         TransientGuard.Event candidate = guard.update(10L, -15f);
         assertSame(TransientGuard.Severity.WARNING, candidate.severity,
