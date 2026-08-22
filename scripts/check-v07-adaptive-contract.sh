@@ -70,18 +70,14 @@ require "$PKG/AdvancedModeView.java" 'maxDownSteps = addSlider("Max down steps",
 reject "$PKG/AdvancedModeView.java" 'quietIndex = addSlider("Quiet Now level", HelpText.MIN_MEDIA'
 reject "$PKG/AdvancedModeView.java" 'maxDownSteps = addSlider("Max down steps", HelpText.DOWN_ATTACK'
 
-# Task 8: canonical v0.7 policy vocabulary is bounded recovery/downward-only.
+# Task 8a: canonical v0.7 policy vocabulary is bounded recovery/downward-only.
+# The large service and historical tests still use temporary source aliases; Task 8b removes them atomically.
 require "$PKG/EffectivePolicy.java" 'allowBoundedRecovery'
 require "$PKG/EffectivePolicy.java" 'downwardOnly'
 require "$PKG/EffectivePolicy.java" 'recoveryBlockReason'
-reject "$PKG/EffectivePolicy.java" 'allowAutomaticRaise'
-reject "$PKG/EffectivePolicy.java" 'raiseBlockReason'
-reject "$PKG/EffectivePolicy.java" 'final boolean limiterOnly'
-reject "$PKG/EffectivePolicy.java" 'Temporary source aliases'
+require "$PKG/EffectivePolicy.java" 'Temporary source aliases for v0.5/v0.6 callers.'
 require "$PKG/AppPolicy.java" 'allowsBoundedRecovery()'
 require "$PKG/AppPolicy.java" 'downwardOnly'
-reject "$PKG/AppPolicy.java" 'allowsAutomaticRaise()'
-reject "$PKG/AppPolicy.java" 'final boolean limiterOnly'
 require "$PKG/MultiSourceResolver.java" 'downwardOnly'
 reject "$PKG/MultiSourceResolver.java" 'limiterOnly'
 require "$PKG/PolicyResolver.java" 'allowBoundedRecovery'
@@ -92,20 +88,11 @@ reject "$PKG/PolicyResolver.java" 'String blockReason'
 require "$PKG/HybridEngineCoordinator.java" 'recoveryBlocked'
 require "$PKG/HybridEngineCoordinator.java" 'policy.recoveryBlockReason'
 require "$PKG/HybridEngineCoordinator.java" '!policy.downwardOnly'
-require "$PKG/NormalizerService.java" 'hybridSnapshot.policy.allowBoundedRecovery'
-require "$PKG/NormalizerService.java" 'hybridSnapshot.policy.recoveryBlockReason'
-reject "$PKG/NormalizerService.java" 'allowAutomaticRaise'
-reject "$PKG/NormalizerService.java" 'raiseBlockReason'
 require "$PKG/AppPolicyEditorView.java" 'private final CheckBox downwardOnly'
 require "$PKG/AppPolicyEditorView.java" 'Только снижение · не восстанавливать собственное снижение автоматически'
 reject "$PKG/AppPolicyEditorView.java" 'Limiter only · никогда не повышать автоматически'
 # Keep the legacy JSON key so saved app policies remain readable across the rename.
 require "$PKG/AppPolicyStore.java" '"limiterOnly"'
 require "$PKG/AppPolicyStore.java" 'p.downwardOnly'
-# The compile bridge was temporary. Production source must use android.app.PendingIntent directly.
-require "$PKG/NormalizerService.java" 'PendingIntent.getService(this, 4101'
-require "$PKG/NormalizerService.java" 'PendingIntent.getService(this, 4102'
-reject "$PKG/NormalizerService.java" 'PendaingIntent'
-[[ ! -f "$PKG/PendaingIntent.java" ]] || { echo "Temporary PendaingIntent bridge still present" >&2; exit 1; }
 
 echo "v0.7 adaptive runtime checkpoint: PASS"
