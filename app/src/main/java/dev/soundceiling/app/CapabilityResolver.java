@@ -7,7 +7,7 @@ final class CapabilityResolver {
                                       boolean exactPcm,
                                       boolean outputMixMeter,
                                       boolean perAppVerified,
-                                      boolean dspVerified,
+                                      boolean policyScopedDspVerified,
                                       boolean healthy,
                                       String reason) {
         EngineCapabilities.PlaybackObservationCapability playback = playbackObserved
@@ -23,8 +23,8 @@ final class CapabilityResolver {
         EngineCapabilities.VolumeControlCapability control = perAppVerified
                 ? EngineCapabilities.VolumeControlCapability.PER_APP_VERIFIED
                 : EngineCapabilities.VolumeControlCapability.STREAM_MEDIA;
-        EngineCapabilities.DspTransportCapability dsp = dspVerified
-                ? EngineCapabilities.DspTransportCapability.VERIFIED_SOURCE
+        EngineCapabilities.DspTransportCapability dsp = policyScopedDspVerified
+                ? EngineCapabilities.DspTransportCapability.VERIFIED_POLICY_SCOPED
                 : EngineCapabilities.DspTransportCapability.UNAVAILABLE;
         return new EngineCapabilities(playback, confidence, metering, control, dsp,
                 healthy, reason);

@@ -66,6 +66,10 @@ final class AppPolicy {
         return mode != AppRule.Mode.OFF;
     }
 
+    boolean allowsDspControl() {
+        return mode != AppRule.Mode.OFF && dspPreference != DspPreference.DISABLE;
+    }
+
     boolean allowsAutomaticRaise() { return allowsBoundedRecovery(); } // temporary source alias
 
     private static AppPolicy defaults(AppRule.Mode mode, boolean downwardOnly) {

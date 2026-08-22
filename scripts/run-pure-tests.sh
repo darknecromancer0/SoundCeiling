@@ -63,6 +63,15 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EqLinkMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EqVisualizationMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EngineCapabilities.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackEndpoint.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspEndpointHandle.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspScope.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspApplyResult.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspTransport.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/UnsupportedDspTransport.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspPolicyArbiter.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspProbeMath.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspGainSlew.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackSnapshot.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceDescriptor.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceSet.java" \
@@ -93,6 +102,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071LinkedLockPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071NormalizationCorePureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071CoordinatorPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071DspPolicyPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -162,3 +172,4 @@ java -cp "$OUT" dev.soundceiling.app.V071CaptureReferencePureTest
 java -cp "$OUT" dev.soundceiling.app.V071LinkedLockPureTest
 java -cp "$OUT" dev.soundceiling.app.V071NormalizationCorePureTest
 java -cp "$OUT" dev.soundceiling.app.V071CoordinatorPureTest
+java -cp "$OUT" dev.soundceiling.app.V071DspPolicyPureTest
