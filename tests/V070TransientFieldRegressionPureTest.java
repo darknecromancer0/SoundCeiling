@@ -1,9 +1,10 @@
 package dev.soundceiling.app;
 
-/** Reproduces the Samsung v0.6 stale-baseline emergency after a playback observation gap. */
+/** Reproduces Samsung v0.6 false transient emergencies from stale or over-reactive baselines. */
 public final class V070TransientFieldRegressionPureTest {
     public static void main(String[] args) {
         longObservationGapMustInvalidateTransientBaseline();
+        shortMusicalTroughMustNotCreateEmergency();
         shortContinuousEdgeStillTriggers();
         System.out.println("V070TransientFieldRegressionPureTest: PASS");
     }
@@ -21,6 +22,16 @@ public final class V070TransientFieldRegressionPureTest {
                 "first block after a long observation gap must prime a new baseline");
         assertNear(-21.3f, resumed.baselineDb, 0.01f,
                 "baseline after a gap must be the resumed signal, not stale history");
+    }
+
+    private static void shortMusicalTroughMustNotCreateEmergency() {
+        TransientGuard guard = new TransientGuard(6f, 10f);
+        guard.update(0L, -15f);
+        for (long t = 20L; t <= 220L; t += 20L) guard.update(t, -35f);
+
+        TransientGuard.Event beatReturns = guard.update(240L, -15f);
+        assertSame(TransientGuard.Severity.NONE, beatReturns.severity,
+                "a 200 ms musical trough must not collapse the reference and turn the next beat into emergency");
     }
 
     private static void shortContinuousEdgeStillTriggers() {
