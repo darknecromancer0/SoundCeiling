@@ -73,7 +73,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         root.addView(quietRow);
 
         section("Главное");
-        root.addView(secondary("Target — верхняя цель: тихий материал ниже неё не усиливается. Здесь настраиваются только удержание и снижение Media.", 13));
+        root.addView(secondary("Target — верхняя цель: тихий материал сам по себе не даёт права повышать Media. Восстановление возвращает только ранее сделанное SoundCeiling снижение и не выходит выше пользовательского/Maximum envelope.", 13));
         normalizationGroup = new RadioGroup(context); normalizationGroup.setOrientation(RadioGroup.HORIZONTAL);
         addNormalization("Off", NormalizationPreset.OFF); addNormalization("Light", NormalizationPreset.LIGHT);
         addNormalization("Medium", NormalizationPreset.MEDIUM); addNormalization("Strict", NormalizationPreset.STRICT);
@@ -110,7 +110,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         transientEmergency = addSlider("Transient emergency", HelpText.TRANSIENT_EMERGENCY, 0, 18,
                 Math.round(Prefs.transientEmergency(context)), p -> p + " dB", p -> edit(Prefs.TRANSIENT_EMERGENCY, (float) p));
 
-        section("Поведение · только снижение");
+        section("Поведение · снижение и восстановление");
         speedGroup = new RadioGroup(context); speedGroup.setOrientation(RadioGroup.HORIZONTAL);
         addSpeed("Быстро", SpeedPreset.FAST); addSpeed("Баланс", SpeedPreset.BALANCED);
         addSpeed("Мягко", SpeedPreset.GENTLE); addSpeed("Custom", SpeedPreset.CUSTOM); root.addView(speedGroup);
@@ -126,7 +126,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         LinearLayout terms2 = horizontal(); addHelpButton(terms2, "RMS", HelpText.RMS); addHelpButton(terms2, "DSP", HelpText.DSP); addHelpButton(terms2, "dB SPL", HelpText.DBSPL); root.addView(terms2);
 
         section("dB SPL · необязательно");
-        TextView calibrationNote = secondary("Калибровка нужна только для приблизительного dB SPL. Без неё обычный PCM, Peak, LUFS-like, Ceiling и нормализация работают нормально.", 13);
+        TextView calibrationNote = secondary("Калибровка нужна только для приблизительного dB SPL. Без неё обычная защита и нормализация продолжают работать.", 13);
         calibrationNote.setOnClickListener(v -> showHelp(HelpText.CALIBRATION)); root.addView(calibrationNote);
         splSwitch = addSwitch("Использовать калиброванный dB SPL", HelpText.CALIBRATION, Prefs.splMode(context), this::setSplMode);
         targetSpl = addSlider("Target dB SPL", HelpText.DBSPL, 50, 90, Math.round(Prefs.targetSpl(context)),
