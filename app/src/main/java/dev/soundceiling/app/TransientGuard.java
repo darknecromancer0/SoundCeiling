@@ -152,6 +152,8 @@ final class TransientGuard {
         resetSignalState();
     }
 
+    boolean isPlaybackActive() { return playbackActive; }
+
     void prime(float fastLevelDb) {
         if (!Float.isFinite(fastLevelDb) || fastLevelDb <= SILENCE_RESET_DBFS) {
             playbackActive = false;

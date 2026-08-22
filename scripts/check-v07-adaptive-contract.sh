@@ -21,20 +21,30 @@ require "$PKG/SafeVolumeController.java" 'SafetyGuard.clampAutomatic'
 require "$PKG/SafeVolumeController.java" 'SafetyGuard.clampRecovery'
 require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
 
-# Task 4: service provenance and runtime telemetry must use the adaptive envelope.
+# Task 4 compatibility: the adaptive envelope remains pure compatibility/recovery logic. Approved
+# v0.7.1 design §§7-9 moves live Samsung user authority to NormalizerControlCoordinator, so the
+# service must not run a second envelope authority model.
 require "$PKG/RuntimeState.java" 'RECOVERING'
 require "$PKG/RuntimeState.java" 'userCeilingIndex'
 require "$PKG/RuntimeState.java" 'automaticAttenuationDb'
-require "$PKG/NormalizerService.java" 'AdaptiveVolumeEnvelope volumeEnvelope'
-require "$PKG/NormalizerService.java" 'volumeEnvelope.onUserChange'
-require "$PKG/NormalizerService.java" 'volumeEnvelope.onAppWriteAck'
-require "$PKG/NormalizerService.java" 'volumeEnvelope.onProvenanceUncertain'
-require "$PKG/NormalizerService.java" 'volumeEnvelope.recoverableCeilingIndex'
-require "$PKG/NormalizerService.java" 'volumeEnvelope.hasRecoverableAttenuation'
 require "$PKG/NormalizerService.java" 'safeVolume.applyRecovery'
-require "$PKG/NormalizerService.java" 'VolumeWriteTracker.WriteOrigin.NORMALIZER_UP'
 require "$PKG/NormalizerService.java" 'RuntimeState.ControlActivity.RECOVERING'
 require "$PKG/NormalizerService.java" '.envelope('
+
+# Task 5.1: one coordinator owns every regular control tick. Approved v0.7.1 design §§7-9:
+# app-origin writes are actuator effects, not user-ceiling authority; hard safety remains immediate.
+require "$PKG/NormalizerControlCoordinator.java" 'effectivePolicy('
+require "$PKG/NormalizerControlCoordinator.java" 'sourceEvidence('
+require "$PKG/NormalizerControlCoordinator.java" 'playbackEndpoints('
+require "$PKG/NormalizerControlCoordinator.java" 'ControlCommand.Kind actuator()'
+require "$PKG/NormalizerService.java" 'optionalDsp.applyGain(command.requestedGainDb())'
+require "$PKG/NormalizerService.java" 'hardMediaCeilingIndex'
+require "$PKG/NormalizerService.java" '.playbackEndpoints('
+reject "$PKG/NormalizerService.java" 'safeVolume.enforceHardMax'
+reject "$PKG/NormalizerService.java" 'volumeEnvelope.onUserChange'
+reject "$PKG/NormalizerService.java" 'volumeEnvelope.onDeliberateLowering'
+reject "$PKG/NormalizerService.java" 'volumeEnvelope.onAppWriteAck'
+reject "$PKG/NormalizerService.java" 'decisionReason().startsWith'
 
 # Task 5: calibration is volume/route-stable and may not silently leave protection off.
 require "$PKG/CalibrationToneStateMachine.java" 'armEnvironment'
@@ -160,11 +170,10 @@ require "$PKG/AdvancedModeView.java" 'MediaLevelScale.indexForPercent'
 require "$PKG/AdvancedModeView.java" 'MediaLevelScale.percentForIndex'
 require "$PKG/AdvancedModeView.java" 'Prefs.SPL_MODE'
 reject "$PKG/AdvancedModeView.java" 'Использовать калиброванный dB SPL'
-# Runtime already has a calibrated SPL calculation path; final Adaptive Envelope remains the UP authority.
-require "$PKG/NormalizerService.java" 'boolean missingSplProfile = Prefs.splMode(this) && currentProfile == null;'
-require "$PKG/NormalizerService.java" 'DecisionEngine.Input.spl'
-require "$PKG/NormalizerService.java" 'HybridEngineCoordinator.plan('
-require "$PKG/NormalizerService.java" 'recoveryAllowed'
+# Approved v0.7.1 design §§7-9 makes the coordinator the final actuator authority. The legacy SPL
+# and HybridEngineCoordinator paths stay available as pure compatibility helpers, not live writers.
+require "$PKG/NormalizerService.java" 'controlCoordinator.onFrame(controlFrame('
+reject "$PKG/NormalizerService.java" 'HybridEngineCoordinator.plan('
 
 # Durable log index: successfully created parts remain visible even when later discovery is empty.
 require "$PKG/LogSessionIndexModel.java" 'class LogSessionIndexModel'
