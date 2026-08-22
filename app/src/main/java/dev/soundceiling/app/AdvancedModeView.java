@@ -34,8 +34,8 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private final SeekBar minMedia, maxMedia, safetyPercent, quietIndex, peakThreshold,
             transientWarning, transientEmergency, targetLoudness, tolerance, strength,
             downAttack, maxDownSteps, targetSpl, splCeiling;
-    private final Switch safetyLock, autoMute, splSwitch;
-    private final RadioGroup normalizationGroup, speedGroup;
+    private final Switch safetyLock, autoMute;
+    private final RadioGroup normalizationGroup, speedGroup, ceilingBasisGroup;
     private boolean loading;
 
     AdvancedModeView(Context context, Listener listener) {
@@ -90,17 +90,20 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                 p -> editNormalization(Prefs.LOUDNESS_TOLERANCE, p / 10f));
 
         section("Границы Media");
-        minMedia = addSlider("Minimum", HelpText.MIN_MEDIA, streamMin, streamMax, Prefs.minMediaIndex(context),
-                p -> p + "/" + streamMax + " · " + MediaLevelScale.percentForIndex(p, streamMax) + "%",
-                p -> editBound(Prefs.MIN_MEDIA_INDEX, p));
+        minMedia = addSlider("Minimum", HelpText.MIN_MEDIA, 0, 100,
+                MediaLevelScale.percentForIndex(Prefs.minMediaIndex(context), streamMin, streamMax),
+                p -> p + "% · фактически " + MediaLevelScale.indexForPercent(p, streamMin, streamMax) + "/" + streamMax,
+                p -> editBound(Prefs.MIN_MEDIA_INDEX, MediaLevelScale.indexForPercent(p, streamMin, streamMax)));
         maxMedia = addSlider("Maximum", HelpText.MAX_MEDIA, 1, 100, Prefs.maxVolumePercent(context),
                 p -> p + "%", p -> editBound(Prefs.MAX_VOLUME_PERCENT, p));
         safetyLock = addSwitch("Safety Lock", HelpText.SAFETY_LOCK, Prefs.safetyLockEnabled(context),
                 v -> edit(Prefs.SAFETY_LOCK_ENABLED, v));
         safetyPercent = addSlider("Safety Lock ceiling", HelpText.SAFETY_LOCK, 1, 100,
                 Prefs.safetyLockPercent(context), p -> p + "%", p -> editBound(Prefs.SAFETY_LOCK_PERCENT, p));
-        quietIndex = addSlider("Quiet Now level", HelpText.QUIET_LEVEL, streamMin, streamMax,
-                Prefs.quietIndex(context), p -> p + "/" + streamMax, p -> editBound(Prefs.QUIET_INDEX, p));
+        quietIndex = addSlider("Quiet Now level", HelpText.QUIET_LEVEL, 0, 100,
+                MediaLevelScale.percentForIndex(Prefs.quietIndex(context), streamMin, streamMax),
+                p -> p + "% · фактически " + MediaLevelScale.indexForPercent(p, streamMin, streamMax) + "/" + streamMax,
+                p -> editBound(Prefs.QUIET_INDEX, MediaLevelScale.indexForPercent(p, streamMin, streamMax)));
 
         section("Peak и transient protection");
         peakThreshold = addSlider("Projected peak ceiling", HelpText.SOURCE_PEAK, 0, 12,
@@ -126,10 +129,18 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         LinearLayout terms1 = horizontal(); addHelpButton(terms1, "PCM", HelpText.PCM); addHelpButton(terms1, "LUFS-like", HelpText.LUFS_LIKE); addHelpButton(terms1, "dBFS", HelpText.DBFS); root.addView(terms1);
         LinearLayout terms2 = horizontal(); addHelpButton(terms2, "RMS", HelpText.RMS); addHelpButton(terms2, "DSP", HelpText.DSP); addHelpButton(terms2, "dB SPL", HelpText.DBSPL); root.addView(terms2);
 
-        section("dB SPL · необязательно");
+        section("Основа потолка");
+        LinearLayout basisInfoRow = horizontal();
+        TextView basisInfo = secondary("Media % управляет системной шкалой в процентах. dB SPL использует только калиброванный текущий выход; при потере калибровки защита остаётся в Safe fallback.", 13);
+        Button basisHelp = button("?"); basisHelp.setOnClickListener(v -> showHelp(HelpText.CEILING_BASIS));
+        basisInfoRow.addView(basisInfo, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+        basisInfoRow.addView(basisHelp, new LinearLayout.LayoutParams(dp(46), dp(42))); root.addView(basisInfoRow);
+        ceilingBasisGroup = new RadioGroup(context); ceilingBasisGroup.setOrientation(RadioGroup.HORIZONTAL);
+        addCeilingBasis("Media %", false); addCeilingBasis("dB SPL", true); root.addView(ceilingBasisGroup);
+
+        section("dB SPL · калиброванный");
         TextView calibrationNote = secondary("Калибровка нужна только для приблизительного dB SPL. Без неё обычная защита и нормализация продолжают работать.", 13);
         calibrationNote.setOnClickListener(v -> showHelp(HelpText.CALIBRATION)); root.addView(calibrationNote);
-        splSwitch = addSwitch("Использовать калиброванный dB SPL", HelpText.CALIBRATION, Prefs.splMode(context), this::setSplMode);
         targetSpl = addSlider("Target dB SPL", HelpText.DBSPL, 50, 90, Math.round(Prefs.targetSpl(context)),
                 p -> p + " dB SPL", p -> edit(Prefs.TARGET_SPL, (float) p));
         splCeiling = addSlider("SPL ceiling", HelpText.DBSPL, 60, 100, Math.round(Prefs.splCeiling(context)),
@@ -150,6 +161,10 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
             SpeedPreset p = (SpeedPreset) b.getTag(); Prefs.get(getContext()).edit().putString(Prefs.SPEED_PRESET, p.key).apply();
             DiagnosticLog.event("preference_change", "speedPreset=" + p.key); markCustomProfile();
         });
+        ceilingBasisGroup.setOnCheckedChangeListener((group, id) -> {
+            if (loading) return; RadioButton b = group.findViewById(id); if (b == null || !(b.getTag() instanceof Boolean)) return;
+            setSplMode((Boolean) b.getTag());
+        });
 
         loading = true; refreshControlsFromPrefs(); loading = false;
     }
@@ -161,14 +176,25 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                 && (state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_MIXED
                 || state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT)
                 ? "Global PCM control доступен" : "Global PCM control ограничен";
+        boolean splSelected = Prefs.splMode(getContext());
+        boolean splCalibrated = currentSplProfile() != null;
+        String ceilingBasisStatus = splSelected
+                ? (splCalibrated ? "dB SPL · calibrated" : "dB SPL · Safe fallback (нет калибровки текущего выхода)")
+                : "Media %";
+        updateSplControlState();
         modeInfo.setText("PCM: " + state.pcmState + " · Metering: " + state.meteringCapability
                 + "\nController: " + state.controlActivity + " · " + globalTrust
+                + "\nCeiling basis: " + ceilingBasisStatus
                 + "\nSource: " + source + " · confidence=" + state.sourceConfidence
                 + (state.downgradeReason.isEmpty() ? "" : "\nBlock/reason: " + state.downgradeReason));
+        String splEstimate = Float.isNaN(state.estimatedRmsSpl)
+                ? "SPL estimate —"
+                : String.format(Locale.US, "SPL estimate %.1f dB · peak %.1f dB", state.estimatedRmsSpl, state.estimatedPeakSpl);
         liveDetails.setText(String.format(Locale.US,
-                "LUFS-like %.1f · RMS %.1f dBFS · Peak %.1f dBFS · raw %.1f dBFS\nMedia %d/%d · effective max %d · DSP %s",
+                "LUFS-like %.1f · RMS %.1f dBFS · Peak %.1f dBFS · raw %.1f dBFS\nMedia %d/%d · %d%% · effective max %d · DSP %s\n%s",
                 state.sourceLoudness, state.rmsDbfs, state.peakDbfs, state.rawPeakDbfs,
-                state.volumeIndex, state.volumeMax, state.effectiveMaxIndex, state.dspTransportCapability));
+                state.volumeIndex, state.volumeMax, MediaLevelScale.percentForIndex(state.volumeIndex, state.volumeMax),
+                state.effectiveMaxIndex, state.dspTransportCapability, splEstimate));
         if (state.lastDecision == null) decisionDetails.setText("Последнее решение: Hybrid controller · см. причину/статус выше");
         else decisionDetails.setText("Последнее решение: " + state.lastDecision.action + " · " + state.lastDecision.reason
                 + " · requested=" + state.lastDecision.requestedIndex + " applied=" + state.lastDecision.appliedIndex);
@@ -181,8 +207,10 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         ControlSettingConstraints.Result c = ControlSettingConstraints.normalize(streamMin, streamMax, min, max, safety, quiet);
         Prefs.get(getContext()).edit().putInt(Prefs.MIN_MEDIA_INDEX, c.minIndex).putInt(Prefs.MAX_VOLUME_PERCENT, c.maxPercent)
                 .putInt(Prefs.SAFETY_LOCK_PERCENT, c.safetyPercent).putInt(Prefs.QUIET_INDEX, c.quietIndex).apply();
-        boolean old = loading; loading = true; minMedia.setProgress(c.minIndex); maxMedia.setProgress(c.maxPercent);
-        safetyPercent.setProgress(c.safetyPercent); quietIndex.setProgress(c.quietIndex); loading = old;
+        boolean old = loading; loading = true;
+        minMedia.setProgress(MediaLevelScale.percentForIndex(c.minIndex, streamMin, streamMax)); maxMedia.setProgress(c.maxPercent);
+        safetyPercent.setProgress(c.safetyPercent);
+        quietIndex.setProgress(MediaLevelScale.percentForIndex(c.quietIndex, streamMin, streamMax)); loading = old;
         DiagnosticLog.event("preference_change", "bounds min=" + c.minIndex + " maxPercent=" + c.maxPercent + " safetyPercent=" + c.safetyPercent + " quiet=" + c.quietIndex);
     }
 
@@ -202,14 +230,16 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         boolean old = loading; loading = true;
         ControlSettingConstraints.Result c = ControlSettingConstraints.normalize(streamMin, streamMax, Prefs.minMediaIndex(getContext()), Prefs.maxVolumePercent(getContext()), Prefs.safetyLockPercent(getContext()), Prefs.quietIndex(getContext()));
         Prefs.get(getContext()).edit().putInt(Prefs.MIN_MEDIA_INDEX, c.minIndex).putInt(Prefs.MAX_VOLUME_PERCENT, c.maxPercent).putInt(Prefs.SAFETY_LOCK_PERCENT, c.safetyPercent).putInt(Prefs.QUIET_INDEX, c.quietIndex).apply();
-        minMedia.setProgress(c.minIndex); maxMedia.setProgress(c.maxPercent); safetyPercent.setProgress(c.safetyPercent); quietIndex.setProgress(c.quietIndex);
+        minMedia.setProgress(MediaLevelScale.percentForIndex(c.minIndex, streamMin, streamMax)); maxMedia.setProgress(c.maxPercent); safetyPercent.setProgress(c.safetyPercent);
+        quietIndex.setProgress(MediaLevelScale.percentForIndex(c.quietIndex, streamMin, streamMax));
         safetyLock.setChecked(Prefs.safetyLockEnabled(getContext())); peakThreshold.setProgress(Math.round(Prefs.sourcePeakThreshold(getContext()) + 12f));
         transientWarning.setProgress(Math.round(Prefs.transientWarning(getContext()))); transientEmergency.setProgress(Math.round(Prefs.transientEmergency(getContext())));
         targetLoudness.setProgress(TargetScale.percentForLoudness(Prefs.targetLoudness(getContext()))); tolerance.setProgress(Math.round(Prefs.loudnessTolerance(getContext()) * 10f));
         strength.setProgress(Math.round(Prefs.normalizationStrength(getContext()) * 100f)); downAttack.setProgress(Prefs.downwardAttackMs(getContext()));
         maxDownSteps.setProgress(Prefs.maxDownSteps(getContext()));
-        autoMute.setChecked(Prefs.allowAutoMute(getContext())); splSwitch.setChecked(Prefs.splMode(getContext())); targetSpl.setProgress(Math.round(Prefs.targetSpl(getContext()))); splCeiling.setProgress(Math.round(Prefs.splCeiling(getContext())));
+        autoMute.setChecked(Prefs.allowAutoMute(getContext())); targetSpl.setProgress(Math.round(Prefs.targetSpl(getContext()))); splCeiling.setProgress(Math.round(Prefs.splCeiling(getContext())));
         checkTag(normalizationGroup, Prefs.normalizationPreset(getContext())); checkTag(speedGroup, Prefs.speedPreset(getContext()));
+        checkTag(ceilingBasisGroup, Prefs.splMode(getContext()) ? Boolean.TRUE : Boolean.FALSE); updateSplControlState();
         profileInfo.setText("Профиль: " + (Prefs.activeProfile(getContext()).isEmpty() ? "Custom" : Prefs.activeProfile(getContext())));
         loading = old;
     }
@@ -254,9 +284,22 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private void showHelp(String key) { new AlertDialog.Builder(getContext()).setTitle("Что это значит?").setMessage(HelpText.forKey(key)).setPositiveButton("Понятно", null).show(); }
 
     private void setSplMode(boolean checked) {
-        if (checked) { AudioDeviceInfo d = DeviceDetector.detectOutputDevice(audio); if (ProfileStore.find(getContext(), d) == null) {
-            loading = true; splSwitch.setChecked(false); loading = false; Toast.makeText(getContext(), "dB SPL требует калибровку этого выхода. Обычный SoundCeiling продолжает работать без неё.", Toast.LENGTH_LONG).show(); return;
-        }} edit(Prefs.SPL_MODE, checked);
+        if (checked && currentSplProfile() == null) {
+            boolean old = loading; loading = true; checkTag(ceilingBasisGroup, Boolean.FALSE); loading = old;
+            edit(Prefs.SPL_MODE, false); updateSplControlState();
+            Toast.makeText(getContext(), "dB SPL требует калибровку этого выхода. SoundCeiling остаётся в Safe fallback с обычными Media-ограничениями.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        edit(Prefs.SPL_MODE, checked); updateSplControlState(); markCustomProfile();
+    }
+    private DeviceProfile currentSplProfile() {
+        AudioDeviceInfo d = DeviceDetector.detectOutputDevice(audio);
+        return ProfileStore.find(getContext(), d);
+    }
+    private void updateSplControlState() {
+        boolean enabled = Prefs.splMode(getContext()) && currentSplProfile() != null;
+        targetSpl.setEnabled(enabled); splCeiling.setEnabled(enabled);
+        targetSpl.setAlpha(enabled ? 1f : 0.55f); splCeiling.setAlpha(enabled ? 1f : 0.55f);
     }
     private void edit(String k, int v) { Prefs.get(getContext()).edit().putInt(k, v).apply(); DiagnosticLog.event("preference_change", k + "=" + v); }
     private void edit(String k, long v) { Prefs.get(getContext()).edit().putLong(k, v).apply(); DiagnosticLog.event("preference_change", k + "=" + v); }
@@ -266,6 +309,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
 
     private void addNormalization(String label, NormalizationPreset value) { RadioButton b = radio(label, value); normalizationGroup.addView(b); }
     private void addSpeed(String label, SpeedPreset value) { RadioButton b = radio(label, value); speedGroup.addView(b); }
+    private void addCeilingBasis(String label, boolean spl) { RadioButton b = radio(label, Boolean.valueOf(spl)); ceilingBasisGroup.addView(b); }
     private RadioButton radio(String label, Object tag) { RadioButton b = new RadioButton(getContext()); b.setId(View.generateViewId()); b.setText(label); b.setTextColor(UiTheme.primaryText(getContext())); b.setTag(tag); return b; }
     private void checkTag(RadioGroup group, Object tag) { for (int i = 0; i < group.getChildCount(); i++) { View v = group.getChildAt(i); if (v instanceof RadioButton && tag.equals(v.getTag())) { ((RadioButton) v).setChecked(true); return; } } }
     private void section(String name) { TextView t = text(name, 20, true); t.setPadding(0, dp(22), 0, dp(7)); root.addView(t); }
