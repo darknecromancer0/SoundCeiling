@@ -75,7 +75,6 @@ final class TransientGuard {
         long observationGapMs = lastUpdateMs == Long.MIN_VALUE ? 0L : nowMs - lastUpdateMs;
         if (observationGapMs > MAX_BASELINE_DT_MS) {
             primeAt(fastLevelDb, nowMs);
-            clearEmergencyCandidate();
             return new Event(Severity.NONE, 0f, baselineDb);
         }
 
@@ -91,36 +90,34 @@ final class TransientGuard {
         }
 
         Severity emitted = Severity.NONE;
-        boolean freezeBaselineForConfirmation = false;
-        if (delta >= emergencyDeltaDb && nowMs >= rearmAtMs) {
-            if (emergencyCandidateSinceMs == Long.MIN_VALUE) {
-                emergencyCandidateSinceMs = nowMs;
-                emergencyCandidateBaselineDb = baselineDb;
-                emitted = Severity.WARNING;
-                freezeBaselineForConfirmation = true;
-            } else {
-                float candidateDelta = fastLevelDb - emergencyCandidateBaselineDb;
-                if (candidateDelta >= emergencyDeltaDb
-                        && nowMs - emergencyCandidateSinceMs >= EMERGENCY_CONFIRM_MS) {
+        if (emergencyCandidateSinceMs != Long.MIN_VALUE) {
+            // Confirmation uses the frozen reference from the first dangerous block while the
+            // ordinary adaptive baseline keeps following elapsed time. This prevents a sustained
+            // new program level from leaving the detector artificially far behind.
+            float candidateDelta = fastLevelDb - emergencyCandidateBaselineDb;
+            if (candidateDelta >= emergencyDeltaDb && nowMs >= rearmAtMs) {
+                if (nowMs - emergencyCandidateSinceMs >= EMERGENCY_CONFIRM_MS) {
                     emitted = Severity.EMERGENCY;
                     rearmAtMs = nowMs + REARM_MS;
                     clearEmergencyCandidate();
-                } else if (candidateDelta >= emergencyDeltaDb) {
-                    emitted = Severity.WARNING;
-                    freezeBaselineForConfirmation = true;
                 } else {
-                    clearEmergencyCandidate();
-                    emitted = delta >= warningDeltaDb ? Severity.WARNING : Severity.NONE;
+                    emitted = Severity.WARNING;
                 }
+            } else {
+                clearEmergencyCandidate();
+                if (delta >= warningDeltaDb && nowMs >= rearmAtMs) emitted = Severity.WARNING;
             }
-        } else {
-            clearEmergencyCandidate();
-            if (delta >= warningDeltaDb && nowMs >= rearmAtMs) emitted = Severity.WARNING;
+        } else if (delta >= emergencyDeltaDb && nowMs >= rearmAtMs) {
+            emergencyCandidateSinceMs = nowMs;
+            emergencyCandidateBaselineDb = baselineDb;
+            emitted = Severity.WARNING;
+        } else if (delta >= warningDeltaDb && nowMs >= rearmAtMs) {
+            emitted = Severity.WARNING;
         }
 
         long rawDt = lastUpdateMs == Long.MIN_VALUE ? 0L : nowMs - lastUpdateMs;
         long dtMs = Math.max(0L, Math.min(MAX_BASELINE_DT_MS, rawDt));
-        if (dtMs > 0L && !freezeBaselineForConfirmation) {
+        if (dtMs > 0L) {
             // A short musical trough must not redefine the recent program level. Rising material
             // adapts quickly so a sustained new level settles; falling material releases slowly.
             long tauMs = fastLevelDb < baselineDb ? BASELINE_FALL_TAU_MS : BASELINE_RISE_TAU_MS;
