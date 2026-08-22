@@ -51,4 +51,17 @@ require "$PKG/CalibrationView.java" 'не гарантирует безопас�
 require "$PKG/CalibrationView.java" 'SoundCeiling отслеживает оба параметра и отменяет тест при изменении'
 reject "$PKG/CalibrationView.java" 'Безопасный тест: 1 кГц · -12 dBFS'
 
+# Task 6: Basic and Advanced must share one Target scale and storage mapping.
+require "$PKG/TargetScale.java" 'final class TargetScale'
+require "$PKG/SimpleModeView.java" 'TargetScale.percentForLoudness(Prefs.targetLoudness(context))'
+require "$PKG/SimpleModeView.java" 'TargetScale.loudnessForPercent(progress)'
+require "$PKG/SimpleModeView.java" 'TargetScale.loudnessForPercent(percent)'
+reject "$PKG/SimpleModeView.java" 'private static float loudnessForPercent'
+reject "$PKG/SimpleModeView.java" 'private static int percentForLoudness'
+require "$PKG/AdvancedModeView.java" 'targetLoudness = addSlider("Target", HelpText.TARGET_LOUDNESS, 0, 100,'
+require "$PKG/AdvancedModeView.java" 'TargetScale.percentForLoudness(Prefs.targetLoudness(context))'
+require "$PKG/AdvancedModeView.java" 'TargetScale.loudnessForPercent(p)'
+reject "$PKG/AdvancedModeView.java" 'Math.round(Prefs.targetLoudness(context) + 30f)'
+reject "$PKG/AdvancedModeView.java" '-30f + p'
+
 echo "v0.7 adaptive runtime checkpoint: PASS"
