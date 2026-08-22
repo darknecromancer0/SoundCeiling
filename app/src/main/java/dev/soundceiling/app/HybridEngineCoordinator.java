@@ -59,8 +59,7 @@ final class HybridEngineCoordinator {
             return new ControlPlan(comfort, false, "comfort_downward");
         }
         if (comfort > current) {
-            if (recoveryAllowed && !manualPause && !policy.downwardOnly
-                    && recoveryCeiling > current) {
+            if (recoveryAllowed && !manualPause && recoveryCeiling > current) {
                 int requested = Math.min(comfort, recoveryCeiling);
                 return new ControlPlan(requested, false,
                         requested > current ? "adaptive_recovery" : "adaptive_hold");
