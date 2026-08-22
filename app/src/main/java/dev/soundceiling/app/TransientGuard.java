@@ -58,22 +58,28 @@ final class TransientGuard {
 
     Event update(long nowMs, float fastLevelDb) {
         if (!Float.isFinite(fastLevelDb)) return new Event(Severity.NONE, 0f, baselineDb);
-        // Silence is not a meaningful transient baseline. Without this reset the first block of
-        // normal playback can look like a huge emergency after an idle period.
+        // Silence is not a meaningful transient baseline. It also ends the inferred continuous
+        // PCM program so the next audible block gets the same onset warmup as an explicit
+        // inactive -> active playback transition.
         if (fastLevelDb <= SILENCE_RESET_DBFS) {
+            playbackActive = false;
+            warmupUntilMs = 0L;
             resetSignalState();
             return new Event(Severity.NONE, 0f, fastLevelDb);
         }
         if (!initialized) {
+            armImplicitPlaybackOnset(nowMs);
             primeAt(fastLevelDb, nowMs);
             return new Event(Severity.NONE, 0f, baselineDb);
         }
 
         // A transient delta is meaningful only across a continuously observed signal. If capture
         // or source control did not feed this guard for longer than the normal baseline window,
-        // the old baseline is stale. Re-prime before comparing the resumed block to old history.
+        // treat the resumed PCM as a new onset and warm the delta detector before comparing it.
         long observationGapMs = lastUpdateMs == Long.MIN_VALUE ? 0L : nowMs - lastUpdateMs;
         if (observationGapMs > MAX_BASELINE_DT_MS) {
+            playbackActive = false;
+            armImplicitPlaybackOnset(nowMs);
             primeAt(fastLevelDb, nowMs);
             return new Event(Severity.NONE, 0f, baselineDb);
         }
@@ -137,6 +143,8 @@ final class TransientGuard {
 
     void prime(float fastLevelDb) {
         if (!Float.isFinite(fastLevelDb) || fastLevelDb <= SILENCE_RESET_DBFS) {
+            playbackActive = false;
+            warmupUntilMs = 0L;
             resetSignalState();
             return;
         }
@@ -144,6 +152,13 @@ final class TransientGuard {
         baselineDb = fastLevelDb;
         rearmAtMs = 0L;
         lastUpdateMs = Long.MIN_VALUE;
+        clearEmergencyCandidate();
+    }
+
+    private void armImplicitPlaybackOnset(long nowMs) {
+        if (playbackActive) return;
+        playbackActive = true;
+        warmupUntilMs = nowMs + ONSET_WARMUP_MS;
         clearEmergencyCandidate();
     }
 
