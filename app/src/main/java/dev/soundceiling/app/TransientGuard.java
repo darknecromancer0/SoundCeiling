@@ -1,6 +1,6 @@
 package dev.soundceiling.app;
 
-/** Detects sudden level jumps relative to a short elapsed-time adaptive baseline. */
+/** Detects sudden level jumps relative to an asymmetric adaptive program baseline. */
 final class TransientGuard {
     enum Severity { NONE, WARNING, EMERGENCY }
 
@@ -21,7 +21,7 @@ final class TransientGuard {
 
     private static final long REARM_MS = 250L;
     static final long BASELINE_RISE_TAU_MS = 50L;
-    static final long BASELINE_FALL_TAU_MS = 35L;
+    static final long BASELINE_FALL_TAU_MS = 1000L;
     private static final long MAX_BASELINE_DT_MS = 250L;
     private static final float SILENCE_RESET_DBFS = -60f;
     private final float warningDeltaDb;
@@ -67,6 +67,8 @@ final class TransientGuard {
         long rawDt = lastUpdateMs == Long.MIN_VALUE ? 0L : nowMs - lastUpdateMs;
         long dtMs = Math.max(0L, Math.min(MAX_BASELINE_DT_MS, rawDt));
         if (dtMs > 0L) {
+            // A short musical trough must not redefine the recent program level. Rising material
+            // adapts quickly so a sustained new level settles; falling material releases slowly.
             long tauMs = fastLevelDb < baselineDb ? BASELINE_FALL_TAU_MS : BASELINE_RISE_TAU_MS;
             double alpha = 1.0 - Math.exp(-dtMs / (double) tauMs);
             baselineDb += (float) (alpha * (fastLevelDb - baselineDb));
