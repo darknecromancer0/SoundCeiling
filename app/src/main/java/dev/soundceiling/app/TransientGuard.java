@@ -49,6 +49,15 @@ final class TransientGuard {
             return new Event(Severity.NONE, 0f, baselineDb);
         }
 
+        // A transient delta is meaningful only across a continuously observed signal. If capture
+        // or source control did not feed this guard for longer than the normal baseline window,
+        // the old baseline is stale. Re-prime before comparing the resumed block to old history.
+        long observationGapMs = lastUpdateMs == Long.MIN_VALUE ? 0L : nowMs - lastUpdateMs;
+        if (observationGapMs > MAX_BASELINE_DT_MS) {
+            primeAt(fastLevelDb, nowMs);
+            return new Event(Severity.NONE, 0f, baselineDb);
+        }
+
         float delta = fastLevelDb - baselineDb;
         Severity raw = delta >= emergencyDeltaDb ? Severity.EMERGENCY
                 : delta >= warningDeltaDb ? Severity.WARNING : Severity.NONE;
