@@ -45,7 +45,7 @@ final class PolicyResolver {
         float peakThreshold = globalProfile.sourcePeakThresholdDbfs;
         float transientWarning = globalProfile.transientWarningDb;
         float transientEmergency = globalProfile.transientEmergencyDb;
-        boolean limiterOnly = sourceResult.limiterOnly;
+        boolean downwardOnly = sourceResult.downwardOnly;
         boolean exactCustom = exactPolicy != null && exactPolicy.mode == AppRule.Mode.CUSTOM;
         if (exactCustom) {
             target = exactPolicy.targetLoudness;
@@ -53,48 +53,48 @@ final class PolicyResolver {
             peakThreshold = exactPolicy.sourcePeakThresholdDbfs;
             transientWarning = exactPolicy.transientWarningDb;
             transientEmergency = exactPolicy.transientEmergencyDb;
-            limiterOnly |= exactPolicy.limiterOnly;
+            downwardOnly |= exactPolicy.downwardOnly;
         }
 
         boolean streamEnabled = mediaPolicy == null || mediaPolicy.enabled;
         boolean sourceControl = streamEnabled && sourceResult.sourceControlEnabled;
-        String blockReason = "";
-        boolean allowRaise = sourceControl;
+        String recoveryBlockReason = "";
+        boolean allowBoundedRecovery = sourceControl;
 
         if (!streamEnabled) {
-            allowRaise = false;
-            blockReason = "media_stream_disabled";
+            allowBoundedRecovery = false;
+            recoveryBlockReason = "media_stream_disabled";
         } else if (!sourceResult.sourceControlEnabled) {
-            allowRaise = false;
-            blockReason = sourceResult.reason;
-        } else if (limiterOnly) {
-            allowRaise = false;
-            blockReason = "limiter_only";
+            allowBoundedRecovery = false;
+            recoveryBlockReason = sourceResult.reason;
+        } else if (downwardOnly) {
+            allowBoundedRecovery = false;
+            recoveryBlockReason = "downward_only";
         } else if (globalProfile.normalizationPreset == NormalizationPreset.OFF) {
-            allowRaise = false;
-            blockReason = "normalization_off";
+            allowBoundedRecovery = false;
+            recoveryBlockReason = "normalization_off";
         } else {
             ConfidenceGate.Result confidence = exactCustom
                     ? ConfidenceGate.evaluateExactSource(sources, capabilities, pcmState)
                     : ConfidenceGate.evaluateGlobalPcm(sources, capabilities, pcmState);
             if (!confidence.allowed) {
-                allowRaise = false;
-                blockReason = confidence.reason;
+                allowBoundedRecovery = false;
+                recoveryBlockReason = confidence.reason;
             }
         }
 
-        if (allowRaise && sourceChangedAtMs > 0L
+        if (allowBoundedRecovery && sourceChangedAtMs > 0L
                 && nowElapsedMs >= sourceChangedAtMs
                 && nowElapsedMs - sourceChangedAtMs < SOURCE_TRANSITION_HOLD_MS) {
-            allowRaise = false;
-            blockReason = "source_transition_hold";
+            allowBoundedRecovery = false;
+            recoveryBlockReason = "source_transition_hold";
         }
 
         String scope = exactCustom ? "exact_custom" : sources.sources().isEmpty() ? "global_unknown_source" : "global_shared";
         String resolution = sourceResult.reason + ";scope=" + scope + ";max=" + max + ";fallback=" + fallback;
-        return new EffectivePolicy(sourceControl, allowRaise, limiterOnly, max, fallback,
+        return new EffectivePolicy(sourceControl, allowBoundedRecovery, downwardOnly, max, fallback,
                 target, strength, peakThreshold, transientWarning, transientEmergency,
-                blockReason, resolution);
+                recoveryBlockReason, resolution);
     }
 
     private PolicyResolver() {}

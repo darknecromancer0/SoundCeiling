@@ -29,7 +29,7 @@ final class AppPolicyEditorView extends LinearLayout {
     private final SeekBar maxMedia;
     private final SeekBar strength;
     private final SeekBar fallback;
-    private final CheckBox limiterOnly;
+    private final CheckBox downwardOnly;
     private final TextView loudnessLabel;
     private final TextView maxMediaLabel;
     private final TextView strengthLabel;
@@ -85,11 +85,11 @@ final class AppPolicyEditorView extends LinearLayout {
         fallback = seek(0, 100, policy.fallbackMaxPercent);
         customPanel.addView(fallback);
 
-        limiterOnly = new CheckBox(context);
-        limiterOnly.setText("Limiter only · никогда не повышать автоматически");
-        limiterOnly.setTextColor(Color.WHITE);
-        limiterOnly.setChecked(policy.limiterOnly);
-        customPanel.addView(limiterOnly);
+        downwardOnly = new CheckBox(context);
+        downwardOnly.setText("Только снижение · не восстанавливать собственное снижение автоматически");
+        downwardOnly.setTextColor(Color.WHITE);
+        downwardOnly.setChecked(policy.downwardOnly);
+        customPanel.addView(downwardOnly);
 
         SeekBar.OnSeekBarChangeListener labels = new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -165,7 +165,7 @@ final class AppPolicyEditorView extends LinearLayout {
             case OFF: next = AppPolicy.off(); break;
             case CUSTOM:
                 next = AppPolicy.custom(targetLoudness(), maxMedia.getProgress(),
-                        strength.getProgress() / 100f, limiterOnly.isChecked(), -2f,
+                        strength.getProgress() / 100f, downwardOnly.isChecked(), -2f,
                         6f, 10f, fallback.getProgress(), AppPolicy.DspPreference.AUTO, "");
                 break;
             case GLOBAL:
