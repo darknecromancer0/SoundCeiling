@@ -67,9 +67,6 @@ final class PolicyResolver {
         } else if (!sourceResult.sourceControlEnabled) {
             allowBoundedRecovery = false;
             recoveryBlockReason = sourceResult.reason;
-        } else if (downwardOnly) {
-            allowBoundedRecovery = false;
-            recoveryBlockReason = "downward_only";
         } else if (globalProfile.normalizationPreset == NormalizationPreset.OFF) {
             allowBoundedRecovery = false;
             recoveryBlockReason = "normalization_off";
