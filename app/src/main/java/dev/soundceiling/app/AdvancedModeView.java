@@ -91,7 +91,8 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
 
         section("Границы Media");
         minMedia = addSlider("Minimum", HelpText.MIN_MEDIA, streamMin, streamMax, Prefs.minMediaIndex(context),
-                p -> p + "/" + streamMax, p -> editBound(Prefs.MIN_MEDIA_INDEX, p));
+                p -> p + "/" + streamMax + " · " + MediaLevelScale.percentForIndex(p, streamMax) + "%",
+                p -> editBound(Prefs.MIN_MEDIA_INDEX, p));
         maxMedia = addSlider("Maximum", HelpText.MAX_MEDIA, 1, 100, Prefs.maxVolumePercent(context),
                 p -> p + "%", p -> editBound(Prefs.MAX_VOLUME_PERCENT, p));
         safetyLock = addSwitch("Safety Lock", HelpText.SAFETY_LOCK, Prefs.safetyLockEnabled(context),
@@ -108,7 +109,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         transientWarning = addSlider("Transient warning", HelpText.TRANSIENT_WARNING, 0, 12,
                 Math.round(Prefs.transientWarning(context)), p -> p + " dB", p -> edit(Prefs.TRANSIENT_WARNING, (float) p));
         transientEmergency = addSlider("Transient emergency", HelpText.TRANSIENT_EMERGENCY, 0, 18,
-                Math.round(Prefs.transientEmergency(context)), p -> p + " dB", p -> edit(Prefs.TRANSIENT_EMERGENCY, (float) p));
+                Math.round(Prefs.transientEmergency(getContext())), p -> p + " dB", p -> edit(Prefs.TRANSIENT_EMERGENCY, (float) p));
 
         section("Поведение · снижение и восстановление");
         speedGroup = new RadioGroup(context); speedGroup.setOrientation(RadioGroup.HORIZONTAL);
@@ -136,7 +137,8 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
 
         section("Живые показатели");
         liveDetails = secondary("", 13); root.addView(liveDetails);
-        frequencyMeter = new FrequencyMeterView(context); LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(155)); flp.topMargin = dp(10); root.addView(frequencyMeter, flp);
+        frequencyMeter = new FrequencyMeterView(context); frequencyMeter.setMinimumHeight(dp(166));
+        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT); flp.topMargin = dp(10); root.addView(frequencyMeter, flp);
         decisionDetails = secondary("Последнее решение: —", 13); decisionDetails.setPadding(0, dp(12), 0, 0); root.addView(decisionDetails);
 
         normalizationGroup.setOnCheckedChangeListener((group, id) -> {
