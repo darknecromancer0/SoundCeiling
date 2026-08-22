@@ -20,6 +20,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ComfortScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TargetScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/MediaLevelScale.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ControlScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SpeedPreset.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AudibleFloorPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlDecision.java" \
@@ -103,7 +104,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/tests/V070LegacyLimiterSemanticsPureTest.java" \
  "$ROOT/tests/V070TransientRecoveryPureTest.java" \
  "$ROOT/tests/V070TransientPureTest.java" \
- "$ROOT/tests/V070LogIndexPureTest.java"
+ "$ROOT/tests/V070LogIndexPureTest.java" \
+ "$ROOT/tests/V070ControlScalePureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
 java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
 java -cp "$OUT" dev.soundceiling.app.LoudnessPolicyPeakThresholdTest
@@ -133,4 +135,6 @@ java -cp "$OUT" dev.soundceiling.app.V070TransientFieldRegressionPureTest
 java -cp "$OUT" dev.soundceiling.app.V070LegacyLimiterSemanticsPureTest
 java -cp "$OUT" dev.soundceiling.app.V070TransientRecoveryPureTest
 java -cp "$OUT" dev.soundceiling.app.V070TransientPureTest
+
 java -cp "$OUT" dev.soundceiling.app.V070LogIndexPureTest
+java -cp "$OUT" dev.soundceiling.app.V070ControlScalePureTest
