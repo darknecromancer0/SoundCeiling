@@ -34,24 +34,29 @@ final class EqController {
         if (!settings.enabled) {
             if (equalizer != null) try { equalizer.setEnabled(false); } catch (RuntimeException ignored) {}
             available = equalizer != null;
-            status = available ? "EQ выключен · настройки сохранены" : "EQ выключен";
+            status = available
+                    ? "EQ выключен · Android Equalizer attached · Verified DSP transport: unavailable"
+                    : "EQ выключен · Verified DSP transport: unavailable";
             return;
         }
         try {
             ensureEffect();
             short[] range = equalizer.getBandLevelRange();
             minMb = range[0]; maxMb = range[1];
+            int[] appliedLevels = EqVisualizationMath.appliedLevels(
+                    settings.levelsMb, settings.amountPercent);
             for (int i = 0; i < FREQUENCIES_HZ.length; i++) {
                 short band = equalizer.getBand(FREQUENCIES_HZ[i] * 1000);
-                int level = DbMath.clamp(settings.levelsMb[i], minMb, maxMb);
+                int level = DbMath.clamp(appliedLevels[i], minMb, maxMb);
                 equalizer.setBandLevel(band, (short) level);
             }
             equalizer.setEnabled(true);
             available = true;
-            status = "EQ active · independent module";
+            status = "EQ active · Android Equalizer attached · Verified DSP transport: unavailable";
         } catch (RuntimeException e) {
             available = false;
-            status = "DSP/EQ unavailable: " + e.getClass().getSimpleName();
+            status = "DSP/EQ unavailable: " + e.getClass().getSimpleName()
+                    + " · Verified DSP transport: unavailable";
             DiagnosticLog.transition("eq_unavailable", status, status);
             releaseEffect();
         }
