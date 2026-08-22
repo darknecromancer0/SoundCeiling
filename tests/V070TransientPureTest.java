@@ -78,6 +78,7 @@ public final class V070TransientPureTest {
         TransientGuard guard = new TransientGuard(6f, 10f);
         guard.onPlaybackState(true, 0L);
         guard.update(0L, -30f);
+        guard.update(240L, -30f);
         guard.update(260L, -30f);
         guard.update(300L, -30f);
         return guard;
