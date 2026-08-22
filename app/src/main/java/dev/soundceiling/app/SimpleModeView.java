@@ -69,14 +69,14 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         }, this::updateComfortLabel));
 
         minLabel = section(); minLabel.setPadding(0, dp(16), 0, 0); root.addView(minLabel);
-        minSeek = new SeekBar(context); minSeek.setMin(streamMin); minSeek.setMax(streamMax); root.addView(minSeek);
+        minSeek = new SeekBar(context); minSeek.setMin(0); minSeek.setMax(100); root.addView(minSeek);
 
         maxLabel = section(); maxLabel.setPadding(0, dp(16), 0, 0); root.addView(maxLabel);
         maxSeek = new SeekBar(context); maxSeek.setMin(1); maxSeek.setMax(100); root.addView(maxSeek);
         syncBoundsFromPrefs();
 
         minSeek.setOnSeekBarChangeListener(listener((seek, progress) -> applyBounds(progress, maxSeek.getProgress()),
-                progress -> updateMinLabel(progress, streamMax)));
+                this::updateMinLabel));
         maxSeek.setOnSeekBarChangeListener(listener((seek, progress) -> applyBounds(minSeek.getProgress(), progress),
                 this::updateMaxLabel));
 
@@ -112,19 +112,20 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
 
     }
 
-    private void applyBounds(int requestedMin, int requestedMaxPercent) {
+    private void applyBounds(int requestedMinPercent, int requestedMaxPercent) {
         if (syncingBounds) return;
+        int requestedMinIndex = MediaLevelScale.indexForPercent(requestedMinPercent, streamMin, streamMax);
         ControlSettingConstraints.Result c = ControlSettingConstraints.normalize(streamMin, streamMax,
-                requestedMin, requestedMaxPercent, Prefs.safetyLockPercent(getContext()), Prefs.quietIndex(getContext()));
+                requestedMinIndex, requestedMaxPercent, Prefs.safetyLockPercent(getContext()), Prefs.quietIndex(getContext()));
         Prefs.get(getContext()).edit()
                 .putInt(Prefs.MIN_MEDIA_INDEX, c.minIndex)
                 .putInt(Prefs.MAX_VOLUME_PERCENT, c.maxPercent)
                 .putInt(Prefs.SAFETY_LOCK_PERCENT, c.safetyPercent)
                 .putInt(Prefs.QUIET_INDEX, c.quietIndex).apply();
         syncingBounds = true;
-        minSeek.setProgress(c.minIndex); maxSeek.setProgress(c.maxPercent);
+        minSeek.setProgress(MediaLevelScale.percentForIndex(c.minIndex, streamMin, streamMax)); maxSeek.setProgress(c.maxPercent);
         syncingBounds = false;
-        updateMinLabel(c.minIndex, streamMax); updateMaxLabel(c.maxPercent);
+        updateMinLabel(MediaLevelScale.percentForIndex(c.minIndex, streamMin, streamMax)); updateMaxLabel(c.maxPercent);
         DiagnosticLog.event("preference_change", "bounds min=" + c.minIndex + " maxPercent=" + c.maxPercent
                 + " safetyPercent=" + c.safetyPercent + " quiet=" + c.quietIndex);
     }
@@ -134,9 +135,9 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
                 Prefs.minMediaIndex(getContext()), Prefs.maxVolumePercent(getContext()),
                 Prefs.safetyLockPercent(getContext()), Prefs.quietIndex(getContext()));
         syncingBounds = true;
-        minSeek.setProgress(c.minIndex); maxSeek.setProgress(c.maxPercent);
+        minSeek.setProgress(MediaLevelScale.percentForIndex(c.minIndex, streamMin, streamMax)); maxSeek.setProgress(c.maxPercent);
         syncingBounds = false;
-        updateMinLabel(c.minIndex, streamMax); updateMaxLabel(c.maxPercent);
+        updateMinLabel(MediaLevelScale.percentForIndex(c.minIndex, streamMin, streamMax)); updateMaxLabel(c.maxPercent);
         Prefs.get(getContext()).edit().putInt(Prefs.MIN_MEDIA_INDEX, c.minIndex)
                 .putInt(Prefs.MAX_VOLUME_PERCENT, c.maxPercent)
                 .putInt(Prefs.SAFETY_LOCK_PERCENT, c.safetyPercent)
@@ -163,8 +164,9 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         comfortLabel.setText(String.format(Locale.US, "Target: %d%% · %s · %.1f LUFS-like", percent, word,
                 TargetScale.loudnessForPercent(percent)));
     }
-    private void updateMinLabel(int index, int max) {
-        minLabel.setText("Minimum: " + index + "/" + max + " · " + MediaLevelScale.percentForIndex(index, max) + "% · только нижняя граница");
+    private void updateMinLabel(int percent) {
+        int index = MediaLevelScale.indexForPercent(percent, streamMin, streamMax);
+        minLabel.setText("Minimum: " + percent + "% · фактически " + index + "/" + streamMax + " · нижняя граница");
     }
     private void updateMaxLabel(int percent) { maxLabel.setText("Maximum: " + percent + "% · верхняя граница Media"); }
     private void updateNormalizationLabel(int percent) {
