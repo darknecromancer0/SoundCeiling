@@ -51,7 +51,11 @@ reject "$PKG/NormalizerService.java" 'manualSafety.effectiveMax()'
 reject "$PKG/NormalizerService.java" 'manualSafety.isManualSafetyPause()'
 
 # Fast measurement and dB-based transient protection from v0.6 remain required.
-require "$PKG/LoudnessMeter.java" 'CONTROL_TAU_SECONDS = 0.070'
+# v0.7.1 design §11 "Loudness, peak и transient" / "Loudness envelope" supersedes
+# the symmetric smoother; plan Task 4 Step 3 specifies 60/650 ms and Step 7 runs its behavior suite.
+require "$PKG/LoudnessMeter.java" 'CONTROL_ATTACK_MS = 60f'
+require "$PKG/LoudnessMeter.java" 'CONTROL_RELEASE_MS = 650f'
+require "$PKG/LoudnessMeter.java" 'new AsymmetricLoudnessEnvelope(CONTROL_ATTACK_MS, CONTROL_RELEASE_MS)'
 require "$PKG/LoudnessTracker.java" 'FAST_TAU_SECONDS = 0.070'
 require "$PKG/NormalizerService.java" 'loud.controlLoudnessDb'
 require "$PKG/TransientAttenuationPolicy.java" 'safeTarget'
@@ -123,3 +127,4 @@ require "$PKG/EqSettings.java" 'linkStrengthPercent'
 reject "$PKG/EqView.java" 'releaseEffect()'
 
 echo "v0.6 historical runtime/UI regressions: PASS"
+
