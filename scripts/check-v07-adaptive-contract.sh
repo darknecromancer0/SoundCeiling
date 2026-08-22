@@ -130,4 +130,24 @@ require "$PKG/EqView.java" 'Сила коррекции EQ'
 require "$PKG/EqView.java" 'liveSpectrum.renderBands(state.bandLevels())'
 require "$PKG/EqView.java" 'updateEqVisualization()'
 
+# Task 11: user-facing Media bounds are percent sliders; dB SPL is an alternate calibrated ceiling basis.
+require "$PKG/MediaLevelScale.java" 'indexForPercent'
+require "$PKG/MediaLevelScale.java" 'percentForIndex(int index, int minIndex, int maxIndex)'
+require "$PKG/SimpleModeView.java" 'minSeek.setMin(0); minSeek.setMax(100)'
+require "$PKG/SimpleModeView.java" 'MediaLevelScale.indexForPercent'
+require "$PKG/SimpleModeView.java" 'MediaLevelScale.percentForIndex'
+require "$PKG/AdvancedModeView.java" 'section("Основа потолка")'
+require "$PKG/AdvancedModeView.java" 'HelpText.CEILING_BASIS'
+require "$PKG/AdvancedModeView.java" 'addCeilingBasis("Media %", false)'
+require "$PKG/AdvancedModeView.java" 'addCeilingBasis("dB SPL", true)'
+require "$PKG/AdvancedModeView.java" 'MediaLevelScale.indexForPercent'
+require "$PKG/AdvancedModeView.java" 'MediaLevelScale.percentForIndex'
+require "$PKG/AdvancedModeView.java" 'Prefs.SPL_MODE'
+reject "$PKG/AdvancedModeView.java" 'Использовать калиброванный dB SPL'
+# Runtime already has a calibrated SPL calculation path; final Adaptive Envelope remains the UP authority.
+require "$PKG/NormalizerService.java" 'boolean missingSplProfile = Prefs.splMode(this) && currentProfile == null;'
+require "$PKG/NormalizerService.java" 'DecisionEngine.Input.spl'
+require "$PKG/NormalizerService.java" 'HybridEngineCoordinator.plan('
+require "$PKG/NormalizerService.java" 'recoveryAllowed'
+
 echo "v0.7 adaptive runtime checkpoint: PASS"
