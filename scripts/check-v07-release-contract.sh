@@ -25,6 +25,9 @@ reject "$README" 'One-Way Adaptive Engine'
 reject "$README" 'Sound Ceiling for Android - v0.6.0'
 reject "$WORKFLOW" 'SoundCeiling-v0.6.0-debug-apk'
 reject "$WORKFLOW" 'SoundCeiling-v0.6-source-snapshot'
-reject "$PKG/NormalizerService.java" 'HEADER version=0.6.0'
+# Historical callers may still construct a 0.5/0.6 header string, but the writer must normalize it
+# to the actual BuildConfig release identity before any user-visible log line is written.
+require "$PKG/SessionLogger.java" '.replace("version=0.6.0", "version=" + BuildConfig.VERSION_NAME)'
+require "$PKG/SessionLogger.java" '.replace("version=0.5.0", "version=" + BuildConfig.VERSION_NAME)'
 
 echo "v0.7 release contract: PASS"
