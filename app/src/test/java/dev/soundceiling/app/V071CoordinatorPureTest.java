@@ -11,6 +11,7 @@ public final class V071CoordinatorPureTest {
         dspLossNeutralizesBeforeHardMediaCap();
         commandProvenanceIsStructuredNotReasonDerived();
         configuredTransientIsDiagnosticBelowAbsolutePeak();
+        missingSplProfileFailsClosedButPreservesPeakSafety();
         uncertainPolicyBlocksPositiveGainButNotHardPeak();
         snapshotReportsTheActualCommandActuator();
         hardMediaCapIsTheSingleCoordinatorSafetyCommand();
@@ -189,6 +190,40 @@ public final class V071CoordinatorPureTest {
                 "frame thresholds must reach coordinator-owned transient guard");
         assertEquals(ControlCommand.Kind.NONE, command.kind(),
                 "relative transient below absolute peak ceiling is diagnostic, not Media attenuation");
+    }
+
+    private static void missingSplProfileFailsClosedButPreservesPeakSafety() {
+        NormalizerControlCoordinator coordinator = new NormalizerControlCoordinator();
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        coordinator.onFrame(frame(0L, 8, 8, curve).rawProgramActive(true).verifiedDsp(true)
+                .calibrationProfileValid(false).controlLoudnessDb(-30f).build());
+        coordinator.onFrame(frame(30L, 8, 8, curve).rawProgramActive(true).verifiedDsp(true)
+                .calibrationProfileValid(false).controlLoudnessDb(-30f).build());
+        ControlCommand blocked = coordinator.onFrame(frame(400L, 8, 8, curve)
+                .rawProgramActive(true).verifiedDsp(true).calibrationProfileValid(false)
+                .controlLoudnessDb(-30f).build());
+        assertEquals(ControlCommand.Kind.NONE, blocked.kind(),
+                "missing SPL profile must block positive command after normal dwell");
+        assertEquals("missing_spl_profile", blocked.reason(),
+                "coordinator must publish explicit missing-profile decision reason");
+        assertFalse(coordinator.snapshot().controlCapabilityVerified(),
+                "missing profile must not attach the DSP actuator");
+
+        ControlCommand hardPeak = coordinator.onFrame(frame(450L, 8, 8, curve)
+                .rawProgramActive(true).verifiedDsp(true).calibrationProfileValid(false)
+                .rawPeakDbfs(1f).build());
+        assertEquals(ControlCommand.Kind.MEDIA_INDEX, hardPeak.kind(),
+                "missing SPL profile must not block hard-peak attenuation");
+        assertEquals(ControlCommand.Provenance.HARD_PEAK_SAFETY, hardPeak.provenance(),
+                "hard peak remains structured safety authority");
+
+        coordinator.onFrame(frame(800L, 8, 8, curve).rawProgramActive(true).verifiedDsp(true)
+                .calibrationProfileValid(true).controlLoudnessDb(-30f).build());
+        ControlCommand eligible = coordinator.onFrame(frame(1_500L, 8, 8, curve)
+                .rawProgramActive(true).verifiedDsp(true).calibrationProfileValid(true)
+                .controlLoudnessDb(-30f).build());
+        assertEquals(ControlCommand.Kind.DSP_GAIN, eligible.kind(),
+                "valid calibration evidence restores ordinary positive-control eligibility");
     }
 
     private static void oneCoordinatorResultPreventsOpposingLegacyWrites() {

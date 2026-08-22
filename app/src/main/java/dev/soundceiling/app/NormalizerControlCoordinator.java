@@ -37,6 +37,7 @@ public final class NormalizerControlCoordinator {
         private final float transientEmergencyDb;
         private final float transientSignalDb;
         private final boolean transientEvidence;
+        private final boolean calibrationProfileValid;
 
         private Frame(Builder b) {
             atMs = Math.max(0L, b.atMs);
@@ -68,6 +69,7 @@ public final class NormalizerControlCoordinator {
             transientEmergencyDb = Math.max(transientWarningDb, b.transientEmergencyDb);
             transientSignalDb = b.transientSignalDb;
             transientEvidence = b.transientEvidence;
+            calibrationProfileValid = b.calibrationProfileValid;
         }
 
         public static final class Builder {
@@ -97,6 +99,8 @@ public final class NormalizerControlCoordinator {
             private float transientEmergencyDb = 10f;
             private float transientSignalDb = Float.NaN;
             private boolean transientEvidence;
+            // Non-SPL control does not need a calibration profile. SPL callers must prove one.
+            private boolean calibrationProfileValid = true;
 
             public Builder(long atMs, int previousMediaIndex, int currentMediaIndex,
                            ControlVolumeCurve routeCurve) {
@@ -134,6 +138,9 @@ public final class NormalizerControlCoordinator {
             }
             public Builder transientSignal(float levelDb, boolean evidence) {
                 transientSignalDb = levelDb; transientEvidence = evidence; return this;
+            }
+            public Builder calibrationProfileValid(boolean value) {
+                calibrationProfileValid = value; return this;
             }
             public Frame build() { return new Frame(this); }
         }
@@ -228,6 +235,14 @@ public final class NormalizerControlCoordinator {
                 frame.captureReference, ceilingState, frame.hardPeakCeilingDbfs, programActive,
                 allowsPositiveControl(frame)));
 
+        // The service supplies false only for SPL mode without a real route profile. This is a
+        // coordinator-owned fail-closed decision, not a second service-side actuator branch.
+        if (!frame.calibrationProfileValid
+                && plan.reason() == OutputGainPlanner.Reason.POSITIVE_GAIN_BLOCKED) {
+            return record(ControlCommand.none("missing_spl_profile"), plan.desiredCorrectionDb(), frame,
+                    programActive, transientEvent.severity);
+        }
+
         // Capability loss has a mandatory neutralization tick. A Media command follows only after
         // the service has had a separate chance to apply neutral DSP state.
         boolean verifiedDsp = frame.verifiedDsp && allowsPositiveControl(frame);
@@ -296,6 +311,7 @@ public final class NormalizerControlCoordinator {
         return frame.sourceControlEnabled && frame.policyAllowsPositiveGain
                 && frame.playbackEndpointActive && frame.observedPlaybackEndpoints > 0
                 && frame.sourceEvidence == EngineCapabilities.SourceIdentityConfidence.EXACT
+                && frame.calibrationProfileValid
                 && !frame.effectivePolicy.contains("unknown")
                 && !frame.effectivePolicy.contains("off");
     }

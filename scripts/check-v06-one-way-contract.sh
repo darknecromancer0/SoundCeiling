@@ -37,29 +37,42 @@ require "$PKG/NormalizerService.java" 'APP_WRITE_STALE'
 require "$PKG/NormalizerService.java" 'APP_WRITE_MISMATCH'
 require "$PKG/NormalizerService.java" 'external_zero_detected'
 
-# Preserve the v0.6 manual dB follower behavior, but v0.7 AdaptiveVolumeEnvelope is the runtime authority.
+# Keep the v0.6 pure helper behavior, but approved v0.7.1 design §§7-9 and Task 5 Steps 3/4
+# move live linked-ceiling/user-provenance authority into NormalizerControlCoordinator. A
+# service-owned envelope or follower would be a competing runtime controller.
 require "$PKG/ManualThresholdFollower.java" 'DECREASE_TAU_MS = 120L'
 require "$PKG/ManualThresholdFollower.java" 'RESTORE_TAU_MS = 650L'
 require "$PKG/AdaptiveVolumeEnvelope.java" 'MANUAL_DOWN_TAU_MS = 120L'
 require "$PKG/AdaptiveVolumeEnvelope.java" 'MANUAL_RESTORE_TAU_MS = 650L'
-require "$PKG/NormalizerService.java" 'AdaptiveVolumeEnvelope volumeEnvelope'
-require "$PKG/NormalizerService.java" 'volumeEnvelope.onUserChange'
-require "$PKG/NormalizerService.java" 'volumeEnvelope.onProvenanceUncertain'
-require "$PKG/NormalizerService.java" 'volumeEnvelope.effectiveThreshold(p.targetLoudness)'
-require "$PKG/NormalizerService.java" 'volumeEnvelope.recoverableCeilingIndex'
+require "$PKG/NormalizerControlCoordinator.java" 'OutputCeilingState ceilingState'
+require "$PKG/NormalizerControlCoordinator.java" 'applyUserAuthority'
+require "$PKG/NormalizerControlCoordinator.java" 'VolumeObservation.USER'
+require "$PKG/NormalizerService.java" 'coordinatorObservation(observed)'
+require "$PKG/NormalizerService.java" 'coordinatorOrigin(observed)'
+reject "$PKG/NormalizerService.java" 'AdaptiveVolumeEnvelope'
+reject "$PKG/NormalizerService.java" 'volumeEnvelope.'
+reject "$PKG/NormalizerService.java" 'ManualThresholdFollower'
 reject "$PKG/NormalizerService.java" 'manualSafety.effectiveMax()'
 reject "$PKG/NormalizerService.java" 'manualSafety.isManualSafetyPause()'
 
-# Fast measurement and dB-based transient protection from v0.6 remain required.
-# v0.7.1 design §11 "Loudness, peak и transient" / "Loudness envelope" supersedes
-# the symmetric smoother; plan Task 4 Step 3 specifies 60/650 ms and Step 7 runs its behavior suite.
+# Fast measurement and pure transient helper behavior from v0.6 remain required. Approved v0.7.1
+# design §11 and Task 4 Step 6 make relative transient diagnostic-only: the coordinator owns
+# configured TransientGuard evidence and OutputGainPlanner owns absolute projected-peak safety.
 require "$PKG/LoudnessMeter.java" 'CONTROL_ATTACK_MS = 60f'
 require "$PKG/LoudnessMeter.java" 'CONTROL_RELEASE_MS = 650f'
 require "$PKG/LoudnessMeter.java" 'new AsymmetricLoudnessEnvelope(CONTROL_ATTACK_MS, CONTROL_RELEASE_MS)'
 require "$PKG/LoudnessTracker.java" 'FAST_TAU_SECONDS = 0.070'
 require "$PKG/NormalizerService.java" 'loud.controlLoudnessDb'
 require "$PKG/TransientAttenuationPolicy.java" 'safeTarget'
-require "$PKG/NormalizerService.java" 'TransientAttenuationPolicy.safeTarget'
+require "$PKG/NormalizerControlCoordinator.java" 'TransientGuard transientGuard'
+require "$PKG/NormalizerControlCoordinator.java" 'transientConfig('
+require "$PKG/NormalizerControlCoordinator.java" 'transientSignal('
+require "$PKG/NormalizerControlCoordinator.java" 'OutputGainPlanner.plan('
+require "$PKG/OutputGainPlanner.java" 'absolutePeakViolation'
+require "$PKG/NormalizerService.java" '.transientConfig('
+require "$PKG/NormalizerService.java" '.transientSignal('
+reject "$PKG/NormalizerService.java" 'TransientAttenuationPolicy.safeTarget'
+reject "$PKG/NormalizerService.java" 'TransientAttenuationPolicy'
 reject "$PKG/NormalizerService.java" 'int extraSteps = Math.max(2,'
 require "$PKG/NormalizerService.java" 'long reactionLatency = applied != current'
 require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
@@ -127,4 +140,3 @@ require "$PKG/EqSettings.java" 'linkStrengthPercent'
 reject "$PKG/EqView.java" 'releaseEffect()'
 
 echo "v0.6 historical runtime/UI regressions: PASS"
-

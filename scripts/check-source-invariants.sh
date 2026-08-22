@@ -49,6 +49,14 @@ grep -Fq 'TransientGuard transientGuard' "$PKG/NormalizerControlCoordinator.java
   echo "NormalizerControlCoordinator must own TransientGuard" >&2; exit 1; }
 grep -Fq 'transientGuard.onPlaybackState' "$PKG/NormalizerControlCoordinator.java" || {
   echo "NormalizerControlCoordinator must feed playback state to TransientGuard" >&2; exit 1; }
+grep -Fq 'calibrationProfileValid' "$PKG/NormalizerControlCoordinator.java" || {
+  echo "NormalizerControlCoordinator must own calibration-profile evidence" >&2; exit 1; }
+grep -Fq '&& frame.calibrationProfileValid' "$PKG/NormalizerControlCoordinator.java" || {
+  echo "NormalizerControlCoordinator must gate positive control on calibration evidence" >&2; exit 1; }
+grep -Fq 'missing_spl_profile' "$PKG/NormalizerControlCoordinator.java" || {
+  echo "NormalizerControlCoordinator must publish missing_spl_profile fail-closed reason" >&2; exit 1; }
+grep -Fq '.calibrationProfileValid(!Prefs.splMode(this) || currentProfile != null)' "$PKG/NormalizerService.java" || {
+  echo "NormalizerService must frame real SPL calibration-profile evidence" >&2; exit 1; }
 for forbidden in 'PeakSafetyDetector.safeTargetForSourcePeak' 'ManualThresholdFollower' \
                  'AdaptiveVolumeEnvelope' 'TransientGuard'; do
   if grep -Fq "$forbidden" "$PKG/NormalizerService.java"; then
@@ -61,9 +69,9 @@ grep -q 'DiagnosticLog.anomaly' "$PKG/RuntimeStateStore.java" || {
 grep -q 'withDiagnostics' "$PKG/RuntimeStateStore.java" || {
   echo "RuntimeStateStore must publish diagnostics in RuntimeState" >&2; exit 1;
 }
-# Approved v0.7.1 design §11 and plan Task 5 Steps 3/4/7 supersede the service's old
-# missing_spl_profile HOLD branch: resolved policy/profile evidence now enters the coordinator
-# frame, where positive gain fails closed without adding a parallel service decision.
+# Approved v0.7.1 design §11 and plan Task 5 Steps 3/4/7 move the old service HOLD branch into
+# the coordinator frame: only a real currentProfile proves SPL calibration, and the coordinator
+# publishes missing_spl_profile while keeping hard-peak attenuation available.
 grep -Fq 'profileForPolicy(hybridSnapshot.policy)' "$PKG/NormalizerService.java" || {
   echo "NormalizerService must supply resolved policy/profile evidence to coordinator control" >&2; exit 1;
 }

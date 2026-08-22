@@ -434,6 +434,9 @@ public class NormalizerService extends Service {
                         playback == null ? 0 : playback.observedPlayers)
                 .transientConfig(profile.transientWarningDb, profile.transientEmergencyDb)
                 .transientSignal(transientSignalDb, transientEvidence)
+                // currentDeviceProfileV2() may synthesize a zero-offset device entry. It is not
+                // calibration proof: SPL positive control requires a genuinely saved profile.
+                .calibrationProfileValid(!Prefs.splMode(this) || currentProfile != null)
                 .verifiedDsp(optionalDsp != null && optionalDsp.isVerifiedActive())
                 .observation(coordinatorObservation(observed), coordinatorOrigin(observed))
                 .build();
