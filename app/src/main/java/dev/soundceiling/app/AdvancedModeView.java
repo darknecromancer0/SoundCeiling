@@ -78,9 +78,10 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         addNormalization("Off", NormalizationPreset.OFF); addNormalization("Light", NormalizationPreset.LIGHT);
         addNormalization("Medium", NormalizationPreset.MEDIUM); addNormalization("Strict", NormalizationPreset.STRICT);
         addNormalization("Custom", NormalizationPreset.CUSTOM); root.addView(normalizationGroup);
-        targetLoudness = addSlider("Target", HelpText.TARGET_LOUDNESS, 0, 20,
-                Math.round(Prefs.targetLoudness(context) + 30f), p -> String.format(Locale.US, "%.1f LUFS-like", -30f + p),
-                p -> editNormalization(Prefs.TARGET_LOUDNESS, -30f + p));
+        targetLoudness = addSlider("Target", HelpText.TARGET_LOUDNESS, 0, 100,
+                TargetScale.percentForLoudness(Prefs.targetLoudness(context)),
+                p -> String.format(Locale.US, "%d%% · %.1f LUFS-like", p, TargetScale.loudnessForPercent(p)),
+                p -> editNormalization(Prefs.TARGET_LOUDNESS, TargetScale.loudnessForPercent(p)));
         strength = addSlider("Normalization strength", HelpText.NORMALIZATION_STRENGTH, 0, 100,
                 Math.round(Prefs.normalizationStrength(context) * 100f), p -> p + "%",
                 p -> editNormalization(Prefs.NORMALIZATION_STRENGTH, p / 100f));
@@ -202,7 +203,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         minMedia.setProgress(c.minIndex); maxMedia.setProgress(c.maxPercent); safetyPercent.setProgress(c.safetyPercent); quietIndex.setProgress(c.quietIndex);
         safetyLock.setChecked(Prefs.safetyLockEnabled(getContext())); peakThreshold.setProgress(Math.round(Prefs.sourcePeakThreshold(getContext()) + 12f));
         transientWarning.setProgress(Math.round(Prefs.transientWarning(getContext()))); transientEmergency.setProgress(Math.round(Prefs.transientEmergency(getContext())));
-        targetLoudness.setProgress(Math.round(Prefs.targetLoudness(getContext()) + 30f)); tolerance.setProgress(Math.round(Prefs.loudnessTolerance(getContext()) * 10f));
+        targetLoudness.setProgress(TargetScale.percentForLoudness(Prefs.targetLoudness(getContext()))); tolerance.setProgress(Math.round(Prefs.loudnessTolerance(getContext()) * 10f));
         strength.setProgress(Math.round(Prefs.normalizationStrength(getContext()) * 100f)); downAttack.setProgress(Prefs.downwardAttackMs(getContext()));
         maxDownSteps.setProgress(Prefs.maxDownSteps(getContext()));
         autoMute.setChecked(Prefs.allowAutoMute(getContext())); splSwitch.setChecked(Prefs.splMode(getContext())); targetSpl.setProgress(Math.round(Prefs.targetSpl(getContext()))); splCeiling.setProgress(Math.round(Prefs.splCeiling(getContext())));
