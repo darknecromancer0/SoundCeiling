@@ -4,6 +4,7 @@ package dev.soundceiling.app;
 public final class V070TransientPureTest {
     public static void main(String[] args) {
         playbackOnsetWarmupSuppressesDeltaEmergency();
+        implicitPcmOnsetWarmupSuppressesDeltaEmergency();
         isolatedDeltaDoesNotImmediatelyEmergency();
         persistentDeltaConfirmsEmergency();
         deltaEmergencyIsStepBudgeted();
@@ -17,7 +18,15 @@ public final class V070TransientPureTest {
         guard.update(0L, -45f);
         TransientGuard.Event onset = guard.update(120L, -12f);
         assertSame(TransientGuard.Severity.NONE, onset.severity,
-                "silence/music onset inside warmup must not create delta emergency");
+                "explicit playback onset inside warmup must not create delta emergency");
+    }
+
+    private static void implicitPcmOnsetWarmupSuppressesDeltaEmergency() {
+        TransientGuard guard = new TransientGuard(6f, 10f);
+        guard.update(0L, -45f);
+        TransientGuard.Event onset = guard.update(120L, -12f);
+        assertSame(TransientGuard.Severity.NONE, onset.severity,
+                "PCM-only runtime path must infer onset warmup even without an explicit playback-state callback");
     }
 
     private static void isolatedDeltaDoesNotImmediatelyEmergency() {
