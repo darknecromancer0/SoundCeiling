@@ -163,7 +163,9 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         comfortLabel.setText(String.format(Locale.US, "Target: %d%% · %s · %.1f LUFS-like", percent, word,
                 TargetScale.loudnessForPercent(percent)));
     }
-    private void updateMinLabel(int index, int max) { minLabel.setText("Minimum: " + index + "/" + max + " · только нижняя граница"); }
+    private void updateMinLabel(int index, int max) {
+        minLabel.setText("Minimum: " + index + "/" + max + " · " + MediaLevelScale.percentForIndex(index, max) + "% · только нижняя граница");
+    }
     private void updateMaxLabel(int percent) { maxLabel.setText("Maximum: " + percent + "% · верхняя граница Media"); }
     private void updateNormalizationLabel(int percent) {
         String word = percent == 0 ? "выкл" : percent < 45 ? "мягко" : percent < 80 ? "средне" : "жёстко";
