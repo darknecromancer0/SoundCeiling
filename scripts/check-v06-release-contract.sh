@@ -8,8 +8,8 @@ README="$ROOT/README.md"
 MANIFEST="$ROOT/app/src/main/AndroidManifest.xml"
 V06="$ROOT/scripts/check-v06-one-way-contract.sh"
 
-require(){ local file="$1" needle="$2"; [[ -f "$file" ]] || { echo "Missing v0.6 release file: $file" >&2; exit 1; }; grep -Fq "$needle" "$file" || { echo "Missing v0.6 release regression: $(basename "$file") -> $needle" >&2; exit 1; }; }
-reject(){ local file="$1" needle="$2"; if grep -Fq "$needle" "$file"; then echo "Forbidden v0.6 release regression: $(basename "$file") -> $needle" >&2; exit 1; fi; }
+require(){ local file="$1" needle="$2"; [[ -f "$file" ]] || { echo "Missing v0.6 release file: $file" >&2; exit 1; }; grep -Fq -- "$needle" "$file" || { echo "Missing v0.6 release regression: $(basename "$file") -> $needle" >&2; exit 1; }; }
+reject(){ local file="$1" needle="$2"; if grep -Fq -- "$needle" "$file"; then echo "Forbidden v0.6 release regression: $(basename "$file") -> $needle" >&2; exit 1; fi; }
 
 # Until the v0.7 release task changes identity, the branch still builds as v0.6.0.
 require "$GRADLE" 'versionCode=9'
@@ -49,8 +49,10 @@ require "$PKG/HybridEngineCoordinator.java" 'v0.6 compatibility overload remains
 require "$PKG/HybridEngineCoordinator.java" 'adaptive_recovery'
 require "$PKG/MainActivity.java" 'private void showProjectionExplanation()'
 require "$PKG/MainActivity.java" 'SoundCeiling не записывает видео экрана'
-require "$PKG/StatusText.java" 'PCM blocked - safe fallback'
-require "$PKG/StatusText.java" 'System limiter only'
+# Preserve the v0.6 fallback guarantees, but v0.7 names the user-visible capability honestly.
+require "$PKG/StatusText.java" 'Safe fallback'
+require "$PKG/StatusText.java" 'System-only protection'
+reject "$PKG/StatusText.java" 'System limiter only'
 
 # Calibration must never touch Media, and runtime must not resurrect ambiguous RAISING state.
 reject "$PKG/ToneController.java" 'setStreamVolume('
