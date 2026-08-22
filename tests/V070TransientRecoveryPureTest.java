@@ -3,6 +3,7 @@ package dev.soundceiling.app;
 public final class V070TransientRecoveryPureTest {
     public static void main(String[] args) {
         transientAckCreatesOnlyBoundedRecoverableDebt();
+        recoverySafetyClampMustRateLimitEveryUpPath();
         System.out.println("V070TransientRecoveryPureTest: PASS");
     }
 
@@ -69,6 +70,16 @@ public final class V070TransientRecoveryPureTest {
                 "manual lowering immediately becomes the new authority ceiling");
         assertFalse(envelope.hasRecoverableAttenuation(4),
                 "manual lowering must erase any old transient recovery authority above it");
+    }
+
+    private static void recoverySafetyClampMustRateLimitEveryUpPath() {
+        SafetySettings settings = new SafetySettings(1, 12, false, 12, 1, 200L);
+        int splStyleMultiStepRequest = SafetyGuard.clampRecovery(9, 5, settings, 10, 8);
+        assertEquals(6, splStyleMultiStepRequest,
+                "final recovery clamp must return at most one Samsung hardware step per write");
+        int heldByUserCeiling = SafetyGuard.clampRecovery(9, 5, settings, 10, 5);
+        assertEquals(5, heldByUserCeiling,
+                "one-step smoothing must never bypass the user envelope ceiling");
     }
 
     private static ControlProfile recoveryProfile() {
