@@ -23,5 +23,15 @@ final class EqVisualizationMath {
         return DbMath.clamp(Math.round(strongest * 100f), 0, 100);
     }
 
+    static int[] appliedLevels(int[] configuredLevelsMb, int amountPercent) {
+        if (configuredLevelsMb == null) return new int[0];
+        int amount = DbMath.clamp(amountPercent, 0, 100);
+        int[] out = new int[configuredLevelsMb.length];
+        for (int i = 0; i < configuredLevelsMb.length; i++) {
+            out[i] = Math.round(configuredLevelsMb[i] * amount / 100f);
+        }
+        return out;
+    }
+
     private EqVisualizationMath() {}
 }
