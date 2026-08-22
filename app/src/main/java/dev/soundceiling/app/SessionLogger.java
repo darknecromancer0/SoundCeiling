@@ -75,9 +75,11 @@ final class SessionLogger implements AutoCloseable {
     }
 
     private void open() throws IOException {
-        LogStorage.Created created = LogStorage.createPart(context, LogFilePolicy.partName(id, part));
+        String displayName = LogFilePolicy.partName(id, part);
+        LogStorage.Created created = LogStorage.createPart(context, displayName);
         uri = created.uri;
         out = created.out;
+        LogSessionIndex.recordPart(context, id, displayName, uri, System.currentTimeMillis());
         Prefs.get(context).edit().putString(Prefs.LAST_LOG_URI, uri.toString()).apply();
         bytes = 0L;
         if (part > 1) writeRaw("LOG_PART session=" + id + " part=" + part + " previousPartRotated=true");
