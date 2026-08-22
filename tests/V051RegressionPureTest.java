@@ -16,10 +16,11 @@ public final class V051RegressionPureTest {
 
     private static void testTransientEmergencyDoesNotLatchOnSustainedLevel() {
         TransientGuard guard = new TransientGuard(6f, 10f);
+        guard.prime(-30f);
         guard.update(0L, -30f);
         TransientGuard.Event candidate = guard.update(10L, -15f);
         assertFalse(candidate.severity == TransientGuard.Severity.EMERGENCY,
-                "first +15 dB edge should enter v0.7 confirmation instead of emergency immediately");
+                "first +15 dB edge after established baseline should enter v0.7 confirmation instead of emergency immediately");
         TransientGuard.Event first = guard.update(55L, -15f);
         assertTrue(first.severity == TransientGuard.Severity.EMERGENCY,
                 "persistent +15 dB edge should trigger emergency after confirmation");
