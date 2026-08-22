@@ -18,7 +18,7 @@ final class FrequencyMeterView extends LinearLayout {
         setGravity(Gravity.BOTTOM);
         setClipChildren(false);
         setClipToPadding(false);
-        setMinimumHeight(dp(166));
+        setMinimumHeight(dp(150));
         for (int i = 0; i < bars.length; i++) {
             LinearLayout col = new LinearLayout(context);
             col.setOrientation(VERTICAL);
@@ -26,7 +26,7 @@ final class FrequencyMeterView extends LinearLayout {
             col.setClipChildren(false);
             BandBar bar = new BandBar(context);
             bars[i] = bar;
-            col.addView(bar, new LinearLayout.LayoutParams(dp(24), dp(110)));
+            col.addView(bar, new LinearLayout.LayoutParams(dp(24), dp(96)));
             TextView label = new TextView(context);
             label.setText(LABELS[i]);
             label.setTextColor(UiTheme.secondaryText(context));
