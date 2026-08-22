@@ -9,7 +9,7 @@ final class HelpText {
             PCM="PCM", DSP="DSP", RMS="RMS", DBFS="DBFS", DBSPL="DBSPL", LUFS="LUFS", LUFS_LIKE="LUFS_LIKE", CALIBRATION="CALIBRATION";
 
     static String forKey(String key) {
-        if (MIN_MEDIA.equals(key)) return "Minimum — нижняя граница для автоматического снижения. Если пользователь сам ставит Media ниже неё или в 0, SoundCeiling не возвращает ползунок вверх. Обычная нормализация ждёт, пока пользователь сам повысит Media.";
+        if (MIN_MEDIA.equals(key)) return "Minimum — нижняя граница для автоматического снижения. Рядом показываются точный системный Media index и его процент от всей шкалы Media; этот процент не является dB. Если пользователь сам ставит Media ниже Minimum или в 0, SoundCeiling не возвращает ползунок вверх.";
         if (MAX_MEDIA.equals(key)) return "Maximum — обычная верхняя граница Media. Ни нормализация, ни Quiet Now не должны поднимать звук выше неё.";
         if (SAFETY_LOCK.equals(key)) return "Safety Lock — дополнительный жёсткий потолок перед записью Media. Он может только удержать или снизить громкость и никогда не служит целью для повышения.";
         if (QUIET_NOW.equals(key)) return "Quiet Now — одноразовая команда сделать текущую Media-громкость не выше настроенного Quiet Now level. Если звук уже тише, кнопка ничего не повышает.";
