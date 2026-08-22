@@ -17,11 +17,14 @@ public final class V051RegressionPureTest {
     private static void testTransientEmergencyDoesNotLatchOnSustainedLevel() {
         TransientGuard guard = new TransientGuard(6f, 10f);
         guard.update(0L, -30f);
-        TransientGuard.Event first = guard.update(10L, -15f);
+        TransientGuard.Event candidate = guard.update(10L, -15f);
+        assertFalse(candidate.severity == TransientGuard.Severity.EMERGENCY,
+                "first +15 dB edge should enter v0.7 confirmation instead of emergency immediately");
+        TransientGuard.Event first = guard.update(55L, -15f);
         assertTrue(first.severity == TransientGuard.Severity.EMERGENCY,
-                "real +15 dB edge should trigger emergency");
+                "persistent +15 dB edge should trigger emergency after confirmation");
         TransientGuard.Event last = first;
-        for (int i = 1; i <= 30; i++) last = guard.update(10L + i * 20L, -15f);
+        for (int i = 1; i <= 30; i++) last = guard.update(55L + i * 20L, -15f);
         assertTrue(last.severity == TransientGuard.Severity.NONE,
                 "sustained level must re-arm instead of latching emergency forever");
         assertTrue(Math.abs(last.baselineDb - (-15f)) < 2.5f,
@@ -100,7 +103,7 @@ public final class V051RegressionPureTest {
         assertTrue(loud.desiredGainDb > quiet.desiredGainDb + 5f,
                 "raising Target may reduce the amount of attenuation requested for loud playback");
         assertTrue(quiet.requestedIndex <= current && loud.requestedIndex <= current,
-                "Target changes must never create an automatic Media raise in v0.6");
+                "Target changes must never create an automatic Media raise in v0.6 compatibility overload");
     }
 
     private static void testControlSettingsCannotContradictEachOther() {
