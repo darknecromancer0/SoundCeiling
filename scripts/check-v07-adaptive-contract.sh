@@ -95,4 +95,15 @@ reject "$PKG/AppPolicyEditorView.java" 'Limiter only · никогда не по
 require "$PKG/AppPolicyStore.java" '"limiterOnly"'
 require "$PKG/AppPolicyStore.java" 'p.downwardOnly'
 
+# Task 9: Basic/Advanced copy must describe Adaptive Envelope instead of the v0.6 one-way model.
+require "$PKG/SimpleModeView.java" 'Adaptive Envelope:'
+require "$PKG/SimpleModeView.java" 'Ручное снижение пользователя и Maximum имеют приоритет'
+reject "$PKG/SimpleModeView.java" 'Один one-way движок'
+reject "$PKG/SimpleModeView.java" 'normalizeLabel.setText("Normalization: " + percent + "% · " + word + " · только вниз")'
+require "$PKG/AdvancedModeView.java" 'Восстановление возвращает только ранее сделанное SoundCeiling снижение'
+require "$PKG/AdvancedModeView.java" 'section("Поведение · снижение и восстановление")'
+reject "$PKG/AdvancedModeView.java" 'section("Поведение · только снижение")'
+require "$PKG/AdvancedModeView.java" 'Без неё обычная защита и нормализация продолжают работать'
+reject "$PKG/AdvancedModeView.java" 'Без неё обычный PCM, Peak, LUFS-like, Ceiling и нормализация работают нормально.'
+
 echo "v0.7 adaptive runtime checkpoint: PASS"
