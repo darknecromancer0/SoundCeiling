@@ -98,7 +98,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                 v -> edit(Prefs.SAFETY_LOCK_ENABLED, v));
         safetyPercent = addSlider("Safety Lock ceiling", HelpText.SAFETY_LOCK, 1, 100,
                 Prefs.safetyLockPercent(context), p -> p + "%", p -> editBound(Prefs.SAFETY_LOCK_PERCENT, p));
-        quietIndex = addSlider("Quiet Now level", HelpText.MIN_MEDIA, streamMin, streamMax,
+        quietIndex = addSlider("Quiet Now level", HelpText.QUIET_LEVEL, streamMin, streamMax,
                 Prefs.quietIndex(context), p -> p + "/" + streamMax, p -> editBound(Prefs.QUIET_INDEX, p));
 
         section("Peak и transient protection");
@@ -116,7 +116,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         addSpeed("Мягко", SpeedPreset.GENTLE); addSpeed("Custom", SpeedPreset.CUSTOM); root.addView(speedGroup);
         downAttack = addSlider("Downward attack", HelpText.DOWN_ATTACK, 0, 500,
                 Prefs.downwardAttackMs(context), p -> p + " ms", p -> editBehavior(Prefs.DOWNWARD_ATTACK_MS, p));
-        maxDownSteps = addSlider("Max down steps", HelpText.DOWN_ATTACK, 0, 5,
+        maxDownSteps = addSlider("Max down steps", HelpText.MAX_DOWN_STEPS, 0, 5,
                 Prefs.maxDownSteps(context), Integer::toString, p -> editBehavior(Prefs.MAX_DOWN_STEPS, p));
         autoMute = addSwitch("Разрешать автоматический mute (0)", HelpText.AUTO_MUTE,
                 Prefs.allowAutoMute(context), v -> edit(Prefs.ALLOW_AUTO_MUTE, v));
