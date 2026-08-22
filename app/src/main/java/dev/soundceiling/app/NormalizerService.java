@@ -55,9 +55,6 @@ public class NormalizerService extends Service {
     private SafetySettings safetySettings;
     private ControlProfile controlProfile;
     private String controlProfileFingerprint = "";
-    private TransientGuard transientGuard;
-    private float transientWarningConfig = Float.NaN;
-    private float transientEmergencyConfig = Float.NaN;
     private GlobalVisualizerBackend visualizer;
     private OptionalDspController optionalDsp;
     private AudioBackendStatus backendStatus = new AudioBackendStatus(
@@ -268,9 +265,8 @@ public class NormalizerService extends Service {
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.maxMediaPercent);
             ControlCommand command = controlCoordinator.onFrame(controlFrame(now, current, blockPeak,
                     loud.controlLoudnessDb, signal, hybridSnapshot.policy, effectiveProfile,
-                    hybridSnapshot.sources.confidence, hybridSnapshot.playback));
-            boolean emergency = command.reason().contains("HARD_PEAK")
-                    || "hard_media_cap".equals(command.reason());
+                    hybridSnapshot.sources.confidence, hybridSnapshot.playback, blockRms, signal));
+            boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
                     effectiveProfile.autoMute && emergency, now);
             String reason = command.reason();
@@ -335,9 +331,9 @@ public class NormalizerService extends Service {
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.fallbackMaxPercent);
             ControlCommand command = controlCoordinator.onFrame(controlFrame(detectedAt, current,
                     reading.peakDb, reading.rmsDb, signal, hybridSnapshot.policy, effectiveProfile,
-                    hybridSnapshot.sources.confidence, hybridSnapshot.playback));
-            boolean emergency = command.reason().contains("HARD_PEAK")
-                    || "hard_media_cap".equals(command.reason());
+                    hybridSnapshot.sources.confidence, hybridSnapshot.playback, reading.rmsDb,
+                    reading.valid));
+            boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
                     effectiveProfile.autoMute && emergency, detectedAt);
             long latency = applied < current
@@ -362,8 +358,7 @@ public class NormalizerService extends Service {
             if (applied < current) {
                 DiagnosticLog.event("fast_control_write", String.format(Locale.US,
                         "origin=%s reason=%s current=%d requested=%d applied=%d min=%d max=%d hardMax=%d configuredPeak=%.2f effectivePeak=%.2f peak=%.2f latencyMs=%d manualOffsetDb=%.2f source=%s pcm=%s confidence=%s",
-                        emergency ? VolumeWriteTracker.WriteOrigin.PEAK_EMERGENCY
-                                : VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN,
+                        writeOriginFor(command),
                         command.reason(), current, command.mediaIndex(), applied, safetySettings.minIndex,
                         safetySettings.maxIndex, safetySettings.hardMax(),
                         hybridSnapshot.policy.sourcePeakThresholdDbfs,
@@ -420,7 +415,9 @@ public class NormalizerService extends Service {
                                                               EffectivePolicy policy,
                                                               ControlProfile profile,
                                                               EngineCapabilities.SourceIdentityConfidence sourceEvidence,
-                                                              PlaybackSnapshot playback) {
+                                                              PlaybackSnapshot playback,
+                                                              float transientSignalDb,
+                                                              boolean transientEvidence) {
         VolumeWriteTracker.Observation observed = lastVolumeObservation;
         int previous = observed == null ? current : observed.previousIndex;
         return new NormalizerControlCoordinator.Frame.Builder(now, previous, current, controlCurve)
@@ -435,6 +432,8 @@ public class NormalizerService extends Service {
                 .sourceEvidence(sourceEvidence)
                 .playbackEndpoints(playback != null && playback.active,
                         playback == null ? 0 : playback.observedPlayers)
+                .transientConfig(profile.transientWarningDb, profile.transientEmergencyDb)
+                .transientSignal(transientSignalDb, transientEvidence)
                 .verifiedDsp(optionalDsp != null && optionalDsp.isVerifiedActive())
                 .observation(coordinatorObservation(observed), coordinatorOrigin(observed))
                 .build();
@@ -473,15 +472,26 @@ public class NormalizerService extends Service {
             return safeVolume.applyRecovery(target, current, settings, effectiveMax,
                     Math.min(effectiveMax, settings.hardMax()), now);
         }
-        VolumeWriteTracker.WriteOrigin origin = command.reason().startsWith("quiet_now")
-                ? VolumeWriteTracker.WriteOrigin.QUIET_NOW
-                : "hard_media_cap".equals(command.reason())
-                ? VolumeWriteTracker.WriteOrigin.HARD_CAP
-                : command.reason().contains("HARD_PEAK")
-                ? VolumeWriteTracker.WriteOrigin.PEAK_EMERGENCY
-                : VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN;
+        VolumeWriteTracker.WriteOrigin origin = writeOriginFor(command);
         return safeVolume.applyRequested(target, current, settings, effectiveMax,
                 allowBelowMinimum, now, origin);
+    }
+
+    private static boolean isSafetyCommand(ControlCommand command) {
+        return command != null && (command.provenance() == ControlCommand.Provenance.HARD_PEAK_SAFETY
+                || command.provenance() == ControlCommand.Provenance.HARD_CAP);
+    }
+
+    private static VolumeWriteTracker.WriteOrigin writeOriginFor(ControlCommand command) {
+        if (command == null) return VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN;
+        switch (command.provenance()) {
+            case QUIET_NOW: return VolumeWriteTracker.WriteOrigin.QUIET_NOW;
+            case HARD_CAP: return VolumeWriteTracker.WriteOrigin.HARD_CAP;
+            case HARD_PEAK_SAFETY: return VolumeWriteTracker.WriteOrigin.PEAK_EMERGENCY;
+            case DSP_NEUTRALIZATION:
+            case NORMALIZATION:
+            default: return VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN;
+        }
     }
 
     private void quietNow() {
@@ -610,21 +620,10 @@ public class NormalizerService extends Service {
         controlProfile = next;
         controlProfileFingerprint = fingerprint;
         safetySettings = toSafetySettings(next);
-        refreshTransientGuard(next);
         DiagnosticLog.event("settings_reload", "max=" + safetySettings.maxIndex + " lock="
                 + safetySettings.safetyLockEnabled + ":" + safetySettings.safetyLockIndex
                 + " preset=" + next.normalizationPreset.key
                 + " authority=coordinator");
-    }
-
-    private void refreshTransientGuard(ControlProfile profile) {
-        if (transientGuard == null
-                || Float.compare(transientWarningConfig, profile.transientWarningDb) != 0
-                || Float.compare(transientEmergencyConfig, profile.transientEmergencyDb) != 0) {
-            transientWarningConfig = profile.transientWarningDb;
-            transientEmergencyConfig = profile.transientEmergencyDb;
-            transientGuard = new TransientGuard(transientWarningConfig, transientEmergencyConfig);
-        }
     }
 
     private ControlProfile profileForPolicy(EffectivePolicy p) {

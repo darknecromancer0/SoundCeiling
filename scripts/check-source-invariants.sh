@@ -35,8 +35,25 @@ if [[ -f "$PKG/SystemStreamController.java" ]]; then
     echo "SystemStreamController must not write Media stream" >&2; exit 1
   fi
 fi
-for token in 'PeakSafetyDetector' 'TransientGuard' 'ManualThresholdFollower' 'VolumeWriteTracker' 'LoudnessMeter' 'ACTION_QUIET' 'safeVolume'; do
+# Approved v0.7.1 design §11 and plan Task 5 Steps 3/4/7: the service gathers immutable
+# evidence, then NormalizerControlCoordinator owns OutputGainPlanner and TransientGuard. The
+# legacy detectors remain helpers only; a service-side control call would reintroduce a writer.
+for token in 'NormalizerControlCoordinator' 'VolumeWriteTracker' 'LoudnessMeter' 'ACTION_QUIET' 'safeVolume'; do
   grep -q "$token" "$PKG/NormalizerService.java" || { echo "NormalizerService missing control integration: $token" >&2; exit 1; }
+done
+grep -Fq 'controlCoordinator.onFrame(controlFrame(' "$PKG/NormalizerService.java" || {
+  echo "NormalizerService must route control ticks through NormalizerControlCoordinator" >&2; exit 1; }
+grep -Fq 'OutputGainPlanner.plan(' "$PKG/NormalizerControlCoordinator.java" || {
+  echo "NormalizerControlCoordinator must own OutputGainPlanner" >&2; exit 1; }
+grep -Fq 'TransientGuard transientGuard' "$PKG/NormalizerControlCoordinator.java" || {
+  echo "NormalizerControlCoordinator must own TransientGuard" >&2; exit 1; }
+grep -Fq 'transientGuard.onPlaybackState' "$PKG/NormalizerControlCoordinator.java" || {
+  echo "NormalizerControlCoordinator must feed playback state to TransientGuard" >&2; exit 1; }
+for forbidden in 'PeakSafetyDetector.safeTargetForSourcePeak' 'ManualThresholdFollower' \
+                 'AdaptiveVolumeEnvelope' 'TransientGuard'; do
+  if grep -Fq "$forbidden" "$PKG/NormalizerService.java"; then
+    echo "NormalizerService must not directly own legacy control: $forbidden" >&2; exit 1
+  fi
 done
 grep -q 'DiagnosticLog.anomaly' "$PKG/RuntimeStateStore.java" || {
   echo "RuntimeStateStore must feed automatic anomalies to the black-box logger" >&2; exit 1;
@@ -44,8 +61,11 @@ grep -q 'DiagnosticLog.anomaly' "$PKG/RuntimeStateStore.java" || {
 grep -q 'withDiagnostics' "$PKG/RuntimeStateStore.java" || {
   echo "RuntimeStateStore must publish diagnostics in RuntimeState" >&2; exit 1;
 }
-grep -q 'missing_spl_profile' "$PKG/NormalizerService.java" || {
-  echo "NormalizerService must publish/log missing_spl_profile HOLD" >&2; exit 1;
+# Approved v0.7.1 design §11 and plan Task 5 Steps 3/4/7 supersede the service's old
+# missing_spl_profile HOLD branch: resolved policy/profile evidence now enters the coordinator
+# frame, where positive gain fails closed without adding a parallel service decision.
+grep -Fq 'profileForPolicy(hybridSnapshot.policy)' "$PKG/NormalizerService.java" || {
+  echo "NormalizerService must supply resolved policy/profile evidence to coordinator control" >&2; exit 1;
 }
 grep -q 'updateNotification(state)' "$PKG/NormalizerService.java" || {
   echo "NormalizerService must update notification from RuntimeState" >&2; exit 1;
@@ -67,11 +87,8 @@ grep -Fq 'adaptive_recovery' "$PKG/HybridEngineCoordinator.java" || {
 grep -Fq 'return new ControlPlan(current, true' "$PKG/HybridEngineCoordinator.java" || {
   echo "Hybrid coordinator must still HOLD upward requests without recovery authority" >&2; exit 1;
 }
-grep -Fq 'HybridEngineCoordinator.plan' "$PKG/NormalizerService.java" || {
-  echo "NormalizerService must route hybrid requests through HybridEngineCoordinator" >&2; exit 1;
-}
 grep -Fq 'hybridSnapshot.policy' "$PKG/NormalizerService.java" || {
-  echo "NormalizerService must pass resolved policy into hybrid control" >&2; exit 1;
+  echo "NormalizerService must pass resolved policy evidence into coordinator control" >&2; exit 1;
 }
 
 # Verified per-app/DSP claims may only originate from the dedicated capability resolver.

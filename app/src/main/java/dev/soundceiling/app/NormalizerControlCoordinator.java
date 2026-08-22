@@ -33,6 +33,10 @@ public final class NormalizerControlCoordinator {
         private final VolumeObservation observation;
         private final VolumeWriteOrigin writeOrigin;
         private final int quietTargetIndex;
+        private final float transientWarningDb;
+        private final float transientEmergencyDb;
+        private final float transientSignalDb;
+        private final boolean transientEvidence;
 
         private Frame(Builder b) {
             atMs = Math.max(0L, b.atMs);
@@ -60,6 +64,10 @@ public final class NormalizerControlCoordinator {
             observation = b.observation == null ? VolumeObservation.UNCHANGED : b.observation;
             writeOrigin = b.writeOrigin == null ? VolumeWriteOrigin.NORMALIZATION : b.writeOrigin;
             quietTargetIndex = b.quietTargetIndex;
+            transientWarningDb = Math.max(0f, b.transientWarningDb);
+            transientEmergencyDb = Math.max(transientWarningDb, b.transientEmergencyDb);
+            transientSignalDb = b.transientSignalDb;
+            transientEvidence = b.transientEvidence;
         }
 
         public static final class Builder {
@@ -85,6 +93,10 @@ public final class NormalizerControlCoordinator {
             private VolumeObservation observation = VolumeObservation.UNCHANGED;
             private VolumeWriteOrigin writeOrigin = VolumeWriteOrigin.NORMALIZATION;
             private int quietTargetIndex = -1;
+            private float transientWarningDb = 6f;
+            private float transientEmergencyDb = 10f;
+            private float transientSignalDb = Float.NaN;
+            private boolean transientEvidence;
 
             public Builder(long atMs, int previousMediaIndex, int currentMediaIndex,
                            ControlVolumeCurve routeCurve) {
@@ -117,6 +129,12 @@ public final class NormalizerControlCoordinator {
                 observation = value; writeOrigin = origin; return this;
             }
             public Builder quietTargetIndex(int value) { quietTargetIndex = value; return this; }
+            public Builder transientConfig(float warningDb, float emergencyDb) {
+                transientWarningDb = warningDb; transientEmergencyDb = emergencyDb; return this;
+            }
+            public Builder transientSignal(float levelDb, boolean evidence) {
+                transientSignalDb = levelDb; transientEvidence = evidence; return this;
+            }
             public Frame build() { return new Frame(this); }
         }
     }
@@ -132,12 +150,13 @@ public final class NormalizerControlCoordinator {
         private final String decisionReason;
         private final ControlCommand.Kind actuator;
         private final boolean controlCapabilityVerified;
+        private final TransientGuard.Severity transientSeverity;
 
         private Snapshot(float desiredGainDb, float appliedGainDb,
                          CaptureReferenceEstimator.Mode measurementMode, boolean programActive,
                          boolean transientPlaybackActive, String directionDwell,
                          String decisionReason, ControlCommand.Kind actuator,
-                         boolean controlCapabilityVerified) {
+                         boolean controlCapabilityVerified, TransientGuard.Severity transientSeverity) {
             this.desiredGainDb = desiredGainDb;
             this.appliedGainDb = appliedGainDb;
             this.measurementMode = measurementMode;
@@ -147,6 +166,7 @@ public final class NormalizerControlCoordinator {
             this.decisionReason = decisionReason;
             this.actuator = actuator;
             this.controlCapabilityVerified = controlCapabilityVerified;
+            this.transientSeverity = transientSeverity;
         }
 
         public float desiredGainDb() { return desiredGainDb; }
@@ -158,34 +178,49 @@ public final class NormalizerControlCoordinator {
         public String decisionReason() { return decisionReason; }
         public ControlCommand.Kind actuator() { return actuator; }
         public boolean controlCapabilityVerified() { return controlCapabilityVerified; }
+        public TransientGuard.Severity transientSeverity() { return transientSeverity; }
     }
 
     private final ProgramActivityGate activityGate = new ProgramActivityGate();
-    private final TransientGuard transientGuard = new TransientGuard(6f, 10f);
+    private TransientGuard transientGuard = new TransientGuard(6f, 10f);
+    private float transientWarningDb = 6f;
+    private float transientEmergencyDb = 10f;
     private final StableOutputController outputController = new StableOutputController();
     private OutputCeilingState ceilingState = OutputCeilingState.defaultLinked();
     private Snapshot snapshot = new Snapshot(0f, 0f, CaptureReferenceEstimator.Mode.UNKNOWN,
-            false, false, "idle", "not_started", ControlCommand.Kind.NONE, false);
-    private boolean dspWasVerified;
+            false, false, "idle", "not_started", ControlCommand.Kind.NONE, false,
+            TransientGuard.Severity.NONE);
 
     /** Returns at most one actuator command; callers must not append legacy control writes. */
     public ControlCommand onFrame(Frame frame) {
         Objects.requireNonNull(frame, "frame");
         applyUserAuthority(frame);
         boolean programActive = activityGate.update(frame.rawProgramActive, frame.atMs);
+        refreshTransientGuard(frame);
         transientGuard.onPlaybackState(programActive, frame.atMs);
+        TransientGuard.Event transientEvent = frame.transientEvidence
+                ? transientGuard.update(frame.atMs, frame.transientSignalDb)
+                : TransientGuard.Event.none(Float.NaN);
 
+        // A lost non-neutral DSP must be neutralized before any Media fallback or hard cap. Keep
+        // returning the same one-command neutralization until transport feedback confirms zero.
+        if (!frame.verifiedDsp && Math.abs(frame.currentDspGainDb) > .001f) {
+            return record(ControlCommand.dspGain(0f, "dsp_capability_lost_neutralize",
+                    ControlCommand.Provenance.DSP_NEUTRALIZATION), 0f, frame, programActive,
+                    transientEvent.severity);
+        }
         if (frame.currentMediaIndex > frame.hardMediaCeilingIndex) {
-            return record(ControlCommand.mediaIndex(frame.hardMediaCeilingIndex, "hard_media_cap"),
-                    0f, frame, programActive);
+            return record(ControlCommand.mediaIndex(frame.hardMediaCeilingIndex, "hard_media_cap",
+                    ControlCommand.Provenance.HARD_CAP), 0f, frame, programActive,
+                    transientEvent.severity);
         }
         if (frame.writeOrigin == VolumeWriteOrigin.QUIET_NOW) {
             int quiet = frame.quietTargetIndex < 0 ? frame.currentMediaIndex : Math.min(
                     frame.currentMediaIndex, frame.quietTargetIndex);
             ControlCommand command = quiet == frame.currentMediaIndex
-                    ? ControlCommand.none("quiet_now_hold")
-                    : ControlCommand.mediaIndex(quiet, "quiet_now");
-            return record(command, 0f, frame, programActive);
+                    ? ControlCommand.none("quiet_now_hold", ControlCommand.Provenance.QUIET_NOW)
+                    : ControlCommand.mediaIndex(quiet, "quiet_now", ControlCommand.Provenance.QUIET_NOW);
+            return record(command, 0f, frame, programActive, transientEvent.severity);
         }
 
         OutputGainPlanner.Plan plan = OutputGainPlanner.plan(new OutputGainPlanner.Input(
@@ -195,16 +230,11 @@ public final class NormalizerControlCoordinator {
 
         // Capability loss has a mandatory neutralization tick. A Media command follows only after
         // the service has had a separate chance to apply neutral DSP state.
-        if (dspWasVerified && !frame.verifiedDsp && Math.abs(frame.currentDspGainDb) > .001f) {
-            dspWasVerified = false;
-            return record(ControlCommand.dspGain(0f, "dsp_capability_lost_neutralize"),
-                    plan.desiredCorrectionDb(), frame, programActive);
-        }
         boolean verifiedDsp = frame.verifiedDsp && allowsPositiveControl(frame);
-        dspWasVerified = verifiedDsp;
         ControlCommand command = outputController.decide(frame.atMs, plan, verifiedDsp,
                 frame.currentDspGainDb, frame.currentMediaIndex, frame.routeCurve);
-        return record(command, plan.desiredCorrectionDb(), frame, programActive);
+        return record(withSafetyProvenance(command, plan), plan.desiredCorrectionDb(), frame,
+                programActive, transientEvent.severity);
     }
 
     public OutputCeilingState ceilingState() { return ceilingState; }
@@ -214,7 +244,6 @@ public final class NormalizerControlCoordinator {
         activityGate.reset();
         transientGuard.reset();
         outputController.reset();
-        dspWasVerified = false;
     }
 
     public void onStopped() { onRouteChanged(); }
@@ -229,15 +258,38 @@ public final class NormalizerControlCoordinator {
     }
 
     private ControlCommand record(ControlCommand command, float desiredGainDb, Frame frame,
-                                  boolean programActive) {
+                                  boolean programActive, TransientGuard.Severity transientSeverity) {
         String reason = command.reason();
         String dwell = reason.contains("direction_reversal_dwell") ? "blocked" : "clear";
         float appliedGain = command.kind() == ControlCommand.Kind.DSP_GAIN
                 ? command.requestedGainDb() : frame.currentDspGainDb;
         boolean verified = command.kind() == ControlCommand.Kind.DSP_GAIN && frame.verifiedDsp;
         snapshot = new Snapshot(desiredGainDb, appliedGain, frame.captureReference,
-                programActive, transientGuard.isPlaybackActive(), dwell, reason, command.kind(), verified);
+                programActive, transientGuard.isPlaybackActive(), dwell, reason, command.kind(), verified,
+                transientSeverity);
         return command;
+    }
+
+    private void refreshTransientGuard(Frame frame) {
+        if (Float.compare(transientWarningDb, frame.transientWarningDb) == 0
+                && Float.compare(transientEmergencyDb, frame.transientEmergencyDb) == 0) return;
+        transientWarningDb = frame.transientWarningDb;
+        transientEmergencyDb = frame.transientEmergencyDb;
+        transientGuard = new TransientGuard(transientWarningDb, transientEmergencyDb);
+    }
+
+    private static ControlCommand withSafetyProvenance(ControlCommand command,
+                                                        OutputGainPlanner.Plan plan) {
+        if (!plan.absolutePeakViolation()) return command;
+        if (command.kind() == ControlCommand.Kind.MEDIA_INDEX) {
+            return ControlCommand.mediaIndex(command.mediaIndex(), command.reason(),
+                    ControlCommand.Provenance.HARD_PEAK_SAFETY);
+        }
+        if (command.kind() == ControlCommand.Kind.DSP_GAIN) {
+            return ControlCommand.dspGain(command.requestedGainDb(), command.reason(),
+                    ControlCommand.Provenance.HARD_PEAK_SAFETY);
+        }
+        return ControlCommand.none(command.reason(), ControlCommand.Provenance.HARD_PEAK_SAFETY);
     }
 
     private static boolean allowsPositiveControl(Frame frame) {

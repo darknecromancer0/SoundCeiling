@@ -8,6 +8,9 @@ public final class V071CoordinatorPureTest {
         onlyExplicitQuietNowCreatesQuietHold();
         activityHangoverFeedsTransientGuard();
         dspLossNeutralizesBeforeMediaFallback();
+        dspLossNeutralizesBeforeHardMediaCap();
+        commandProvenanceIsStructuredNotReasonDerived();
+        configuredTransientIsDiagnosticBelowAbsolutePeak();
         uncertainPolicyBlocksPositiveGainButNotHardPeak();
         snapshotReportsTheActualCommandActuator();
         hardMediaCapIsTheSingleCoordinatorSafetyCommand();
@@ -105,6 +108,87 @@ public final class V071CoordinatorPureTest {
                 .controlLoudnessDb(-30f).build());
         assertEquals(ControlCommand.Kind.MEDIA_INDEX, fallback.kind(),
                 "Media fallback may happen only on a later tick");
+    }
+
+    private static void dspLossNeutralizesBeforeHardMediaCap() {
+        NormalizerControlCoordinator coordinator = new NormalizerControlCoordinator();
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        coordinator.onFrame(frame(0L, 8, 8, curve).verifiedDsp(true).currentDspGainDb(4f)
+                .rawProgramActive(true).build());
+
+        ControlCommand first = coordinator.onFrame(frame(100L, 8, 8, curve)
+                .verifiedDsp(false).currentDspGainDb(4f).hardMediaCeilingIndex(6)
+                .rawProgramActive(true).build());
+        assertEquals(ControlCommand.Kind.DSP_GAIN, first.kind(),
+                "DSP loss must neutralize before hard Media cap");
+        assertNear(0f, first.requestedGainDb(), 0f, "neutral command gain");
+        assertEquals(ControlCommand.Provenance.DSP_NEUTRALIZATION, first.provenance(),
+                "neutralization provenance");
+
+        ControlCommand pending = coordinator.onFrame(frame(120L, 8, 8, curve)
+                .verifiedDsp(false).currentDspGainDb(4f).hardMediaCeilingIndex(6)
+                .rawProgramActive(true).build());
+        assertEquals(ControlCommand.Kind.DSP_GAIN, pending.kind(),
+                "non-neutral DSP feedback must not fall through to Media");
+
+        ControlCommand cap = coordinator.onFrame(frame(140L, 8, 8, curve)
+                .verifiedDsp(false).currentDspGainDb(0f).hardMediaCeilingIndex(6)
+                .rawProgramActive(true).build());
+        assertEquals(ControlCommand.Kind.MEDIA_INDEX, cap.kind(), "neutral-proven tick may cap Media");
+        assertEquals(6, cap.mediaIndex(), "hard cap index");
+        assertEquals(ControlCommand.Provenance.HARD_CAP, cap.provenance(), "hard-cap provenance");
+    }
+
+    private static void commandProvenanceIsStructuredNotReasonDerived() {
+        NormalizerControlCoordinator coordinator = new NormalizerControlCoordinator();
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        ControlCommand normal = coordinator.onFrame(frame(0L, 8, 7, curve)
+                .observation(NormalizerControlCoordinator.VolumeObservation.USER, VolumeWriteOrigin.USER)
+                .rawPeakDbfs(-8f).build());
+        assertEquals(ControlCommand.Provenance.NORMALIZATION, normal.provenance(),
+                "ordinary command provenance");
+
+        ControlCommand peak = coordinator.onFrame(frame(50L, 8, 8, curve)
+                .rawPeakDbfs(1f).build());
+        assertEquals(ControlCommand.Provenance.HARD_PEAK_SAFETY, peak.provenance(),
+                "hard peak provenance");
+
+        NormalizerControlCoordinator dspCoordinator = new NormalizerControlCoordinator();
+        ControlCommand dspPeak = dspCoordinator.onFrame(frame(0L, 8, 8, curve)
+                .verifiedDsp(true).currentDspGainDb(2f).rawPeakDbfs(1f).build());
+        assertEquals(ControlCommand.Kind.DSP_GAIN, dspPeak.kind(),
+                "hard peak must retain the selected DSP actuator");
+        assertEquals(ControlCommand.Provenance.HARD_PEAK_SAFETY, dspPeak.provenance(),
+                "hard-peak DSP command provenance");
+
+        ControlCommand quiet = coordinator.onFrame(frame(80L, 8, 8, curve).quietTargetIndex(4)
+                .observation(NormalizerControlCoordinator.VolumeObservation.APP_ACK,
+                        VolumeWriteOrigin.QUIET_NOW).build());
+        assertEquals(ControlCommand.Provenance.QUIET_NOW, quiet.provenance(), "quiet provenance");
+    }
+
+    private static void configuredTransientIsDiagnosticBelowAbsolutePeak() {
+        NormalizerControlCoordinator coordinator = new NormalizerControlCoordinator();
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        coordinator.onFrame(frame(0L, 8, 8, curve).transientConfig(1f, 2f)
+                .transientSignal(-30f, true).rawProgramActive(true).build());
+        coordinator.onFrame(frame(30L, 8, 8, curve).transientConfig(1f, 2f)
+                .transientSignal(-30f, true).rawProgramActive(true).build());
+        ControlCommand onset = coordinator.onFrame(frame(100L, 8, 8, curve)
+                .transientConfig(1f, 2f).transientSignal(-25f, true)
+                .rawPeakDbfs(-8f).rawProgramActive(true).build());
+        assertEquals(TransientGuard.Severity.NONE, coordinator.snapshot().transientSeverity(),
+                "playback onset must suppress relative transient authority during warmup");
+        assertEquals(ControlCommand.Kind.NONE, onset.kind(), "onset transient must not attenuate");
+        coordinator.onFrame(frame(260L, 8, 8, curve).transientConfig(1f, 2f)
+                .transientSignal(-30f, true).rawProgramActive(true).build());
+        ControlCommand command = coordinator.onFrame(frame(300L, 8, 8, curve)
+                .transientConfig(1f, 2f).transientSignal(-20f, true)
+                .rawPeakDbfs(-8f).rawProgramActive(true).build());
+        assertEquals(TransientGuard.Severity.WARNING, coordinator.snapshot().transientSeverity(),
+                "frame thresholds must reach coordinator-owned transient guard");
+        assertEquals(ControlCommand.Kind.NONE, command.kind(),
+                "relative transient below absolute peak ceiling is diagnostic, not Media attenuation");
     }
 
     private static void oneCoordinatorResultPreventsOpposingLegacyWrites() {
