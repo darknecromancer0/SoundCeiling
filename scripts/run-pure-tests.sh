@@ -17,8 +17,12 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/OutputDevicePriority.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeCurveMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlVolumeCurve.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/CaptureReferenceEstimator.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ComfortScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TargetScale.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/OutputCeilingState.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/OutputCeilingScale.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/V071SettingsMigration.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/MediaLevelScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SpeedPreset.java" \
@@ -75,6 +79,12 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/MultiSourceResolver.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PolicyResolver.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/HybridEngineCoordinator.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DirectionDwellGate.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ProgramActivityGate.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071TraceRegressionPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071RouteCurvePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071CaptureReferencePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071LinkedLockPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -138,3 +148,7 @@ java -cp "$OUT" dev.soundceiling.app.V070TransientPureTest
 
 java -cp "$OUT" dev.soundceiling.app.V070LogIndexPureTest
 java -cp "$OUT" dev.soundceiling.app.V070ControlScalePureTest
+java -cp "$OUT" dev.soundceiling.app.V071TraceRegressionPureTest
+java -cp "$OUT" dev.soundceiling.app.V071RouteCurvePureTest
+java -cp "$OUT" dev.soundceiling.app.V071CaptureReferencePureTest
+java -cp "$OUT" dev.soundceiling.app.V071LinkedLockPureTest

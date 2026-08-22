@@ -3,6 +3,9 @@ package dev.soundceiling.app;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.util.Map;
+import java.util.Set;
+
 final class Prefs {
     private static final String FILE = "sound_ceiling";
 
@@ -35,10 +38,37 @@ final class Prefs {
             RECOVERY_INTERVAL_MS="recovery_interval_ms",
             ACTIVE_PROFILE="active_profile",
             THEME_MODE="theme_mode",
-            CONTROL_SCALE="control_scale";
+            CONTROL_SCALE="control_scale",
+            PREF_SCHEMA_VERSION="pref_schema_version",
+            DEFAULT_LINKED_LOCK="default_linked_lock",
+            LOWER_OUTPUT_CEILING_DB="lower_output_ceiling_db",
+            UPPER_OUTPUT_CEILING_DB="upper_output_ceiling_db",
+            WHOLE_OUTPUT_DSP_CONSENT="whole_output_dsp_consent";
 
     static SharedPreferences get(Context c) {
         return c.getSharedPreferences(FILE, Context.MODE_PRIVATE);
+    }
+
+    /** Applies v0.7.1 normalization as one editor transaction; schema version is written last. */
+    static void migrateV071(Context c) {
+        SharedPreferences preferences = get(c);
+        Map<String, Object> migrated = V071SettingsMigration.migrate(preferences.getAll());
+        SharedPreferences.Editor editor = preferences.edit();
+        for (Map.Entry<String, Object> entry : migrated.entrySet()) {
+            if (!PREF_SCHEMA_VERSION.equals(entry.getKey())) put(editor, entry.getKey(), entry.getValue());
+        }
+        put(editor, PREF_SCHEMA_VERSION, migrated.get(PREF_SCHEMA_VERSION));
+        editor.apply();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void put(SharedPreferences.Editor editor, String key, Object value) {
+        if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
+        else if (value instanceof Float) editor.putFloat(key, (Float) value);
+        else if (value instanceof Integer) editor.putInt(key, (Integer) value);
+        else if (value instanceof Long) editor.putLong(key, (Long) value);
+        else if (value instanceof String) editor.putString(key, (String) value);
+        else if (value instanceof Set) editor.putStringSet(key, (Set<String>) value);
     }
 
     static float targetRms(Context c){return get(c).getFloat(TARGET_RMS,-18f);}
