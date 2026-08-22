@@ -11,12 +11,11 @@ V06="$ROOT/scripts/check-v06-one-way-contract.sh"
 require(){ local file="$1" needle="$2"; [[ -f "$file" ]] || { echo "Missing v0.6 release file: $file" >&2; exit 1; }; grep -Fq -- "$needle" "$file" || { echo "Missing v0.6 release regression: $(basename "$file") -> $needle" >&2; exit 1; }; }
 reject(){ local file="$1" needle="$2"; if grep -Fq -- "$needle" "$file"; then echo "Forbidden v0.6 release regression: $(basename "$file") -> $needle" >&2; exit 1; fi; }
 
-# Until the v0.7 release task changes identity, the branch still builds as v0.6.0.
-require "$GRADLE" 'versionCode=9'
-require "$GRADLE" 'versionName="0.6.0"'
-require "$WORKFLOW" 'SoundCeiling-v0.6.0-debug-apk'
-require "$README" '# Sound Ceiling for Android - v0.6.0'
-require "$README" 'SoundCeiling-v0.6.0-debug-apk'
+# Historical v0.6 release gate deliberately does not pin the current app identity.
+# v0.7 must keep the proven v0.6 safety/build checks alive while owning release naming.
+require "$README" 'v0.5.1'
+require "$README" 'volume-neutral calibration'
+require "$README" 'non-raising Quiet Now'
 
 # Historical/safety gates and Android build remain wired.
 for gate in \
@@ -37,6 +36,8 @@ for gate in \
   './scripts/check-v05-release-contract.sh' \
   './scripts/check-v051-core-stability-contract.sh' \
   './scripts/check-v06-release-contract.sh' \
+  './scripts/check-v07-ui-contract.sh' \
+  './scripts/check-v07-release-contract.sh' \
   ':app:assembleDebug' \
   'sha256sum app-debug.apk'; do
   require "$WORKFLOW" "$gate"
