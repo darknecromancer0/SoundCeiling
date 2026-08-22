@@ -5,7 +5,6 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.View;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -29,7 +28,6 @@ final class AppPolicyEditorView extends LinearLayout {
     private final SeekBar maxMedia;
     private final SeekBar strength;
     private final SeekBar fallback;
-    private final CheckBox downwardOnly;
     private final TextView loudnessLabel;
     private final TextView maxMediaLabel;
     private final TextView strengthLabel;
@@ -85,11 +83,11 @@ final class AppPolicyEditorView extends LinearLayout {
         fallback = seek(0, 100, policy.fallbackMaxPercent);
         customPanel.addView(fallback);
 
-        downwardOnly = new CheckBox(context);
-        downwardOnly.setText("Только снижение · не восстанавливать собственное снижение автоматически");
-        downwardOnly.setTextColor(Color.WHITE);
-        downwardOnly.setChecked(policy.downwardOnly);
-        customPanel.addView(downwardOnly);
+        TextView recoveryInfo = text(
+                "Adaptive recovery возвращает только подтверждённое снижение SoundCeiling и никогда не расширяет ручной предел пользователя.",
+                13, Color.rgb(175, 180, 190), false);
+        recoveryInfo.setPadding(0, dp(10), 0, 0);
+        customPanel.addView(recoveryInfo);
 
         SeekBar.OnSeekBarChangeListener labels = new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -165,7 +163,7 @@ final class AppPolicyEditorView extends LinearLayout {
             case OFF: next = AppPolicy.off(); break;
             case CUSTOM:
                 next = AppPolicy.custom(targetLoudness(), maxMedia.getProgress(),
-                        strength.getProgress() / 100f, downwardOnly.isChecked(), -2f,
+                        strength.getProgress() / 100f, false, -2f,
                         6f, 10f, fallback.getProgress(), AppPolicy.DspPreference.AUTO, "");
                 break;
             case GLOBAL:
