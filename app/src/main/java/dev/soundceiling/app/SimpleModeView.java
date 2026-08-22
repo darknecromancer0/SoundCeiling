@@ -41,7 +41,7 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
 
         TextView title = text("Основное", 28, true);
         root.addView(title);
-        TextView intro = secondary("Один one-way движок: SoundCeiling удерживает или снижает Media, но никогда не повышает системный ползунок автоматически. Target — верхняя цель, а не положение ползунка.", 14);
+        TextView intro = secondary("Adaptive Envelope: SoundCeiling может быстро снижать Media для защиты и плавно восстанавливать только то снижение, которое сам сделал в текущей сессии. Ручное снижение пользователя и Maximum имеют приоритет. Target — верхняя цель, а не команда повышать системный ползунок.", 14);
         intro.setPadding(0, dp(6), 0, dp(12));
         root.addView(intro);
 
@@ -167,7 +167,7 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
     private void updateMaxLabel(int percent) { maxLabel.setText("Maximum: " + percent + "% · верхняя граница Media"); }
     private void updateNormalizationLabel(int percent) {
         String word = percent == 0 ? "выкл" : percent < 45 ? "мягко" : percent < 80 ? "средне" : "жёстко";
-        normalizeLabel.setText("Normalization: " + percent + "% · " + word + " · только вниз");
+        normalizeLabel.setText("Normalization: " + percent + "% · " + word);
     }
     private TextView section() { return text("", 16, true); }
     private Button helpButton(String key) {
