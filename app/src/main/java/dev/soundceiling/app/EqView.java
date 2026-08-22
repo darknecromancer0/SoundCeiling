@@ -18,6 +18,9 @@ final class EqView extends ScrollView implements RuntimeScreen {
     private EqSettings settings;
     private final TextView capability;
     private final TextView linkLabel;
+    private final TextView correctionLabel;
+    private final FrequencyMeterView liveSpectrum;
+    private final EqResponseView responseView;
     private final SeekBar[] bands = new SeekBar[EqSettings.BAND_COUNT];
     private final TextView[] bandLabels = new TextView[EqSettings.BAND_COUNT];
     private boolean syncing;
@@ -39,6 +42,20 @@ final class EqView extends ScrollView implements RuntimeScreen {
         TextView title = text("Эквалайзер", 28, true); root.addView(title);
         capability = secondary(controller.status(), 14); capability.setPadding(0, dp(8), 0, dp(8)); root.addView(capability);
         root.addView(secondary("EQ — отдельный модуль. Он может работать сам по себе, вместе с Simple или Advanced. Если DSP недоступен, основной limiter/normalizer продолжает работать.", 13));
+
+        TextView spectrumTitle = text("Живой спектр", 17, true);
+        spectrumTitle.setPadding(0, dp(16), 0, dp(4));
+        root.addView(spectrumTitle);
+        root.addView(secondary("Показывает текущую энергию по пяти диапазонам, когда SoundCeiling получает аудиосигнал.", 12));
+        liveSpectrum = new FrequencyMeterView(context);
+        liveSpectrum.setMinimumHeight(dp(166));
+        root.addView(liveSpectrum, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
+        correctionLabel = text("", 15, true);
+        correctionLabel.setPadding(0, dp(16), 0, dp(6));
+        root.addView(correctionLabel);
+        responseView = new EqResponseView(context);
+        root.addView(responseView, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(136)));
 
         Switch enabled = new Switch(context); enabled.setText("EQ enabled"); enabled.setTextColor(UiTheme.primaryText(context)); enabled.setChecked(settings.enabled); root.addView(enabled);
         enabled.setOnCheckedChangeListener((button, checked) -> {
@@ -87,6 +104,7 @@ final class EqView extends ScrollView implements RuntimeScreen {
 
     private void persistAndApply() {
         settings.save(getContext()); controller.apply(settings); capability.setText(controller.status());
+        updateEqVisualization();
     }
 
     private void syncBandUi() {
@@ -96,6 +114,13 @@ final class EqView extends ScrollView implements RuntimeScreen {
             bands[i].setProgress(v); updateBandLabel(i, v);
         }
         syncing = false;
+        updateEqVisualization();
+    }
+
+    private void updateEqVisualization() {
+        int strength = EqVisualizationMath.strengthPercent(settings.levelsMb, controller.minMb(), controller.maxMb());
+        correctionLabel.setText("Сила коррекции EQ: " + strength + "% · кривая boost/cut");
+        responseView.setLevels(settings.levelsMb, controller.minMb(), controller.maxMb());
     }
 
     private void updateBandLabel(int index, int millibels) {
@@ -103,7 +128,10 @@ final class EqView extends ScrollView implements RuntimeScreen {
     }
     private void updateLinkLabel(int strength) { linkLabel.setText("Link Strength: " + strength + "%"); }
 
-    @Override public void render(RuntimeState state) { capability.setText(controller.status()); }
+    @Override public void render(RuntimeState state) {
+        capability.setText(controller.status());
+        liveSpectrum.renderBands(state.bandLevels());
+    }
 
     private TextView text(String value, float sp, boolean bold) {
         TextView view = new TextView(getContext()); view.setText(value); view.setTextSize(sp); view.setTextColor(UiTheme.primaryText(getContext()));
