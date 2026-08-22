@@ -57,9 +57,10 @@ public final class V070TransientPureTest {
 
     private static void absolutePeakProtectionRemainsImmediate() {
         ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        int current = 15;
         int target = PeakSafetyDetector.safeTargetForSourcePeak(
-                -0.2f, 4, curve, -3f, 1, 15);
-        if (target >= 4) {
+                -0.2f, current, curve, -3f, 1, 15);
+        if (target >= current) {
             throw new AssertionError("absolute peak escape hatch must remain able to attenuate immediately");
         }
     }
