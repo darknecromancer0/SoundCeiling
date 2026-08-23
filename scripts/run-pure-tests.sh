@@ -38,6 +38,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DecisionEngine.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ToneSamples.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/FrequencyBandTracker.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/VisualizerFftBands.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/GlobalVisualizerReading.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/CalibrationPreferenceState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/RuntimeState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/StatusText.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/HelpText.java" \
@@ -109,6 +112,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071DspPolicyPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071CaptureCoordinatorPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071SimpleModePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071VisualizerPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -181,3 +185,4 @@ java -cp "$OUT" dev.soundceiling.app.V071CoordinatorPureTest
 java -cp "$OUT" dev.soundceiling.app.V071DspPolicyPureTest
 java -cp "$OUT" dev.soundceiling.app.V071CaptureCoordinatorPureTest
 java -cp "$OUT" dev.soundceiling.app.V071SimpleModePureTest
+java -cp "$OUT" dev.soundceiling.app.V071VisualizerPureTest
