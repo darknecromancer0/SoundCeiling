@@ -74,6 +74,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspGainSlew.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackSnapshot.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmCaptureRequest.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/CaptureRequestCoordinator.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackEndpointResolver.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceDescriptor.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceSet.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmAvailabilityState.java" \

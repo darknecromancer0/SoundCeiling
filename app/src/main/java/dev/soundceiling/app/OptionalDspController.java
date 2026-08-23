@@ -28,16 +28,10 @@ final class OptionalDspController implements AutoCloseable {
         detail = transports.reason();
     }
 
-    void updatePolicy(PlaybackSnapshot playback, boolean documentedOemScopeProof,
+    void updatePolicy(List<PlaybackEndpoint> playbackEndpoints, boolean documentedOemScopeProof,
                       boolean wholeOutputConsent) {
-        List<PlaybackEndpoint> endpoints = new ArrayList<>();
-        if (playback != null && playback.observerHealthy) {
-            for (Integer usage : playback.observedUsages()) {
-                endpoints.add(usage == null
-                        ? PlaybackEndpoint.unresolved(0)
-                        : PlaybackEndpoint.publicUsageDefault(usage));
-            }
-        }
+        List<PlaybackEndpoint> endpoints = playbackEndpoints == null
+                ? Collections.emptyList() : new ArrayList<>(playbackEndpoints);
         DspPolicyArbiter.Input input = new DspPolicyArbiter.Input.Builder(endpoints)
                 .handles(new ArrayList<>(transports.trustedHandles()))
                 .policyScopedCapability(transports.policyScopedCapability())
@@ -51,6 +45,20 @@ final class OptionalDspController implements AutoCloseable {
             transports.neutralizeForFallback();
         }
         detail = policyDecision.reason;
+    }
+
+    /** Compatibility path for callers that only have public usage facts. */
+    void updatePolicy(PlaybackSnapshot playback, boolean documentedOemScopeProof,
+                      boolean wholeOutputConsent) {
+        List<PlaybackEndpoint> endpoints = new ArrayList<>();
+        if (playback != null && playback.observerHealthy) {
+            for (Integer usage : playback.observedUsages()) {
+                endpoints.add(usage == null
+                        ? PlaybackEndpoint.unresolved(0)
+                        : PlaybackEndpoint.publicUsageDefault(usage));
+            }
+        }
+        updatePolicy(endpoints, documentedOemScopeProof, wholeOutputConsent);
     }
 
     DspTransport.Capability capability() {

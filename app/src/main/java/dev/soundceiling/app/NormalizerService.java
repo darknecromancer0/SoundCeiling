@@ -222,6 +222,22 @@ public class NormalizerService extends Service {
         String stopReason = "Остановлено";
         boolean stopError = false;
         while (workerRunning.get() && !fastOnlyMode) {
+            long reconcileAt = SystemClock.elapsedRealtime();
+            boolean callbackRequested = hybridRuntime.consumeCaptureReconcileRequest();
+            CaptureRequestCoordinator.Decision captureDecision =
+                    hybridRuntime.reconcileCapture(pcmCapture, reconcileAt);
+            if (callbackRequested) {
+                DiagnosticLog.transition("capture_reconcile_trigger", captureDecision.reason,
+                        "action=" + captureDecision.action + " request=" + captureDecision.request);
+            }
+            if (captureDecision.action != CaptureRequestCoordinator.Action.KEEP) {
+                if (!rebindCaptureOnWorker(captureDecision, reconcileAt)) return;
+                tracker = new LoudnessTracker();
+                loudnessMeter = new LoudnessMeter(SAMPLE_RATE, CHANNELS);
+                bands = new FrequencyBandTracker(SAMPLE_RATE, CHANNELS);
+                continue;
+            }
+
             int n;
             try {
                 n = pcmCapture == null ? -1 : pcmCapture.read(buffer);
@@ -263,7 +279,7 @@ public class NormalizerService extends Service {
             boolean outputMixEvidence = outputMix != null && outputMix.valid;
             hybridSnapshot = hybridRuntime.resolvePcm(pcmCapture, true, signal, outputMixEvidence,
                     controlProfile, deviceProfile, now);
-            if (optionalDsp != null) optionalDsp.updatePolicy(hybridSnapshot.playback, false, false);
+            if (optionalDsp != null) optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, false);
             ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.maxMediaPercent);
             ControlCommand command = controlCoordinator.onFrame(controlFrame(now, current, blockPeak,
@@ -317,6 +333,74 @@ public class NormalizerService extends Service {
         if (!fastOnlyMode) stopSafe(stopReason, stopError);
     }
 
+    private boolean rebindCaptureOnWorker(CaptureRequestCoordinator.Decision decision, long now) {
+        if (decision == null || decision.action == CaptureRequestCoordinator.Action.KEEP) return true;
+        if (decision.action == CaptureRequestCoordinator.Action.CLOSE) {
+            if (optionalDsp != null) optionalDsp.onCaptureReplaced();
+            if (pcmCapture != null) {
+                pcmCapture.close();
+                pcmCapture = null;
+            }
+            resetAfterCaptureRebind();
+            DiagnosticLog.event("capture_rebind", "action=CLOSE reason=" + decision.reason);
+            return true;
+        }
+        PcmCaptureRequest requested = decision.request == null
+                ? PcmCaptureRequest.mixed() : decision.request;
+        if (pcmCapture != null && pcmCapture.request().equivalentTo(requested)) return true;
+        if (projection == null) {
+            switchToFallback("capture_rebind_projection_missing");
+            return false;
+        }
+
+        if (optionalDsp != null) optionalDsp.onCaptureReplaced();
+        PcmCaptureBackend previous = pcmCapture;
+        pcmCapture = null;
+        if (previous != null) previous.close();
+        resetAfterCaptureRebind();
+        try {
+            pcmCapture = PcmCaptureBackend.open(projection, requested);
+            backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.PLAYBACK_CAPTURE, true,
+                    requested.targeted() ? "targeted_uid_pcm_candidate" : "mixed_pcm_downward_only");
+            DiagnosticLog.event("capture_rebind", "action=" + decision.action
+                    + " request=" + requested + " reason=" + decision.reason);
+            return true;
+        } catch (RuntimeException targetError) {
+            if (!requested.targeted()) {
+                DiagnosticLog.event("capture_rebind_error", "request=mixed errorClass="
+                        + targetError.getClass().getSimpleName());
+                switchToFallback("mixed_capture_rebind_failed:"
+                        + targetError.getClass().getSimpleName());
+                return false;
+            }
+            hybridRuntime.recordTargetOpenFailure(requested.targetUid, now);
+            DiagnosticLog.event("capture_target_open_failed", "uid=" + requested.targetUid
+                    + " errorClass=" + targetError.getClass().getSimpleName());
+            try {
+                PcmCaptureRequest mixed = PcmCaptureRequest.mixed();
+                pcmCapture = PcmCaptureBackend.open(projection, mixed);
+                backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.PLAYBACK_CAPTURE, true,
+                        "target_open_failed_mixed_pcm");
+                DiagnosticLog.event("capture_rebind", "action=OPEN_MIXED request=" + mixed
+                        + " reason=target_open_failed");
+                return true;
+            } catch (RuntimeException mixedError) {
+                switchToFallback("target_and_mixed_capture_failed:"
+                        + mixedError.getClass().getSimpleName());
+                return false;
+            }
+        }
+    }
+
+    private void resetAfterCaptureRebind() {
+        controlCoordinator.onRouteChanged();
+        loudnessState.lastUpAtMs = 0L;
+        loudnessState.lastDownAtMs = 0L;
+        loudnessState.loudHoldUntilMs = 0L;
+        lastBands = new float[5];
+        lastBandUpdate = 0L;
+    }
+
     private void loopFastGuard() {
         while (workerRunning.get() && fastOnlyMode) {
             long detectedAt = SystemClock.elapsedRealtime();
@@ -330,7 +414,7 @@ public class NormalizerService extends Service {
             boolean signal = reading.valid && reading.peakDb > -58f;
             hybridSnapshot = hybridRuntime.resolveFallback(reading.valid, controlProfile,
                     deviceProfile, detectedAt);
-            if (optionalDsp != null) optionalDsp.updatePolicy(hybridSnapshot.playback, false, false);
+            if (optionalDsp != null) optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, false);
             ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.fallbackMaxPercent);
             ControlCommand command = controlCoordinator.onFrame(controlFrame(detectedAt, current,
@@ -611,7 +695,7 @@ public class NormalizerService extends Service {
                     hybridSnapshot.capabilities.metering, hybridSnapshot.capabilities.volumeControl,
                     hybridSnapshot.capabilities.dspTransport,
                     exact == null ? "" : exact.packageName,
-                    exact == null ? sourceSummary(hybridSnapshot) : exact.displayName,
+                    exact == null ? hybridSnapshot.sourceStatusLabel : exact.displayName,
                     hybridSnapshot.exactAppPolicy == null ? hybridSnapshot.sources.confidence.name()
                             : hybridSnapshot.exactAppPolicy.mode.name(),
                     hybridSnapshot.policy.raiseBlockReason.isEmpty()
