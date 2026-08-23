@@ -58,7 +58,7 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
 
         sourceAccess = new Button(context);
         sourceAccess.setAllCaps(false);
-        sourceAccess.setText("Разрешить распознавание YouTube / Яндекс Музыки");
+        sourceAccess.setText("Разрешить распознавание источника для DSP");
         sourceAccess.setVisibility(View.GONE);
         sourceAccess.setOnClickListener(v -> {
             try { getContext().startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); }

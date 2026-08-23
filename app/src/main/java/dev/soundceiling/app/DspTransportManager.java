@@ -198,8 +198,12 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     void onCaptureReplaced() {
-        neutralizeAll();
-        invalidateGlobalProof("capture_replaced");
+        // Capture source/meter replacement is not an output-route change. Preserve the route-scoped
+        // session-zero transport and any completed proof. Only a live attenuation probe must be
+        // restored to 0 dB before its measurement source disappears.
+        boolean probeWasActive = scopeProbe.active();
+        scopeProbe.cancel();
+        if (probeWasActive && globalProof == null) reason = "capture_replaced_probe_cancelled";
     }
 
     void onPolicyChanged() {

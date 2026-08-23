@@ -58,7 +58,12 @@ final class VolumeWriteTracker {
         }
 
         VolumeWriteOrigin authorityOrigin() {
-            if (kind == ObservationKind.USER_CHANGE) return VolumeWriteOrigin.USER;
+            // Only a timely expected-index acknowledgement is app-owned. A stale arrival or a
+            // mismatch can be a real user/system volume decision racing our pending write, so it
+            // must become external authority rather than permission to fight the user.
+            if (kind == ObservationKind.USER_CHANGE
+                    || kind == ObservationKind.APP_WRITE_STALE
+                    || kind == ObservationKind.APP_WRITE_MISMATCH) return VolumeWriteOrigin.USER;
             if (writeOrigin == WriteOrigin.QUIET_NOW) return VolumeWriteOrigin.QUIET_NOW;
             if (writeOrigin == WriteOrigin.PEAK_EMERGENCY
                     || writeOrigin == WriteOrigin.TRANSIENT_EMERGENCY
@@ -148,11 +153,12 @@ final class VolumeWriteTracker {
 
         if (!pendingWrites.isEmpty()) {
             PendingWrite conflict = pendingWrites.peekLast();
+            int previous = lastObserved;
             while (!pendingWrites.isEmpty()) staleWrites.addLast(pendingWrites.removeFirst());
             lastObserved = index;
             return new Observation(ObservationKind.APP_WRITE_MISMATCH,
                     conflict == null ? null : conflict.origin,
-                    conflict == null ? lastObserved : conflict.previousIndex,
+                    previous,
                     conflict == null ? -1 : conflict.expectedIndex, index,
                     conflict == null ? 0L : Math.max(0L, nowMs - conflict.atMs));
         }

@@ -47,7 +47,7 @@ require "$CAPTURE" 'TARGET_SUPPRESSED_SILENT'
 require "$HYBRID" 'DiagnosticLog.transition("media_session_access"'
 require "$HYBRID" 'DiagnosticLog.transition("source_candidates"'
 require "$HYBRID" 'DiagnosticLog.transition("target_probe"'
-require "$SIMPLE" 'Разрешить распознавание YouTube / Яндекс Музыки'
+require "$SIMPLE" 'Разрешить распознавание источника для DSP'
 require "$SIMPLE" 'Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS'
 require "$DIAG" 'state.sourceAccessState'
 

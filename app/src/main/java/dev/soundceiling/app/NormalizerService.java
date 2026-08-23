@@ -146,11 +146,6 @@ public class NormalizerService extends Service {
 
         stopping.set(false);
         optionalDsp.probe();
-        if (globalDspPreference) {
-            DspTransport.Capability rawGlobal = optionalDsp.prepareGlobalProbeTransport();
-            DiagnosticLog.transition("global_dsp_transport", rawGlobal.name(),
-                    "detail=" + optionalDsp.detail());
-        }
         boolean visualizerReady = visualizer.open();
 
         if (fastOnlyMode) {
@@ -159,6 +154,7 @@ public class NormalizerService extends Service {
                     : new AudioBackendStatus(AudioBackendStatus.Tier.MEDIA_ONLY, true,
                             "visualizer_unavailable:" + clean(visualizer.failure()));
             tryOpenLogger();
+            logGlobalDspTransport();
             startWorker(this::loopFastGuard, "SoundCeilingFastGuard");
             DiagnosticLog.event("service_start", "mode=fallback backend=" + backendStatus.label());
             return START_NOT_STICKY;
@@ -188,11 +184,11 @@ public class NormalizerService extends Service {
                 }
             }, null);
             PcmCaptureRequest request = hybridRuntime.prepareCaptureRequest();
-            if (optionalDsp != null) optionalDsp.onCaptureReplaced();
             pcmCapture = PcmCaptureBackend.open(projection, request);
             backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.PLAYBACK_CAPTURE, true,
                     request.targeted() ? "targeted_uid_pcm" : "mixed_pcm_downward_only");
             tryOpenLogger();
+            logGlobalDspTransport();
             startWorker(this::loopPlaybackCapture, "SoundCeilingAudio");
             DiagnosticLog.event("service_start", "mode=smart_pcm backend=" + backendStatus.label()
                     + " targetUid=" + request.targetUid);
@@ -209,6 +205,7 @@ public class NormalizerService extends Service {
                 ? new AudioBackendStatus(AudioBackendStatus.Tier.VISUALIZER, true, reason)
                 : new AudioBackendStatus(AudioBackendStatus.Tier.MEDIA_ONLY, true, reason);
         tryOpenLogger();
+        logGlobalDspTransport();
         startWorker(this::loopFastGuard, "SoundCeilingFallbackGuard");
         DiagnosticLog.event("engine_mode_switch", "to=fallback reason=" + reason);
     }
@@ -428,7 +425,7 @@ public class NormalizerService extends Service {
     private void resetAfterCaptureRebind() {
         liveCaptureReference.onCaptureReplaced();
         resetCaptureReferenceSamples();
-        controlCoordinator.onRouteChanged();
+        controlCoordinator.onCaptureReplaced();
         loudnessState.lastUpAtMs = 0L;
         loudnessState.lastDownAtMs = 0L;
         loudnessState.loudHoldUntilMs = 0L;
@@ -632,8 +629,12 @@ public class NormalizerService extends Service {
         }
         int target = command.mediaIndex();
         if (target > current) {
+            MediaAnchorState anchor = controlCoordinator.mediaAnchorState();
+            int debtCeiling = anchor == null ? current : anchor.maxDebtRecoveryIndex();
+            target = Math.min(target, debtCeiling);
+            if (target <= current) return current;
             return safeVolume.applyRecovery(target, current, settings, effectiveMax,
-                    Math.min(effectiveMax, settings.hardMax()), now);
+                    Math.min(Math.min(effectiveMax, settings.hardMax()), debtCeiling), now);
         }
         VolumeWriteTracker.WriteOrigin origin = writeOriginFor(command);
         boolean safetyCommand = isSafetyCommand(command);
@@ -1012,6 +1013,13 @@ public class NormalizerService extends Service {
         int lock = Math.max(min, controlCurve.capIndexFromPercent(profile.safetyLockPercent));
         return new SafetySettings(min, max, profile.safetyLockEnabled, lock,
                 DbMath.clamp(profile.quietIndex, controlCurve.minIndex(), max), profile.recoveryIntervalMs);
+    }
+
+    private void logGlobalDspTransport() {
+        if (optionalDsp == null || !globalDspPreference) return;
+        DspTransport.Capability rawGlobal = optionalDsp.prepareGlobalProbeTransport();
+        DiagnosticLog.transition("global_dsp_transport", rawGlobal.name(),
+                "detail=" + optionalDsp.detail());
     }
 
     private void tryOpenLogger() {
