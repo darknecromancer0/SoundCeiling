@@ -1,6 +1,14 @@
-# Sound Ceiling for Android - v0.7.2
+# Sound Ceiling for Android - v0.7.3
 
-SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.2 is a corrective field build based on Samsung SM-A528B logs: Samsung Media is the user master anchor, capture PRE/POST semantics are inferred from evidence, Media fallback attenuation is reversible, and Global DSP is explicitly attempted and verified before use.
+SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.3 is a corrective field build based on the next Samsung SM-A528B trace. **user authority is absolute for Samsung Media UP**: ordinary normalization can never raise the Samsung slider above the latest externally chosen index; only SoundCeiling-owned attenuation debt may be repaid back to that anchor. A capture rebind preserves the route-scoped DSP transport and user anchor instead of pretending the physical route changed.
+
+## v0.7.3 corrective highlights
+
+- **User beats recovery immediately.** Any Media observation that does not match an app-owned pending target is external/user authority, including an APP_WRITE_MISMATCH race. It rebases the master anchor and cancels recoverable debt.
+- **Media UP is debt-only.** Without verified DSP, SoundCeiling may attenuate Media and later repay only those owned steps. Exact source recognition never grants permission to push the Samsung slider above the user's latest choice.
+- **Capture rebind is not route change.** mixed↔targeted PCM changes reset capture-dependent meters/controller dwell only. They preserve the Samsung anchor, linked ceilings, debt, and route-scoped session-zero DSP transport/proof. An in-flight -2 dB probe is neutralized before its meter is replaced.
+- **Global DSP gets an OEM-compatible bootstrap fallback.** SoundCeiling first tries the explicit custom `DynamicsProcessing.Config`; if the OEM rejects it, it tries Android's documented default-config constructor. Construction is logged after the persistent session logger is attached. Non-zero gain still requires measured route verification.
+- Source-access copy is generic: **«Разрешить распознавание источника для DSP»**.
 
 ## v0.7.2 corrective highlights
 
@@ -47,7 +55,7 @@ Transitions are logged immediately. Unchanged control summaries are bounded to o
 
 ## Samsung field test
 
-The device checklist is `docs/field-tests/2026-08-23-v0.7.2-samsung-corrective-checklist.md`. Physical observations remain `awaiting device test` until the final APK is installed on the Samsung and one full new log is returned.
+The device checklist is `docs/field-tests/2026-08-23-v0.7.3-samsung-corrective-checklist.md`. Physical observations remain `awaiting device test` until the final APK is installed on the Samsung and one full new log is returned.
 
 Historical v0.7 probes remain part of that run:
 
@@ -60,6 +68,6 @@ Historical compatibility retained from **v0.5.1** and v0.6 includes volume-neutr
 
 ## Build and verification
 
-Requires JDK 17 and Android SDK 35. CI runs the pure suite, historical regression contracts, v0.7 Adaptive Envelope contract, v0.7.1 historical contracts plus v0.7.2 corrective/source/DSP/release contracts, then `:app:assembleDebug`.
+Requires JDK 17 and Android SDK 35. CI runs the pure suite, historical regression contracts, v0.7 Adaptive Envelope contract, v0.7.1 historical contracts plus v0.7.2 historical contracts plus v0.7.3 user-authority/DSP/release contracts, then `:app:assembleDebug`.
 
-The field-build artifact is **`SoundCeiling-v0.7.2-debug-apk`** and contains `app-debug.apk`. The workflow calculates an SHA-256 checksum before upload; final verification records the immutable artifact hash used for the Samsung test.
+The field-build artifact is **`SoundCeiling-v0.7.3-debug-apk`** and contains `app-debug.apk`. The workflow calculates an SHA-256 checksum before upload; Task 12 records the immutable final artifact hash used for the Samsung test.

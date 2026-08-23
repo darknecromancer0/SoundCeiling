@@ -1,0 +1,46 @@
+diff --git a/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java b/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java
+index cf920e4..d102bb9 100644
+--- a/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java
++++ b/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java
+@@ -290,19 +290,28 @@ public final class NormalizerControlCoordinator {
+         return requested;
+     }
+ 
+-    public void onRouteChanged() {
++    public void onCaptureReplaced() {
+         activityGate.reset();
+         transientGuard.reset();
+         outputController.reset();
+-        mediaAnchorState = null;
++        // Capture identity is not output-route identity. Preserve the user's Samsung Media anchor,
++        // app-owned attenuation debt and linked ceiling values across mixed<->targeted rebinds.
+         ceilingPersistenceRequested = false;
+     }
+ 
++    public void onRouteChanged() {
++        onCaptureReplaced();
++        mediaAnchorState = null;
++    }
++
+     public void onStopped() { onRouteChanged(); }
+ 
+     private void applyVolumeAuthority(Frame frame) {
+         if (frame.previousMediaIndex == frame.currentMediaIndex) return;
+-        if (frame.observation == VolumeObservation.USER && frame.writeOrigin == VolumeWriteOrigin.USER) {
++        if ((frame.observation == VolumeObservation.USER
++                || frame.observation == VolumeObservation.APP_STALE
++                || frame.observation == VolumeObservation.APP_MISMATCH)
++                && frame.writeOrigin == VolumeWriteOrigin.USER) {
+             mediaAnchorState = mediaAnchorState.recordUserIndex(frame.currentMediaIndex, frame.atMs);
+             float delta = frame.routeCurve.deltaDb(frame.previousMediaIndex, frame.currentMediaIndex);
+             ceilingState = ceilingState.onMediaIndexChanged(frame.previousMediaIndex,
+@@ -324,8 +333,7 @@ public final class NormalizerControlCoordinator {
+ 
+     private ControlCommand constrainDebtRecovery(ControlCommand command, Frame frame) {
+         if (command == null || command.kind() != ControlCommand.Kind.MEDIA_INDEX
+-                || command.mediaIndex() <= frame.currentMediaIndex
+-                || allowsPositiveControl(frame) || frame.globalMixDsp) return command;
++                || command.mediaIndex() <= frame.currentMediaIndex) return command;
+         if (!debtRecoveryAllowed(frame)) {
+             return ControlCommand.none("positive_gain_blocked_above_user_anchor");
+         }

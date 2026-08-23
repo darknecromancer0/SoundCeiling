@@ -12,26 +12,29 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-      - name: Materialize exact v0.7.3 patch
+      - name: Materialize exact v0.7.3 file patches
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! -f .task073/v073.patch ]]; then
-            echo "v0.7.3 patch already materialized"
+          if [[ ! -f .task073/patches/01.patch ]]; then
+            echo "v0.7.3 patches already materialized"
             exit 0
           fi
-          git apply --check --exclude=.github/workflows/build-apk.yml .task073/v073.patch
-          git apply --exclude=.github/workflows/build-apk.yml .task073/v073.patch
-          ./scripts/run-pure-tests.sh
-          for script in scripts/check-*.sh; do
-            bash "$script"
+          for patch in .task073/patches/*.patch; do
+            echo "Checking $patch"
+            git apply --check "$patch"
+            git apply "$patch"
           done
+          bash ./scripts/run-pure-tests.sh
+          bash ./scripts/check-source-invariants.sh
+          bash ./scripts/check-v06-one-way-contract.sh
+          bash ./scripts/check-v07-adaptive-contract.sh
+          bash ./scripts/check-v071-dsp-contract.sh
+          bash ./scripts/check-v071-ui-contract.sh
+          bash ./scripts/check-v072-corrective-contract.sh
+          bash ./scripts/check-v073-corrective-contract.sh
           rm -rf .task073
           git add -A
-          if git diff --cached --quiet; then
-            echo "No materialized changes"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "fix: preserve user volume authority and dsp transport"

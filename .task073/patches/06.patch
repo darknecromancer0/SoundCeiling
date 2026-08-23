@@ -1,0 +1,13 @@
+diff --git a/app/src/main/java/dev/soundceiling/app/SimpleModeView.java b/app/src/main/java/dev/soundceiling/app/SimpleModeView.java
+index 9c1c12a..d427b38 100644
+--- a/app/src/main/java/dev/soundceiling/app/SimpleModeView.java
++++ b/app/src/main/java/dev/soundceiling/app/SimpleModeView.java
+@@ -58,7 +58,7 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
+ 
+         sourceAccess = new Button(context);
+         sourceAccess.setAllCaps(false);
+-        sourceAccess.setText("Разрешить распознавание YouTube / Яндекс Музыки");
++        sourceAccess.setText("Разрешить распознавание источника для DSP");
+         sourceAccess.setVisibility(View.GONE);
+         sourceAccess.setOnClickListener(v -> {
+             try { getContext().startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); }
