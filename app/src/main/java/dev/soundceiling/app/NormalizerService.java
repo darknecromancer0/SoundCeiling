@@ -165,6 +165,7 @@ public class NormalizerService extends Service {
                 }
             }, null);
             PcmCaptureRequest request = hybridRuntime.prepareCaptureRequest();
+            if (optionalDsp != null) optionalDsp.onCaptureReplaced();
             pcmCapture = PcmCaptureBackend.open(projection, request);
             backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.PLAYBACK_CAPTURE, true,
                     request.targeted() ? "targeted_uid_pcm" : "mixed_pcm_downward_only");
@@ -192,6 +193,7 @@ public class NormalizerService extends Service {
     private synchronized void switchToFallback(String reason) {
         if (!workerRunning.get()) return;
         if (pcmCapture != null) {
+            if (optionalDsp != null) optionalDsp.onCaptureReplaced();
             pcmCapture.close();
             pcmCapture = null;
         }
@@ -261,6 +263,7 @@ public class NormalizerService extends Service {
             boolean outputMixEvidence = outputMix != null && outputMix.valid;
             hybridSnapshot = hybridRuntime.resolvePcm(pcmCapture, true, signal, outputMixEvidence,
                     controlProfile, deviceProfile, now);
+            if (optionalDsp != null) optionalDsp.updatePolicy(hybridSnapshot.playback, false, false);
             ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.maxMediaPercent);
             ControlCommand command = controlCoordinator.onFrame(controlFrame(now, current, blockPeak,
@@ -327,6 +330,7 @@ public class NormalizerService extends Service {
             boolean signal = reading.valid && reading.peakDb > -58f;
             hybridSnapshot = hybridRuntime.resolveFallback(reading.valid, controlProfile,
                     deviceProfile, detectedAt);
+            if (optionalDsp != null) optionalDsp.updatePolicy(hybridSnapshot.playback, false, false);
             ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.fallbackMaxPercent);
             ControlCommand command = controlCoordinator.onFrame(controlFrame(detectedAt, current,
@@ -437,7 +441,8 @@ public class NormalizerService extends Service {
                 // currentDeviceProfileV2() may synthesize a zero-offset device entry. It is not
                 // calibration proof: SPL positive control requires a genuinely saved profile.
                 .calibrationProfileValid(!Prefs.splMode(this) || currentProfile != null)
-                .verifiedDsp(optionalDsp != null && optionalDsp.isVerifiedActive())
+                .verifiedDsp(optionalDsp != null
+                        && isVerifiedDspCapability(optionalDsp.capability()))
                 .observation(coordinatorObservation(observed), coordinatorOrigin(observed))
                 .build();
     }
@@ -465,7 +470,8 @@ public class NormalizerService extends Service {
                                         int effectiveMax, boolean allowBelowMinimum, long now) {
         if (command == null || command.kind() == ControlCommand.Kind.NONE) return current;
         if (command.kind() == ControlCommand.Kind.DSP_GAIN) {
-            boolean applied = optionalDsp != null && optionalDsp.applyGain(command.requestedGainDb());
+            boolean applied = optionalDsp != null && optionalDsp.applyGain(
+                    command.requestedGainDb(), isSafetyCommand(command));
             DiagnosticLog.transition("dsp_gain_command", command.reason(),
                     "requestedGainDb=" + command.requestedGainDb() + " applied=" + applied);
             return current;
@@ -478,6 +484,11 @@ public class NormalizerService extends Service {
         VolumeWriteTracker.WriteOrigin origin = writeOriginFor(command);
         return safeVolume.applyRequested(target, current, settings, effectiveMax,
                 allowBelowMinimum, now, origin);
+    }
+
+    private static boolean isVerifiedDspCapability(DspTransport.Capability capability) {
+        return capability == DspTransport.Capability.VERIFIED_POLICY_SCOPED
+                || capability == DspTransport.Capability.VERIFIED_GLOBAL_MIX;
     }
 
     private static boolean isSafetyCommand(ControlCommand command) {
@@ -620,6 +631,7 @@ public class NormalizerService extends Service {
         ControlProfile next = Prefs.currentControlProfile(this);
         String fingerprint = next.encode();
         if (!force && fingerprint.equals(controlProfileFingerprint)) return;
+        if (optionalDsp != null && !controlProfileFingerprint.isEmpty()) optionalDsp.onPolicyChanged();
         controlProfile = next;
         controlProfileFingerprint = fingerprint;
         safetySettings = toSafetySettings(next);
@@ -689,6 +701,7 @@ public class NormalizerService extends Service {
         String oldKey = currentDevice == null ? "" : DeviceDetector.key(currentDevice);
         String newKey = DeviceDetector.key(detected);
         if (force || !oldKey.equals(newKey)) {
+            if (optionalDsp != null && !oldKey.isEmpty()) optionalDsp.onRouteChanged();
             currentDevice = detected;
             currentDeviceType = DeviceDetector.type(detected);
             currentProfile = ProfileStore.find(this, detected);
@@ -799,6 +812,7 @@ public class NormalizerService extends Service {
         if (!stopping.compareAndSet(false, true)) return;
         workerRunning.set(false);
         controlCoordinator.onStopped();
+        if (optionalDsp != null) optionalDsp.onServiceStopped();
         DiagnosticLog.event("service_stop", "reason=" + clean(reason));
         if (worker != null && worker != Thread.currentThread()) worker.interrupt();
         worker = null;
@@ -830,6 +844,7 @@ public class NormalizerService extends Service {
     @Override public void onDestroy() {
         workerRunning.set(false);
         controlCoordinator.onStopped();
+        if (optionalDsp != null) optionalDsp.onServiceStopped();
         if (worker != null) worker.interrupt();
         if (pcmCapture != null) pcmCapture.close();
         if (visualizer != null) visualizer.close();

@@ -1,36 +1,156 @@
 package dev.soundceiling.app;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+
 /**
- * Tier A is deliberately fail-closed. v0.4 only reports DSP as active after a later
- * device-specific path can prove that the effect controls the relevant third-party output.
+ * Service-facing DSP bridge. The manager owns framework effects; this facade keeps legacy callers
+ * small while exposing only truthful verified capability to the normalization coordinator.
  */
 final class OptionalDspController implements AutoCloseable {
-    private boolean verifiedActive;
+    private final DspTransportManager transports = new DspTransportManager(2);
     private String detail = "global_output_path_not_verified";
-    private float appliedGainDb;
+    private DspPolicyArbiter.Decision policyDecision;
 
     AudioBackendStatus probe() {
-        verifiedActive = false;
-        appliedGainDb = 0f;
-        detail = "global_output_path_not_verified";
-        return new AudioBackendStatus(AudioBackendStatus.Tier.DSP, false, detail);
+        // There is intentionally no guessed third-party session and no verified-by-construction
+        // global effect here. Task 8 may supply trusted handles; global proof is explicit/bounded.
+        transports.reconcileTrustedHandles(Collections.emptyList());
+        detail = transports.reason();
+        return new AudioBackendStatus(AudioBackendStatus.Tier.DSP,
+                isVerifiedActive(), detail);
     }
 
-    boolean isVerifiedActive() { return verifiedActive; }
-    String detail() { return detail; }
+    void reconcileTrustedHandles(Collection<DspEndpointHandle> handles) {
+        transports.reconcileTrustedHandles(handles);
+        detail = transports.reason();
+    }
 
-    /** Service-owned effect bridge. Neutral gain is always accepted during capability loss. */
+    void updatePolicy(PlaybackSnapshot playback, boolean documentedOemScopeProof,
+                      boolean wholeOutputConsent) {
+        List<PlaybackEndpoint> endpoints = new ArrayList<>();
+        if (playback != null && playback.observerHealthy) {
+            for (Integer usage : playback.observedUsages()) {
+                endpoints.add(usage == null
+                        ? PlaybackEndpoint.unresolved(0)
+                        : PlaybackEndpoint.publicUsageDefault(usage));
+            }
+        }
+        DspPolicyArbiter.Input input = new DspPolicyArbiter.Input.Builder(endpoints)
+                .handles(new ArrayList<>(transports.trustedHandles()))
+                .policyScopedCapability(transports.policyScopedCapability())
+                .global(transports.globalCapability(), transports.globalScope())
+                .documentedOemProtectedUsageExclusion(documentedOemScopeProof)
+                .wholeOutputScopeConsent(wholeOutputConsent)
+                .build();
+        policyDecision = DspPolicyArbiter.decide(input);
+        if (policyDecision.result != DspPolicyArbiter.Result.POLICY_SCOPED_DSP
+                && policyDecision.result != DspPolicyArbiter.Result.GLOBAL_MIX_DSP) {
+            transports.neutralizeForFallback();
+        }
+        detail = policyDecision.reason;
+    }
+
+    DspTransport.Capability capability() {
+        if (policyDecision == null) return DspTransport.Capability.UNAVAILABLE;
+        if (policyDecision.result == DspPolicyArbiter.Result.POLICY_SCOPED_DSP) {
+            return transports.policyScopedCapability();
+        }
+        if (policyDecision.result == DspPolicyArbiter.Result.GLOBAL_MIX_DSP) {
+            return transports.globalCapability();
+        }
+        DspTransport.Capability raw = transports.effectiveCapability();
+        return raw == DspTransport.Capability.UNAVAILABLE
+                ? DspTransport.Capability.UNAVAILABLE
+                : DspTransport.Capability.AVAILABLE_UNVERIFIED;
+    }
+
+    DspScope scope() {
+        if (policyDecision == null) return DspScope.NONE;
+        if (policyDecision.result == DspPolicyArbiter.Result.POLICY_SCOPED_DSP) {
+            return DspScope.POLICY_SCOPED;
+        }
+        if (policyDecision.result == DspPolicyArbiter.Result.GLOBAL_MIX_DSP) {
+            return DspScope.GLOBAL_MIX;
+        }
+        return DspScope.UNKNOWN;
+    }
+
+    boolean isVerifiedActive() {
+        DspTransport.Capability capability = capability();
+        return capability == DspTransport.Capability.VERIFIED_POLICY_SCOPED
+                || capability == DspTransport.Capability.VERIFIED_GLOBAL_MIX;
+    }
+
+    String detail() {
+        return detail;
+    }
+
+    boolean applyGain(float requestedGainDb, boolean hardSafety) {
+        if (requestedGainDb != 0f && (policyDecision == null
+                || (policyDecision.result != DspPolicyArbiter.Result.POLICY_SCOPED_DSP
+                && policyDecision.result != DspPolicyArbiter.Result.GLOBAL_MIX_DSP))) {
+            detail = policyDecision == null ? "dsp_policy_not_resolved" : policyDecision.reason;
+            return false;
+        }
+        boolean applied = transports.applyGain(requestedGainDb, hardSafety);
+        detail = applied && policyDecision != null ? policyDecision.reason : transports.reason();
+        return applied;
+    }
+
+    /** Compatibility overload for non-safety callers; live service passes explicit provenance. */
     boolean applyGain(float requestedGainDb) {
-        if (!Float.isFinite(requestedGainDb)) return false;
-        if (requestedGainDb != 0f && !verifiedActive) return false;
-        appliedGainDb = requestedGainDb;
-        return true;
+        return applyGain(requestedGainDb, false);
     }
 
-    float appliedGainDb() { return appliedGainDb; }
+    float appliedGainDb() {
+        return transports.appliedGainDb();
+    }
+
+    boolean beginGlobalProbe(String routeIdentity, boolean allowedMediaActive) {
+        boolean started = transports.beginGlobalProbe(routeIdentity, allowedMediaActive);
+        detail = transports.reason();
+        return started;
+    }
+
+    DspScopeProbe.Evidence finishGlobalProbe(float[] beforeDb, float[] afterDb,
+                                             boolean documentedOemScopeProof,
+                                             boolean wholeOutputConsent,
+                                             long timestampMs) {
+        DspScopeProbe.Evidence evidence = transports.finishGlobalProbe(beforeDb, afterDb,
+                documentedOemScopeProof, wholeOutputConsent, timestampMs);
+        detail = transports.reason();
+        return evidence;
+    }
+
+    void onRouteChanged() {
+        transports.onRouteChanged();
+        policyDecision = null;
+        detail = transports.reason();
+    }
+
+    void onCaptureReplaced() {
+        transports.onCaptureReplaced();
+        policyDecision = null;
+        detail = transports.reason();
+    }
+
+    void onPolicyChanged() {
+        transports.onPolicyChanged();
+        policyDecision = null;
+        detail = transports.reason();
+    }
+
+    void onServiceStopped() {
+        transports.onServiceStopped();
+        policyDecision = null;
+        detail = transports.reason();
+    }
 
     @Override public void close() {
-        verifiedActive = false;
-        appliedGainDb = 0f;
+        transports.close();
+        detail = transports.reason();
     }
 }
