@@ -1,9 +1,14 @@
-# Sound Ceiling for Android - v0.7.1
+# Sound Ceiling for Android - v0.7.2
 
-SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.1 keeps the v0.7 **Adaptive Envelope** safety model and adds verified Global DSP, shared Default Linked Lock, live source rebinding, truthful FFT fallback and bounded diagnostics.
+SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.2 is a corrective field build based on Samsung SM-A528B logs: Samsung Media is the user master anchor, capture PRE/POST semantics are inferred from evidence, Media fallback attenuation is reversible, and Global DSP is explicitly attempted and verified before use.
 
-## v0.7.1 highlights
+## v0.7.2 corrective highlights
 
+- **Samsung Media is the user anchor.** A real user volume move rebases the anchor; SoundCeiling-owned attenuation creates recoverable debt and cannot silently redefine the user's chosen step.
+- **Playback Capture is no longer hard-coded POST_VOLUME.** Live PRE/POST evidence controls output projection, and PRE_VOLUME includes the measured/vendor Samsung route gain. UNKNOWN blocks ordinary normalization writes that cannot be projected safely.
+- **Ordinary Media fallback uses a route-relative floor** instead of treating absolute index 1 as the universal default target. Hard emergency safety remains independent and may attenuate further when genuinely required.
+- **Source diagnostics are actionable.** Missing Notification Listener access, package candidates, targeted PCM confirmation/silence/failure, and Global DSP transport/probe status are logged separately.
+- **Simple mode has Reset Defaults** for normalizer controls only; logs, calibration and app policies are preserved. `Частотный спектр` is explicitly diagnostic and does not control normalization.
 - **Global DSP** is ON by default as a user preference in both Simple and Advanced mode. It becomes active only after the existing session-zero `DynamicsProcessing` path is actually verified for the current route. Successful effect construction alone is not proof.
 - When verified Global DSP is active, ordinary positive and negative normalization uses DSP gain/limiter first so the Samsung Media slider can stay where the user put it. Hard Media safety remains independent.
 - If Global DSP is unavailable or loses proof, the effect is neutralized and SoundCeiling falls back to compatible selective/DSP-like/Media control without claiming a verified global path.
@@ -28,9 +33,9 @@ Global DSP and Linked Lock are independent. Global DSP chooses how SoundCeiling 
 
 Precise PCM uses Android `AudioPlaybackCapture`, whose permission is exposed through `MediaProjection`. SoundCeiling uses it for playback-audio analysis, not screen video. If exact capture is unavailable, diagnostics show the fallback instead of inventing exact source evidence.
 
-## Spectrum and calibrated dB SPL
+## Частотный спектр and calibrated dB SPL
 
-PCM spectrum is preferred when precise capture is available. Otherwise the output-mix Visualizer FFT may provide fallback bands. A short labeled hold can preserve the last live shape during a transient gap, after which the spectrum becomes explicitly unavailable.
+The frequency display contains five diagnostic low/mid/high-band indicators. It does not control normalization. PCM spectrum is preferred when precise capture is available; otherwise output-mix Visualizer FFT may provide fallback bands. A short labeled hold can preserve the last live shape during a transient gap, after which it becomes explicitly unavailable.
 
 Calibrated dB SPL is an approximate route-specific display. A saved value is restored only for the same output route and never changes digital normalization or safety behavior.
 
@@ -42,7 +47,7 @@ Transitions are logged immediately. Unchanged control summaries are bounded to o
 
 ## Samsung field test
 
-The device checklist is `docs/field-tests/2026-08-22-v0.7.1-samsung-checklist.md`. Physical observations remain `awaiting device test` until the final APK is installed on the Samsung and one full new log is returned.
+The device checklist is `docs/field-tests/2026-08-23-v0.7.2-samsung-corrective-checklist.md`. Physical observations remain `awaiting device test` until the final APK is installed on the Samsung and one full new log is returned.
 
 Historical v0.7 probes remain part of that run:
 
@@ -55,6 +60,6 @@ Historical compatibility retained from **v0.5.1** and v0.6 includes volume-neutr
 
 ## Build and verification
 
-Requires JDK 17 and Android SDK 35. CI runs the pure suite, historical regression contracts, v0.7 Adaptive Envelope contract, v0.7.1 DSP/UI/release contracts, then `:app:assembleDebug`.
+Requires JDK 17 and Android SDK 35. CI runs the pure suite, historical regression contracts, v0.7 Adaptive Envelope contract, v0.7.1 historical contracts plus v0.7.2 corrective/source/DSP/release contracts, then `:app:assembleDebug`.
 
-The field-build artifact is **`SoundCeiling-v0.7.1-debug-apk`** and contains `app-debug.apk`. The workflow calculates an SHA-256 checksum before upload; Task 12 records the immutable final artifact hash used for the Samsung test.
+The field-build artifact is **`SoundCeiling-v0.7.2-debug-apk`** and contains `app-debug.apk`. The workflow calculates an SHA-256 checksum before upload; final verification records the immutable artifact hash used for the Samsung test.
