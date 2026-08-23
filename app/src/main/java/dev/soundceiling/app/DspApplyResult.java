@@ -18,6 +18,13 @@ final class DspApplyResult {
 
     static DspApplyResult applied(float gainDb, DspTransport.Capability capability,
                                   String reason) {
+        if (!Float.isFinite(gainDb)) {
+            DspTransport.Capability downgraded = capability == null
+                    || capability == DspTransport.Capability.UNAVAILABLE
+                    ? DspTransport.Capability.UNAVAILABLE
+                    : DspTransport.Capability.AVAILABLE_UNVERIFIED;
+            return rejected(0f, downgraded, "dsp_apply_non_finite");
+        }
         return new DspApplyResult(true, gainDb, capability, reason);
     }
 

@@ -14,16 +14,122 @@ public final class V071DspPolicyPureTest {
 
     public static void main(String[] args) {
         exactEightRowPolicyMatrixPreservesHardPeakSafety();
+        offMediaAndDspDisabledNeverRideGlobalMix();
+        scopedDspRequiresCompleteTrustedCoverage();
         handlesRequireTrustedProvenanceAndCurrentAllowedPolicy();
         publicPlaybackEvidenceCannotCreateTrustedHandle();
         probeRequiresThreeConsistentAffectedMediaSamples();
         probeNeverClaimsProtectedUsageExclusion();
         gainSlewUsesAsymmetricRatesAndDeadband();
+        shortTicksAccumulateWithoutExceedingRates();
         hardSafetyMayJumpOnlyTowardAttenuation();
         defaultsLeaveSystemAppsAndNonMediaStreamsOff();
         unsupportedTransportReportsTruthfulImmutableFailure();
         capabilityNamesDescribeVerifiedScopeExactly();
+        capabilityResolverRequiresTypedCapabilityAndConsistentScope();
         System.out.println("V071DspPolicyPureTest: PASS");
+    }
+
+    private static void offMediaAndDspDisabledNeverRideGlobalMix() {
+        PlaybackEndpoint allowed = PlaybackEndpoint.resolved(MEDIA, "com.example.allowed",
+                PlaybackEndpoint.PackageEvidence.TARGETED_PCM_CONFIRMED,
+                "allowed", AppPolicy.on());
+        PlaybackEndpoint packageOff = PlaybackEndpoint.resolved(MEDIA, "com.example.private",
+                PlaybackEndpoint.PackageEvidence.TARGETED_PCM_CONFIRMED,
+                "private", AppPolicy.off());
+
+        DspPolicyArbiter.Decision oemCannotWaivePackageOff = DspPolicyArbiter.decide(
+                input(Arrays.asList(allowed, packageOff))
+                        .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX,
+                                DspScope.GLOBAL_MIX)
+                        .documentedOemProtectedUsageExclusion(true).build());
+        assertEquals(DspPolicyArbiter.Result.FALLBACK_ONLY, oemCannotWaivePackageOff.result,
+                "OEM protected-usage proof cannot waive an OFF MEDIA package in the mix");
+
+        DspPolicyArbiter.Decision consentCannotWaivePackageOff = DspPolicyArbiter.decide(
+                input(Arrays.asList(allowed, packageOff))
+                        .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX,
+                                DspScope.GLOBAL_MIX)
+                        .wholeOutputScopeConsent(true).build());
+        assertEquals(DspPolicyArbiter.Result.FALLBACK_ONLY, consentCannotWaivePackageOff.result,
+                "whole-output consent cannot silently override explicit package OFF");
+
+        AppPolicy dspDisabledPolicy = AppPolicy.custom(-18f, 70, 1f, false,
+                -2f, 6f, 10f, 50, AppPolicy.DspPreference.DISABLE, "");
+        PlaybackEndpoint dspDisabled = PlaybackEndpoint.resolved(MEDIA, "com.example.no_dsp",
+                PlaybackEndpoint.PackageEvidence.TARGETED_PCM_CONFIRMED,
+                "no_dsp", dspDisabledPolicy);
+        DspPolicyArbiter.Decision singleDisabled = DspPolicyArbiter.decide(input(dspDisabled)
+                .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX, DspScope.GLOBAL_MIX)
+                .wholeOutputScopeConsent(true).build());
+        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, singleDisabled.result,
+                "DSP DISABLE keeps an otherwise allowed endpoint on Media fallback");
+
+        DspPolicyArbiter.Decision mixedDisabled = DspPolicyArbiter.decide(
+                input(Arrays.asList(allowed, dspDisabled))
+                        .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX,
+                                DspScope.GLOBAL_MIX)
+                        .documentedOemProtectedUsageExclusion(true)
+                        .wholeOutputScopeConsent(true).build());
+        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, mixedDisabled.result,
+                "one DSP-disabled allowed endpoint blocks global DSP for the shared mix");
+    }
+
+    private static void scopedDspRequiresCompleteTrustedCoverage() {
+        PlaybackEndpoint first = PlaybackEndpoint.resolved(MEDIA, "com.example.first",
+                PlaybackEndpoint.PackageEvidence.DOCUMENTED_PROVIDER,
+                "first", AppPolicy.on());
+        PlaybackEndpoint second = PlaybackEndpoint.resolved(MEDIA, "com.example.second",
+                PlaybackEndpoint.PackageEvidence.DOCUMENTED_PROVIDER,
+                "second", AppPolicy.on());
+        DspEndpointHandle firstHandle = trustedHandle(201, "first");
+        DspEndpointHandle secondHandle = trustedHandle(202, "second");
+        DspEndpointHandle wrongHandle = trustedHandle(203, "some_other_policy");
+
+        DspPolicyArbiter.Decision incomplete = DspPolicyArbiter.decide(
+                input(Arrays.asList(first, second))
+                        .handles(Collections.singletonList(firstHandle))
+                        .policyScopedCapability(
+                                DspTransport.Capability.VERIFIED_POLICY_SCOPED).build());
+        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, incomplete.result,
+                "one handle cannot claim scoped coverage for two active allowed endpoints");
+
+        PlaybackEndpoint anotherFirstEndpoint = PlaybackEndpoint.resolved(MEDIA,
+                "com.example.first", PlaybackEndpoint.PackageEvidence.DOCUMENTED_PROVIDER,
+                "first", AppPolicy.on());
+        DspPolicyArbiter.Decision duplicatedHandle = DspPolicyArbiter.decide(
+                input(Arrays.asList(first, anotherFirstEndpoint))
+                        .handles(Arrays.asList(firstHandle, firstHandle))
+                        .policyScopedCapability(
+                                DspTransport.Capability.VERIFIED_POLICY_SCOPED).build());
+        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, duplicatedHandle.result,
+                "duplicating one handle cannot cover two active endpoints with the same key");
+
+        DspPolicyArbiter.Decision mismatched = DspPolicyArbiter.decide(input(first)
+                .handles(Collections.singletonList(wrongHandle))
+                .policyScopedCapability(DspTransport.Capability.VERIFIED_POLICY_SCOPED).build());
+        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, mismatched.result,
+                "a trusted handle with the wrong policy key provides no scoped coverage");
+
+        DspPolicyArbiter.Decision complete = DspPolicyArbiter.decide(
+                input(Arrays.asList(first, second))
+                        .handles(Arrays.asList(firstHandle, secondHandle))
+                        .policyScopedCapability(
+                                DspTransport.Capability.VERIFIED_POLICY_SCOPED).build());
+        assertEquals(DspPolicyArbiter.Result.POLICY_SCOPED_DSP, complete.result,
+                "every DSP-eligible allowed endpoint has its own matching trusted handle");
+
+        DspPolicyArbiter.Decision availableOnly = DspPolicyArbiter.decide(input(first)
+                .global(DspTransport.Capability.AVAILABLE_UNVERIFIED, DspScope.GLOBAL_MIX)
+                .wholeOutputScopeConsent(true).build());
+        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, availableOnly.result,
+                "consent cannot promote an unverified global effect");
+
+        DspPolicyArbiter.Decision wrongScope = DspPolicyArbiter.decide(input(first)
+                .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX, DspScope.POLICY_SCOPED)
+                .wholeOutputScopeConsent(true).build());
+        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, wrongScope.result,
+                "global capability with mismatched physical scope must not run");
     }
 
     /**
@@ -174,26 +280,52 @@ public final class V071DspPolicyPureTest {
     }
 
     private static void gainSlewUsesAsymmetricRatesAndDeadband() {
-        DspGainSlew.Step attenuation = DspGainSlew.next(0f, -20f, 500L, false);
+        DspGainSlew attenuationSlew = new DspGainSlew();
+        DspGainSlew.Step attenuation = attenuationSlew.update(0f, -20f, 500L, false);
         assertTrue(attenuation.shouldApply, "large attenuation emits a command");
         assertNear(-9f, attenuation.gainDb, .001f, "18 dB/s attenuation limit for 0.5 s");
 
-        DspGainSlew.Step recovery = DspGainSlew.next(-12f, 0f, 500L, false);
+        DspGainSlew recoverySlew = new DspGainSlew();
+        DspGainSlew.Step recovery = recoverySlew.update(-12f, 0f, 500L, false);
         assertTrue(recovery.shouldApply, "large recovery emits a command");
         assertNear(-10f, recovery.gainDb, .001f, "4 dB/s recovery limit for 0.5 s");
 
-        DspGainSlew.Step deadband = DspGainSlew.next(-5f, -5.2f, 1_000L, false);
+        DspGainSlew.Step deadband = new DspGainSlew().update(-5f, -5.2f, 1_000L, false);
         assertFalse(deadband.shouldApply, "sub-0.35 dB request emits no command");
         assertNear(-5f, deadband.gainDb, 0f, "deadband keeps current gain");
     }
 
+    private static void shortTicksAccumulateWithoutExceedingRates() {
+        DspGainSlew recovery = new DspGainSlew();
+        for (int tick = 0; tick < 4; tick++) {
+            DspGainSlew.Step held = recovery.update(-12f, 0f, 20L, false);
+            assertFalse(held.shouldApply,
+                    "four 20 ms recovery ticks remain below the 0.35 dB command deadband");
+        }
+        DspGainSlew.Step accumulatedRecovery = recovery.update(-12f, 0f, 20L, false);
+        assertTrue(accumulatedRecovery.shouldApply,
+                "five 20 ms ticks eventually emit accumulated recovery");
+        assertNear(-11.6f, accumulatedRecovery.gainDb, .001f,
+                "100 ms accumulated recovery remains exactly 4 dB/s");
+
+        DspGainSlew attenuation = new DspGainSlew();
+        assertFalse(attenuation.update(0f, -20f, 10L, false).shouldApply,
+                "one 10 ms attenuation tick is below deadband");
+        DspGainSlew.Step accumulatedAttenuation = attenuation.update(0f, -20f, 10L, false);
+        assertTrue(accumulatedAttenuation.shouldApply,
+                "two 10 ms ticks eventually emit accumulated attenuation");
+        assertNear(-.36f, accumulatedAttenuation.gainDb, .001f,
+                "20 ms accumulated attenuation remains exactly 18 dB/s");
+    }
+
     private static void hardSafetyMayJumpOnlyTowardAttenuation() {
-        DspGainSlew.Step hardAttenuation = DspGainSlew.next(0f, -20f, 10L, true);
+        DspGainSlew slew = new DspGainSlew();
+        DspGainSlew.Step hardAttenuation = slew.update(0f, -20f, 10L, true);
         assertTrue(hardAttenuation.shouldApply, "hard safety attenuation emits a command");
         assertNear(-20f, hardAttenuation.gainDb, 0f,
                 "hard safety attenuation may jump directly to safe gain");
 
-        DspGainSlew.Step allegedHardRecovery = DspGainSlew.next(-20f, 0f, 500L, true);
+        DspGainSlew.Step allegedHardRecovery = slew.update(-20f, 0f, 500L, true);
         assertNear(-18f, allegedHardRecovery.gainDb, .001f,
                 "hard flag must not bypass the 4 dB/s recovery limit");
     }
@@ -242,6 +374,15 @@ public final class V071DspPolicyPureTest {
         assertEquals(DspTransport.Capability.UNAVAILABLE, rejected.capability,
                 "rejection carries downgraded capability");
         assertNear(0f, rejected.appliedGainDb, 0f, "rejection reports neutral applied gain");
+
+        DspApplyResult nonFinite = DspApplyResult.applied(Float.NaN,
+                DspTransport.Capability.VERIFIED_GLOBAL_MIX, "framework_reported_apply");
+        assertFalse(nonFinite.applied,
+                "non-finite gain can never be reported as a successful zero-dB apply");
+        assertEquals(DspTransport.Capability.AVAILABLE_UNVERIFIED, nonFinite.capability,
+                "invalid applied gain downgrades a formerly verified transport");
+        assertNear(0f, nonFinite.appliedGainDb, 0f,
+                "invalid applied gain reports neutral feedback without claiming success");
         transport.neutralize();
         transport.close();
     }
@@ -260,6 +401,39 @@ public final class V071DspPolicyPureTest {
             runtime.add(capability.name());
         }
         assertEquals(expected, runtime, "runtime capability vocabulary");
+    }
+
+    private static void capabilityResolverRequiresTypedCapabilityAndConsistentScope() {
+        assertEquals(EngineCapabilities.DspTransportCapability.UNAVAILABLE,
+                resolvedCapability(DspTransport.Capability.UNAVAILABLE, DspScope.NONE),
+                "unavailable transport remains unavailable");
+        assertEquals(EngineCapabilities.DspTransportCapability.AVAILABLE_UNVERIFIED,
+                resolvedCapability(DspTransport.Capability.AVAILABLE_UNVERIFIED,
+                        DspScope.UNKNOWN),
+                "available but unverified transport remains explicitly unverified");
+        assertEquals(EngineCapabilities.DspTransportCapability.VERIFIED_POLICY_SCOPED,
+                resolvedCapability(DspTransport.Capability.VERIFIED_POLICY_SCOPED,
+                        DspScope.POLICY_SCOPED),
+                "matching policy-scoped capability and scope stay verified");
+        assertEquals(EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX,
+                resolvedCapability(DspTransport.Capability.VERIFIED_GLOBAL_MIX,
+                        DspScope.GLOBAL_MIX),
+                "matching global-mix capability and scope stay verified");
+        assertEquals(EngineCapabilities.DspTransportCapability.AVAILABLE_UNVERIFIED,
+                resolvedCapability(DspTransport.Capability.VERIFIED_POLICY_SCOPED,
+                        DspScope.GLOBAL_MIX),
+                "policy-scoped capability with global scope is downgraded");
+        assertEquals(EngineCapabilities.DspTransportCapability.AVAILABLE_UNVERIFIED,
+                resolvedCapability(DspTransport.Capability.VERIFIED_GLOBAL_MIX,
+                        DspScope.POLICY_SCOPED),
+                "global capability with policy scope is downgraded");
+    }
+
+    private static EngineCapabilities.DspTransportCapability resolvedCapability(
+            DspTransport.Capability capability, DspScope scope) {
+        return CapabilityResolver.resolve(true,
+                EngineCapabilities.SourceIdentityConfidence.EXACT,
+                true, false, false, capability, scope, true, "test").dspTransport;
     }
 
     private static DspPolicyArbiter.Input.Builder input(PlaybackEndpoint endpoint) {

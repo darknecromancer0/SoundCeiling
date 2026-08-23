@@ -100,7 +100,8 @@ public final class HybridPolicyPureTest {
     private static void testUnverifiedAdaptersStayUnavailable() {
         EngineCapabilities c = CapabilityResolver.resolve(true,
                 EngineCapabilities.SourceIdentityConfidence.EXACT, true, false,
-                false, false, true, "stock_android");
+                false, DspTransport.Capability.UNAVAILABLE, DspScope.NONE,
+                true, "stock_android");
         assertEquals(EngineCapabilities.VolumeControlCapability.STREAM_MEDIA, c.volumeControl,
                 "unverified per-app controller must not claim verification");
         assertEquals(EngineCapabilities.DspTransportCapability.UNAVAILABLE, c.dspTransport,

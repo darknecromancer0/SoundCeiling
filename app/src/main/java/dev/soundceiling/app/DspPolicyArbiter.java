@@ -2,6 +2,7 @@ package dev.soundceiling.app;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 
@@ -122,13 +123,20 @@ final class DspPolicyArbiter {
         Objects.requireNonNull(input, "input");
         boolean anyAllowed = false;
         boolean anyOff = false;
+        boolean anyUnwaivableOff = false;
+        boolean anyDspDisabledAllowed = false;
         for (PlaybackEndpoint endpoint : input.endpoints) {
             if (endpoint == null || !endpoint.policyResolved || endpoint.policy == null) {
                 return decision(Result.ATTENUATION_ONLY, input,
                         "unresolved_usage_or_policy");
             }
-            if (endpoint.allowsPositiveControl()) anyAllowed = true;
-            else anyOff = true;
+            if (endpoint.allowsPositiveControl()) {
+                anyAllowed = true;
+                if (!endpoint.allowsDspControl()) anyDspDisabledAllowed = true;
+            } else {
+                anyOff = true;
+                if (!endpoint.isDefaultProtectedUsageOff()) anyUnwaivableOff = true;
+            }
         }
         if (input.endpoints.isEmpty()) {
             return decision(Result.ATTENUATION_ONLY, input, "no_active_endpoint_evidence");
@@ -146,7 +154,8 @@ final class DspPolicyArbiter {
                 && input.globalScope == DspScope.GLOBAL_MIX;
         boolean globalScopeAuthorized = input.wholeOutputScopeConsent
                 || input.documentedOemProtectedUsageExclusion;
-        if (globalVerified && globalScopeAuthorized) {
+        boolean globalPolicyCompatible = !anyUnwaivableOff && !anyDspDisabledAllowed;
+        if (globalVerified && globalScopeAuthorized && globalPolicyCompatible) {
             return decision(Result.GLOBAL_MIX_DSP, input,
                     input.wholeOutputScopeConsent
                             ? "verified_global_mix_explicit_consent"
@@ -161,14 +170,23 @@ final class DspPolicyArbiter {
     private static boolean hasEligibleScopedHandle(Input input) {
         if (input.policyScopedCapability
                 != DspTransport.Capability.VERIFIED_POLICY_SCOPED) return false;
-        for (DspEndpointHandle handle : input.handles) {
-            if (handle == null || !handle.isTrusted()) continue;
-            for (PlaybackEndpoint endpoint : input.endpoints) {
-                if (endpoint != null && endpoint.allowsDspControl()
-                        && handle.allowedPolicyKey.equals(endpoint.policyKey)) return true;
+        List<DspEndpointHandle> unused = new ArrayList<>(new LinkedHashSet<>(input.handles));
+        boolean eligibleEndpointFound = false;
+        for (PlaybackEndpoint endpoint : input.endpoints) {
+            if (endpoint == null || !endpoint.allowsDspControl()) continue;
+            eligibleEndpointFound = true;
+            DspEndpointHandle match = null;
+            for (DspEndpointHandle handle : unused) {
+                if (handle != null && handle.isTrusted()
+                        && handle.allowedPolicyKey.equals(endpoint.policyKey)) {
+                    match = handle;
+                    break;
+                }
             }
+            if (match == null) return false;
+            unused.remove(match);
         }
-        return false;
+        return eligibleEndpointFound;
     }
 
     private static Decision decision(Result result, Input input, String reason) {
