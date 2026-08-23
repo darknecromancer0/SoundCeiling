@@ -78,7 +78,7 @@ final class PcmCaptureBackend implements AutoCloseable {
     int read(short[] buffer) {
         if (buffer == null || buffer.length == 0) return AudioRecord.ERROR_BAD_VALUE;
         synchronized (readLock) {
-            if (closed || stopRequested || releaseRequested) return AudioRecord.ERROR_INVALID_OPERATION;
+            if (closed || stopRequested || releaseRequested) return 0;
             readInFlight = true;
         }
 
@@ -89,12 +89,13 @@ final class PcmCaptureBackend implements AutoCloseable {
             boolean releaseNow;
             synchronized (readLock) {
                 readInFlight = false;
+                readLock.notifyAll();
                 releaseNow = releaseRequested && !released;
             }
             if (releaseNow) releaseRecordOnce();
         }
 
-        if (closed || stopRequested) return AudioRecord.ERROR_INVALID_OPERATION;
+        if (closed || stopRequested) return 0;
         if (read > 0) {
             long now = SystemClock.elapsedRealtime();
             lastSampleElapsedMs = now;
@@ -165,12 +166,20 @@ final class PcmCaptureBackend implements AutoCloseable {
             releaseRequested = true;
         }
         requestStop();
-        boolean releaseNow;
+
+        boolean interrupted = false;
         synchronized (readLock) {
+            while (readInFlight) {
+                try {
+                    readLock.wait(100L);
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
             closed = true;
-            releaseNow = !readInFlight && !released;
         }
-        if (releaseNow) releaseRecordOnce();
+        if (interrupted) Thread.currentThread().interrupt();
+        releaseRecordOnce();
     }
 
     private void releaseRecordOnce() {
