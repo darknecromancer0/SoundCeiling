@@ -7,7 +7,7 @@ SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.4 is a fie
 - **Global DSP probe no longer cancels itself.** The only legal non-zero gain on an unverified global transport is the bounded -2 dB scope probe. Ordinary coordinator control now holds while that probe is measured instead of misclassifying it as stale DSP and immediately writing 0 dB.
 - **Safety still interrupts the probe correctly.** Hard Media cap and Quiet Now neutralize the in-flight probe first; fallback/Media action follows only after neutral DSP state, preserving neutralize-before-fallback ordering.
 - **Stale rebind samples cannot verify Global DSP.** If a mixed↔targeted capture replacement cancels a live probe, its old before/after collector cannot turn post-rebind samples into a new route proof. A fresh probe is required.
-- **Capture-reference evidence survives UID-filter rebinds.** mixed↔targeted PlaybackCapture uses the same measurement backend, so verified/accumulated PRE/POST evidence is preserved instead of being erased on every source rebind.
+- **Capture reference stays capture-scoped.** mixed↔targeted replacement still resets PRE/POST estimator evidence because it is capture-dependent measurement state. Samsung user anchor, linked ceilings, attenuation debt and route-scoped Global DSP state remain separate and are preserved as designed.
 - **Silence is not PRE/POST evidence.** Media changes whose before/after PCM is effectively silent are ignored by the capture-reference estimator.
 - **v0.7.3 user authority remains intact.** Ordinary Media UP remains debt-only and can never exceed the latest user anchor; hard safety retains independent downward authority.
 
@@ -66,7 +66,7 @@ Transitions are logged immediately. Unchanged control summaries are bounded to o
 
 The current device checklist is `docs/field-tests/2026-08-24-v0.7.4-samsung-corrective-checklist.md`. Physical acceptance remains **awaiting device test** until the exact v0.7.4 CI APK is installed on the Samsung and one full new exported log is returned.
 
-The next trace is expected to answer two empirical questions that v0.7.3 could not answer because of the probe-control bug: whether Samsung's default-config session-zero DynamicsProcessing really changes the measured output mix, and whether preserved live capture-reference evidence reaches PRE/POST without being erased by source rebinds.
+The next trace is expected to answer two empirical questions that v0.7.3 could not answer because of the probe-control bug: whether Samsung's default-config session-zero DynamicsProcessing really changes the measured output mix, and whether three valid Media changes during one stable capture interval can establish PRE/POST evidence without silence contaminating it.
 
 Historical compatibility retained from **v0.5.1**, v0.6 and earlier v0.7 corrective releases includes volume-neutral calibration, non-raising Quiet Now, transient re-arm, projected-peak fixes, persistent linked-band EQ, logical single-session log sharing, Samsung user authority and debt-only Media recovery.
 
