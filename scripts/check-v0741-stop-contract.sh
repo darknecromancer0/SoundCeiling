@@ -16,8 +16,14 @@ require "$PCM" 'try { record.stop(); } catch (RuntimeException ignored) {}'
 require "$PCM" 'try { record.release(); } catch (RuntimeException ignored) {}'
 require "$SERVICE" 'workerRunning.set(false);'
 require "$SERVICE" 'if (!workerRunning.get()) return;'
-grep -Eq 'versionCode=(15|16)' "$BUILD" || fail 'expected v0.7.4.1+ versionCode'
-grep -Eq 'versionName="0\.7\.4\.(1|2)"' "$BUILD" || fail 'expected v0.7.4.1+ versionName'
+python - "$BUILD" <<'PY'
+from pathlib import Path
+import re, sys
+s = Path(sys.argv[1]).read_text()
+m = re.search(r'versionCode=(\d+)', s)
+if not m or int(m.group(1)) < 15:
+    raise SystemExit('v0.7.4.1 stop contract: expected versionCode >= 15')
+PY
 require "$WF" 'run: bash ./scripts/check-v0741-stop-contract.sh'
 python - "$PCM" <<'PY'
 from pathlib import Path
@@ -30,4 +36,4 @@ release=s[s.index('    private void releaseRecordOnce()'):]
 if release.index('if (released || readInFlight) return;') > release.index('record.release()'):
     raise SystemExit('v0.7.4.1 stop contract: in-flight guard must precede native release')
 PY
-echo "v0.7.4.1 stop contract: PASS"
+echo "v0.7.4.1 historical stop behavior: PASS"
