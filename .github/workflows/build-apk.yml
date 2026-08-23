@@ -104,6 +104,6 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.7.4.1-debug-apk
+          name: SoundCeiling-v0.7.4.2-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
