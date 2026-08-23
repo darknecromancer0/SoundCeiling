@@ -62,7 +62,9 @@ require "$ADV" 'lowerOutput.setEnabled(model.ceilingControlsEnabled())'
 require "$ADV" 'upperOutput.setEnabled(model.ceilingControlsEnabled())'
 require "$ADV" '0.45f'
 require "$SERVICE" 'controlCoordinator.setCeilingState(nextCeilings)'
-require "$SERVICE" 'persistCoordinatorCeilings()'
+# v0.7.2 supersedes the generic writeback: only a proven USER Media shift may request persistence.
+require "$SERVICE" 'persistCoordinatorCeilingsIfRequested()'
+require "$SERVICE" 'controlCoordinator.consumeCeilingPersistenceRequest()'
 
 # Quiet Now leaves Simple only; Advanced keeps it. Wrapping fixes are structural.
 reject "$SIMPLE" 'Quiet Now'

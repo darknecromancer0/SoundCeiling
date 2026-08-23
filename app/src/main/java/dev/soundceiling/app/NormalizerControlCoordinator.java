@@ -19,6 +19,7 @@ public final class NormalizerControlCoordinator {
         private final float rawPeakDbfs;
         private final float controlLoudnessDb;
         private final float currentDspGainDb;
+        private final float mediaGainDb;
         private final CaptureReferenceEstimator.Mode captureReference;
         private final float hardPeakCeilingDbfs;
         private final boolean rawProgramActive;
@@ -48,6 +49,7 @@ public final class NormalizerControlCoordinator {
             rawPeakDbfs = b.rawPeakDbfs;
             controlLoudnessDb = b.controlLoudnessDb;
             currentDspGainDb = Float.isFinite(b.currentDspGainDb) ? b.currentDspGainDb : 0f;
+            mediaGainDb = Float.isFinite(b.mediaGainDb) ? b.mediaGainDb : 0f;
             captureReference = b.captureReference == null
                     ? CaptureReferenceEstimator.Mode.UNKNOWN : b.captureReference;
             hardPeakCeilingDbfs = Float.isFinite(b.hardPeakCeilingDbfs)
@@ -82,6 +84,7 @@ public final class NormalizerControlCoordinator {
             private float rawPeakDbfs = DbMath.SILENCE_DBFS;
             private float controlLoudnessDb = Float.NaN;
             private float currentDspGainDb;
+            private float mediaGainDb;
             private CaptureReferenceEstimator.Mode captureReference = CaptureReferenceEstimator.Mode.UNKNOWN;
             private float hardPeakCeilingDbfs;
             private boolean rawProgramActive;
@@ -116,6 +119,7 @@ public final class NormalizerControlCoordinator {
             public Builder rawPeakDbfs(float value) { rawPeakDbfs = value; return this; }
             public Builder controlLoudnessDb(float value) { controlLoudnessDb = value; return this; }
             public Builder currentDspGainDb(float value) { currentDspGainDb = value; return this; }
+            public Builder mediaGainDb(float value) { mediaGainDb = value; return this; }
             public Builder captureReference(CaptureReferenceEstimator.Mode value) { captureReference = value; return this; }
             public Builder hardPeakCeilingDbfs(float value) { hardPeakCeilingDbfs = value; return this; }
             public Builder rawProgramActive(boolean value) { rawProgramActive = value; return this; }
@@ -198,6 +202,8 @@ public final class NormalizerControlCoordinator {
     private float transientEmergencyDb = 10f;
     private final StableOutputController outputController = new StableOutputController();
     private OutputCeilingState ceilingState = OutputCeilingState.defaultLinked();
+    private MediaAnchorState mediaAnchorState;
+    private boolean ceilingPersistenceRequested;
     private Snapshot snapshot = new Snapshot(0f, 0f, CaptureReferenceEstimator.Mode.UNKNOWN,
             false, false, "idle", "not_started", ControlCommand.Kind.NONE, false,
             TransientGuard.Severity.NONE);
@@ -205,7 +211,10 @@ public final class NormalizerControlCoordinator {
     /** Returns at most one actuator command; callers must not append legacy control writes. */
     public ControlCommand onFrame(Frame frame) {
         Objects.requireNonNull(frame, "frame");
-        applyUserAuthority(frame);
+        if (mediaAnchorState == null) {
+            mediaAnchorState = MediaAnchorState.start(frame.currentMediaIndex, frame.atMs);
+        }
+        applyVolumeAuthority(frame);
         boolean programActive = activityGate.update(frame.rawProgramActive, frame.atMs);
         refreshTransientGuard(frame);
         transientGuard.onPlaybackState(programActive, frame.atMs);
@@ -233,11 +242,22 @@ public final class NormalizerControlCoordinator {
                     : ControlCommand.mediaIndex(quiet, "quiet_now", ControlCommand.Provenance.QUIET_NOW);
             return record(command, 0f, frame, programActive, transientEvent.severity);
         }
+        if (frame.captureReference == CaptureReferenceEstimator.Mode.UNKNOWN) {
+            return record(ControlCommand.none("capture_reference_unverified"), 0f, frame,
+                    programActive, transientEvent.severity);
+        }
 
         OutputGainPlanner.Plan plan = OutputGainPlanner.plan(new OutputGainPlanner.Input(
                 frame.controlLoudnessDb, frame.rawPeakDbfs, frame.currentDspGainDb,
-                frame.captureReference, ceilingState, frame.hardPeakCeilingDbfs, programActive,
-                allowsPositiveControl(frame) || frame.globalMixDsp));
+                frame.mediaGainDb, frame.captureReference, ceilingState, frame.hardPeakCeilingDbfs,
+                programActive, allowsPositiveControl(frame) || frame.globalMixDsp
+                        || debtRecoveryAllowed(frame)));
+
+        if (mediaAnchorState != null && mediaAnchorState.userAuthorityHoldActive(frame.atMs)
+                && !plan.absolutePeakViolation()) {
+            return record(ControlCommand.none("user_master_anchor_hold"),
+                    plan.desiredCorrectionDb(), frame, programActive, transientEvent.severity);
+        }
 
         // The service supplies false only for SPL mode without a real route profile. This is a
         // coordinator-owned fail-closed decision, not a second service-side actuator branch.
@@ -252,6 +272,7 @@ public final class NormalizerControlCoordinator {
         boolean verifiedDsp = frame.verifiedDsp && (frame.globalMixDsp || allowsPositiveControl(frame));
         ControlCommand command = outputController.decide(frame.atMs, plan, verifiedDsp,
                 frame.currentDspGainDb, frame.currentMediaIndex, frame.routeCurve);
+        command = constrainDebtRecovery(command, frame);
         return record(withSafetyProvenance(command, plan), plan.desiredCorrectionDb(), frame,
                 programActive, transientEvent.severity);
     }
@@ -259,24 +280,61 @@ public final class NormalizerControlCoordinator {
     public OutputCeilingState ceilingState() { return ceilingState; }
     public void setCeilingState(OutputCeilingState state) {
         if (state != null) ceilingState = state;
+        ceilingPersistenceRequested = false;
     }
     public Snapshot snapshot() { return snapshot; }
+    MediaAnchorState mediaAnchorState() { return mediaAnchorState; }
+    boolean consumeCeilingPersistenceRequest() {
+        boolean requested = ceilingPersistenceRequested;
+        ceilingPersistenceRequested = false;
+        return requested;
+    }
 
     public void onRouteChanged() {
         activityGate.reset();
         transientGuard.reset();
         outputController.reset();
+        mediaAnchorState = null;
+        ceilingPersistenceRequested = false;
     }
 
     public void onStopped() { onRouteChanged(); }
 
-    private void applyUserAuthority(Frame frame) {
-        if (frame.observation != VolumeObservation.USER
-                || frame.writeOrigin != VolumeWriteOrigin.USER
-                || frame.previousMediaIndex == frame.currentMediaIndex) return;
-        float delta = frame.routeCurve.deltaDb(frame.previousMediaIndex, frame.currentMediaIndex);
-        ceilingState = ceilingState.onMediaIndexChanged(frame.previousMediaIndex,
-                frame.currentMediaIndex, delta, false);
+    private void applyVolumeAuthority(Frame frame) {
+        if (frame.previousMediaIndex == frame.currentMediaIndex) return;
+        if (frame.observation == VolumeObservation.USER && frame.writeOrigin == VolumeWriteOrigin.USER) {
+            mediaAnchorState = mediaAnchorState.recordUserIndex(frame.currentMediaIndex, frame.atMs);
+            float delta = frame.routeCurve.deltaDb(frame.previousMediaIndex, frame.currentMediaIndex);
+            ceilingState = ceilingState.onMediaIndexChanged(frame.previousMediaIndex,
+                    frame.currentMediaIndex, delta, false);
+            ceilingPersistenceRequested = true;
+            return;
+        }
+        if (frame.observation == VolumeObservation.APP_ACK) {
+            mediaAnchorState = mediaAnchorState.recordAppWrite(frame.previousMediaIndex,
+                    frame.currentMediaIndex, frame.writeOrigin);
+        }
+    }
+
+    private boolean debtRecoveryAllowed(Frame frame) {
+        return mediaAnchorState != null
+                && mediaAnchorState.maxDebtRecoveryIndex() > frame.currentMediaIndex
+                && !frame.effectivePolicy.contains("off");
+    }
+
+    private ControlCommand constrainDebtRecovery(ControlCommand command, Frame frame) {
+        if (command == null || command.kind() != ControlCommand.Kind.MEDIA_INDEX
+                || command.mediaIndex() <= frame.currentMediaIndex
+                || allowsPositiveControl(frame) || frame.globalMixDsp) return command;
+        if (!debtRecoveryAllowed(frame)) {
+            return ControlCommand.none("positive_gain_blocked_above_user_anchor");
+        }
+        int target = Math.min(command.mediaIndex(), mediaAnchorState.maxDebtRecoveryIndex());
+        if (target <= frame.currentMediaIndex) {
+            return ControlCommand.none("positive_gain_blocked_above_user_anchor");
+        }
+        return ControlCommand.mediaIndex(target, "media:DEBT_RECOVERY",
+                ControlCommand.Provenance.DEBT_RECOVERY);
     }
 
     private ControlCommand record(ControlCommand command, float desiredGainDb, Frame frame,

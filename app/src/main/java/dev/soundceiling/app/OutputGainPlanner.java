@@ -21,6 +21,7 @@ public final class OutputGainPlanner {
         private final float programDbfs;
         private final float rawPeakDbfs;
         private final float alreadyAppliedGainDb;
+        private final float mediaGainDb;
         private final CaptureReferenceEstimator.Mode captureReference;
         private final OutputCeilingState ceilings;
         private final float hardPeakCeilingDbfs;
@@ -28,12 +29,13 @@ public final class OutputGainPlanner {
         private final boolean policyAllowsPositiveGain;
 
         public Input(float programDbfs, float rawPeakDbfs, float alreadyAppliedGainDb,
-                     CaptureReferenceEstimator.Mode captureReference,
+                     float mediaGainDb, CaptureReferenceEstimator.Mode captureReference,
                      OutputCeilingState ceilings, float hardPeakCeilingDbfs,
                      boolean programActive, boolean policyAllowsPositiveGain) {
             this.programDbfs = programDbfs;
             this.rawPeakDbfs = rawPeakDbfs;
             this.alreadyAppliedGainDb = alreadyAppliedGainDb;
+            this.mediaGainDb = mediaGainDb;
             this.captureReference = Objects.requireNonNull(captureReference, "captureReference");
             this.ceilings = Objects.requireNonNull(ceilings, "ceilings");
             this.hardPeakCeilingDbfs = hardPeakCeilingDbfs;
@@ -44,6 +46,7 @@ public final class OutputGainPlanner {
         public float programDbfs() { return programDbfs; }
         public float rawPeakDbfs() { return rawPeakDbfs; }
         public float alreadyAppliedGainDb() { return alreadyAppliedGainDb; }
+        public float mediaGainDb() { return mediaGainDb; }
         public CaptureReferenceEstimator.Mode captureReference() { return captureReference; }
         public OutputCeilingState ceilings() { return ceilings; }
         public float hardPeakCeilingDbfs() { return hardPeakCeilingDbfs; }
@@ -86,13 +89,19 @@ public final class OutputGainPlanner {
         Objects.requireNonNull(input, "input");
         float appliedGainDb = Float.isFinite(input.alreadyAppliedGainDb())
                 ? input.alreadyAppliedGainDb() : 0f;
-        boolean preVolume = input.captureReference() == CaptureReferenceEstimator.Mode.PRE_VOLUME;
-        float referenceGainDb = preVolume ? appliedGainDb : 0f;
-        float projectedProgramDbfs = input.programDbfs() + referenceGainDb;
-        float safetyGainDb = preVolume ? appliedGainDb
-                : input.captureReference() == CaptureReferenceEstimator.Mode.UNKNOWN
-                ? Math.max(0f, appliedGainDb) : 0f;
-        float projectedPeakDbfs = input.rawPeakDbfs() + safetyGainDb;
+        float mediaGainDb = Float.isFinite(input.mediaGainDb()) ? input.mediaGainDb() : 0f;
+        float projectedProgramDbfs = input.programDbfs();
+        float projectedPeakDbfs = input.rawPeakDbfs();
+        if (input.captureReference() == CaptureReferenceEstimator.Mode.PRE_VOLUME) {
+            projectedProgramDbfs += mediaGainDb + appliedGainDb;
+            projectedPeakDbfs += mediaGainDb + appliedGainDb;
+        } else if (input.captureReference() == CaptureReferenceEstimator.Mode.POST_VOLUME) {
+            // The captured sample is already downstream of route/DSP gain. Do not double count.
+        } else {
+            // UNKNOWN must not pretend the capture is post-volume. Positive already-applied DSP
+            // remains part of worst-case peak safety, but Media attenuation is not guessed.
+            projectedPeakDbfs += Math.max(0f, appliedGainDb);
+        }
 
         boolean finitePeak = Float.isFinite(projectedPeakDbfs)
                 && Float.isFinite(input.hardPeakCeilingDbfs());

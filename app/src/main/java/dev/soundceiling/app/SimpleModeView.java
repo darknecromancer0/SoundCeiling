@@ -1,6 +1,9 @@
 package dev.soundceiling.app;
 
 import android.content.Context;
+import android.content.Intent;
+import android.provider.Settings;
+import android.view.View;
 import android.graphics.Typeface;
 import android.media.AudioManager;
 import android.widget.Button;
@@ -23,6 +26,8 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
     private final TextView globalStatus, linkedHint, lowerLabel, upperLabel, safetyLabel, normalizeLabel;
     private final SeekBar lowerSeek, upperSeek, safetySeek;
     private final Button startStop;
+    private final Button sourceAccess;
+    private final Button resetDefaults;
     private final StatusCardView statusCard;
     private boolean loading;
     private RuntimeState runtime = RuntimeState.stopped("Остановлено");
@@ -50,6 +55,16 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         statusLp.bottomMargin = dp(12);
         root.addView(statusCard, statusLp);
+
+        sourceAccess = new Button(context);
+        sourceAccess.setAllCaps(false);
+        sourceAccess.setText("Разрешить распознавание YouTube / Яндекс Музыки");
+        sourceAccess.setVisibility(View.GONE);
+        sourceAccess.setOnClickListener(v -> {
+            try { getContext().startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); }
+            catch (RuntimeException ignored) {}
+        });
+        root.addView(sourceAccess, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50)));
 
         globalDsp = addSwitchWithHelp("Global DSP", HelpText.GLOBAL_DSP, Prefs.globalDspEnabled(context));
         globalStatus = secondary("Лучшее выравнивание всего аудиовыхода", 13);
@@ -112,10 +127,27 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
 
+        resetDefaults = new Button(context);
+        resetDefaults.setAllCaps(false);
+        resetDefaults.setText("Вернуть настройки по умолчанию");
+        resetDefaults.setOnClickListener(v -> new android.app.AlertDialog.Builder(getContext())
+                .setTitle("Вернуть настройки по умолчанию?")
+                .setMessage("Будут сброшены только настройки нормализации. Логи, калибровка и правила приложений сохранятся.")
+                .setNegativeButton("Отмена", null)
+                .setPositiveButton("Сбросить", (dialog, which) -> {
+                    Prefs.resetNormalizerDefaults(getContext());
+                    safetySeek.setProgress(Prefs.maxVolumePercent(getContext()));
+                    updateSafetyLabel(safetySeek.getProgress());
+                    refreshSharedControls();
+                    DiagnosticLog.event("preference_change", "reset_normalizer_defaults=true");
+                }).show());
+        LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50));
+        resetLp.topMargin = dp(14); root.addView(resetDefaults, resetLp);
+
         startStop = new Button(context); startStop.setAllCaps(false); startStop.setTextSize(18);
         startStop.setOnClickListener(v -> listener.onStartStop());
         LinearLayout.LayoutParams startLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(56));
-        startLp.topMargin = dp(18); root.addView(startStop, startLp);
+        startLp.topMargin = dp(12); root.addView(startStop, startLp);
         refreshSharedControls();
     }
 
@@ -170,6 +202,8 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         if (state != null) runtime = state;
         startStop.setText(runtime.running ? "Остановить" : "Запустить");
         statusCard.render(runtime);
+        sourceAccess.setVisibility(runtime.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING
+                ? View.VISIBLE : View.GONE);
         refreshSharedControls();
     }
 

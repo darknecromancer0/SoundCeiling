@@ -45,7 +45,11 @@ require "$PKG/ManualThresholdFollower.java" 'RESTORE_TAU_MS = 650L'
 require "$PKG/AdaptiveVolumeEnvelope.java" 'MANUAL_DOWN_TAU_MS = 120L'
 require "$PKG/AdaptiveVolumeEnvelope.java" 'MANUAL_RESTORE_TAU_MS = 650L'
 require "$PKG/NormalizerControlCoordinator.java" 'OutputCeilingState ceilingState'
-require "$PKG/NormalizerControlCoordinator.java" 'applyUserAuthority'
+# v0.7.2 extends this boundary: one authority method now distinguishes USER from app-owned writes
+# and owns master-anchor/debt provenance without reintroducing a service-side controller.
+require "$PKG/NormalizerControlCoordinator.java" 'applyVolumeAuthority'
+require "$PKG/NormalizerControlCoordinator.java" 'MediaAnchorState mediaAnchorState'
+require "$PKG/NormalizerControlCoordinator.java" 'consumeCeilingPersistenceRequest()'
 require "$PKG/NormalizerControlCoordinator.java" 'VolumeObservation.USER'
 require "$PKG/NormalizerService.java" 'coordinatorObservation(observed)'
 require "$PKG/NormalizerService.java" 'coordinatorOrigin(observed)'

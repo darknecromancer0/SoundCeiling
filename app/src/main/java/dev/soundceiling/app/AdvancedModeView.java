@@ -247,8 +247,11 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         if (Prefs.MIN_MEDIA_INDEX.equals(key)) min = value; else if (Prefs.MAX_VOLUME_PERCENT.equals(key)) max = value;
         else if (Prefs.SAFETY_LOCK_PERCENT.equals(key)) safety = value; else if (Prefs.QUIET_INDEX.equals(key)) quiet = value;
         ControlSettingConstraints.Result c = ControlSettingConstraints.normalize(streamMin, streamMax, min, max, safety, quiet);
-        Prefs.get(getContext()).edit().putInt(Prefs.MIN_MEDIA_INDEX, c.minIndex).putInt(Prefs.MAX_VOLUME_PERCENT, c.maxPercent)
-                .putInt(Prefs.SAFETY_LOCK_PERCENT, c.safetyPercent).putInt(Prefs.QUIET_INDEX, c.quietIndex).apply();
+        android.content.SharedPreferences.Editor boundsEdit = Prefs.get(getContext()).edit()
+                .putInt(Prefs.MIN_MEDIA_INDEX, c.minIndex).putInt(Prefs.MAX_VOLUME_PERCENT, c.maxPercent)
+                .putInt(Prefs.SAFETY_LOCK_PERCENT, c.safetyPercent).putInt(Prefs.QUIET_INDEX, c.quietIndex);
+        if (Prefs.MIN_MEDIA_INDEX.equals(key)) boundsEdit.putBoolean(Prefs.FALLBACK_MIN_USER_SET, true);
+        boundsEdit.apply();
         boolean old = loading; loading = true;
         minMedia.setProgress(MediaLevelScale.percentForIndex(c.minIndex, streamMin, streamMax)); maxMedia.setProgress(c.maxPercent);
         safetyPercent.setProgress(c.safetyPercent);

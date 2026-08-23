@@ -44,10 +44,10 @@ final class EqView extends ScrollView implements RuntimeScreen {
         capability = secondary(controller.status(), 14); capability.setPadding(0, dp(8), 0, dp(8)); root.addView(capability);
         root.addView(secondary("EQ — отдельный модуль. Он может работать сам по себе, вместе с Simple или Advanced. Если DSP недоступен, основной limiter/normalizer продолжает работать.", 13));
 
-        TextView spectrumTitle = text("Живой спектр", 17, true);
+        TextView spectrumTitle = text("Частотный спектр", 17, true);
         spectrumTitle.setPadding(0, dp(16), 0, dp(4));
         root.addView(spectrumTitle);
-        root.addView(secondary("Показывает текущую энергию по пяти диапазонам, когда SoundCeiling получает аудиосигнал.", 12));
+        root.addView(secondary("Пять диагностических полос показывают низкие, средние и высокие частоты. Эта картинка не управляет нормализацией.", 12));
         liveSpectrum = new FrequencyMeterView(context);
         liveSpectrum.setMinimumHeight(dp(166));
         root.addView(liveSpectrum, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));

@@ -19,9 +19,12 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeCurveMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlVolumeCurve.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CaptureReferenceEstimator.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/LiveCaptureReference.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/OutputGainPlanner.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlCommand.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteOrigin.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/MediaAnchorState.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/FallbackFloorPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/StableOutputController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ComfortScale.java" \
@@ -76,6 +79,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspPolicyArbiter.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspProbeMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspGainSlew.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/GlobalDspProbeDecision.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackSnapshot.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmCaptureRequest.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CaptureRequestCoordinator.java" \
@@ -114,6 +118,13 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071SimpleModePureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071VisualizerPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071LoggingPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V072SamsungFieldRegressionPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V072MediaAnchorPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V072LinkedLockRuntimePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V072FallbackFloorPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V072SourceEvidencePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V072GlobalDspProbePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V072ResetDefaultsPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -188,3 +199,10 @@ java -cp "$OUT" dev.soundceiling.app.V071CaptureCoordinatorPureTest
 java -cp "$OUT" dev.soundceiling.app.V071SimpleModePureTest
 java -cp "$OUT" dev.soundceiling.app.V071VisualizerPureTest
 java -cp "$OUT" dev.soundceiling.app.V071LoggingPureTest
+java -cp "$OUT" dev.soundceiling.app.V072SamsungFieldRegressionPureTest
+java -cp "$OUT" dev.soundceiling.app.V072MediaAnchorPureTest
+java -cp "$OUT" dev.soundceiling.app.V072LinkedLockRuntimePureTest
+java -cp "$OUT" dev.soundceiling.app.V072FallbackFloorPureTest
+java -cp "$OUT" dev.soundceiling.app.V072SourceEvidencePureTest
+java -cp "$OUT" dev.soundceiling.app.V072GlobalDspProbePureTest
+java -cp "$OUT" dev.soundceiling.app.V072ResetDefaultsPureTest

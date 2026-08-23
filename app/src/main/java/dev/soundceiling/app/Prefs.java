@@ -20,6 +20,7 @@ final class Prefs {
 
     // v0.4 settings/profile keys.
     static final String MIN_MEDIA_INDEX="min_media_index",
+            FALLBACK_MIN_USER_SET="fallback_min_user_set",
             SAFETY_LOCK_ENABLED="safety_lock_enabled",
             SAFETY_LOCK_PERCENT="safety_lock_percent",
             QUIET_INDEX="quiet_index",
@@ -99,6 +100,7 @@ final class Prefs {
     static boolean allowAutoMute(Context c){return get(c).getBoolean(ALLOW_AUTO_MUTE,ControlDefaults.AUTO_MUTE);}
 
     static int minMediaIndex(Context c){return get(c).getInt(MIN_MEDIA_INDEX,ControlDefaults.MIN_MEDIA_INDEX);}
+    static boolean fallbackMinUserSet(Context c){return get(c).getBoolean(FALLBACK_MIN_USER_SET,false);}
     static boolean safetyLockEnabled(Context c){return get(c).getBoolean(SAFETY_LOCK_ENABLED,ControlDefaults.SAFETY_LOCK_ENABLED);}
     static int safetyLockPercent(Context c){return get(c).getInt(SAFETY_LOCK_PERCENT,maxVolumePercent(c));}
     static int quietIndex(Context c){return get(c).getInt(QUIET_INDEX,ControlDefaults.QUIET_INDEX);}
@@ -120,6 +122,13 @@ final class Prefs {
     static void setGlobalDspEnabled(Context c, boolean enabled){
         get(c).edit().putBoolean(WHOLE_OUTPUT_DSP_CONSENT,enabled)
                 .putBoolean(GLOBAL_DSP_USER_SET,true).apply();
+    }
+    static void resetNormalizerDefaults(Context c) {
+        SharedPreferences.Editor editor = get(c).edit();
+        for (Map.Entry<String, Object> entry : V071SettingsMigration.normalizerDefaults().entrySet()) {
+            put(editor, entry.getKey(), entry.getValue());
+        }
+        editor.apply();
     }
 
     static NormalizationPreset normalizationPreset(Context c) {

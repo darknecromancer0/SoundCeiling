@@ -9,6 +9,10 @@ import java.util.Objects;
 /** Pure live-capture state machine. Package candidates remain unconfirmed until targeted PCM proves them. */
 final class CaptureRequestCoordinator {
     enum Action { KEEP, OPEN_MIXED, OPEN_TARGETED, CLOSE }
+    enum SourceAccessState {
+        ACCESS_MISSING, NO_CANDIDATE, CANDIDATE_UNCONFIRMED, MULTIPLE_CANDIDATES,
+        TARGET_CONFIRMED, TARGET_SUPPRESSED_SILENT
+    }
 
     static final class Candidate {
         final SourceDescriptor source;
@@ -179,13 +183,41 @@ final class CaptureRequestCoordinator {
         return mediaSessionAccess;
     }
 
-    String sourceStatusLabel() {
-        if (!mediaSessionAccess) return "Не подтверждён: нет доступа к активным медиасеансам";
-        if (confirmedCandidate != null) return confirmedCandidate.source.displayName;
+    SourceAccessState sourceAccessState() {
+        if (!mediaSessionAccess) return SourceAccessState.ACCESS_MISSING;
+        if (confirmedCandidate != null) return SourceAccessState.TARGET_CONFIRMED;
         Candidate only = uniqueCandidate();
-        if (only != null) return "Не подтверждён: " + only.source.displayName;
-        if (candidates.size() > 1) return "Не подтверждён: несколько активных источников";
-        return "Не подтверждён: источник не определён";
+        if (only != null && suppressedTargetUid == only.source.uid
+                && suppressedSignature.equals(candidateSignature)) {
+            return SourceAccessState.TARGET_SUPPRESSED_SILENT;
+        }
+        if (candidates.size() > 1) return SourceAccessState.MULTIPLE_CANDIDATES;
+        if (only != null) return SourceAccessState.CANDIDATE_UNCONFIRMED;
+        return SourceAccessState.NO_CANDIDATE;
+    }
+
+    String sourceStatusLabel() {
+        switch (sourceAccessState()) {
+            case ACCESS_MISSING:
+                return "Нет доступа: разрешите распознавание активных медиасеансов";
+            case TARGET_CONFIRMED:
+                return confirmedCandidate == null ? "Источник подтверждён" : confirmedCandidate.source.displayName;
+            case TARGET_SUPPRESSED_SILENT: {
+                Candidate only = uniqueCandidate();
+                return "Кандидат " + (only == null ? "приложения" : only.source.displayName)
+                        + " не дал аудио в targeted PCM";
+            }
+            case MULTIPLE_CANDIDATES:
+                return "Не подтверждён: несколько активных источников";
+            case CANDIDATE_UNCONFIRMED: {
+                Candidate only = uniqueCandidate();
+                return "Кандидат: " + (only == null ? "приложение" : only.source.displayName)
+                        + " · ждём targeted PCM";
+            }
+            case NO_CANDIDATE:
+            default:
+                return "Доступ есть, но нет активного медиасеанса-кандидата";
+        }
     }
 
     private Candidate uniqueCandidate() {

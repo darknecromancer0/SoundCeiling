@@ -120,6 +120,12 @@ final class OptionalDspController implements AutoCloseable {
         return transports.appliedGainDb();
     }
 
+    DspTransport.Capability prepareGlobalProbeTransport() {
+        DspTransport.Capability capability = transports.prepareGlobalProbeTransport();
+        detail = transports.reason();
+        return capability;
+    }
+
     boolean beginGlobalProbe(String routeIdentity, boolean allowedMediaActive) {
         boolean started = transports.beginGlobalProbe(routeIdentity, allowedMediaActive);
         detail = transports.reason();

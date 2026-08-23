@@ -101,7 +101,7 @@ public final class V071CaptureCoordinatorPureTest {
                 PcmCaptureRequest.mixed(), mediaSnapshot(0L), 0L);
         assertEquals(CaptureRequestCoordinator.Action.KEEP, unavailable.action,
                 "missing media-session access must keep safe mixed capture");
-        assertEquals("Не подтверждён: нет доступа к активным медиасеансам",
+        assertEquals("Нет доступа: разрешите распознавание активных медиасеансов",
                 coordinator.sourceStatusLabel(), "actionable missing-access label");
 
         coordinator.updateCandidates(Collections.singletonList(candidate(

@@ -25,12 +25,13 @@ final class HybridRuntimeResolver implements AutoCloseable {
         final AppPolicy exactAppPolicy;
         final long sourceChangedAtMs;
         final String sourceStatusLabel;
+        final CaptureRequestCoordinator.SourceAccessState sourceAccessState;
 
         Snapshot(PlaybackSnapshot playback, List<PlaybackEndpoint> playbackEndpoints,
                  SourceSet sources, PcmAvailabilityState pcmState,
                  EngineCapabilities capabilities, EffectivePolicy policy,
                  SourceDescriptor exactSource, AppPolicy exactAppPolicy, long sourceChangedAtMs,
-                 String sourceStatusLabel) {
+                 String sourceStatusLabel, CaptureRequestCoordinator.SourceAccessState sourceAccessState) {
             this.playback = playback;
             this.playbackEndpoints = Collections.unmodifiableList(new ArrayList<>(playbackEndpoints));
             this.sources = sources;
@@ -41,6 +42,8 @@ final class HybridRuntimeResolver implements AutoCloseable {
             this.exactAppPolicy = exactAppPolicy;
             this.sourceChangedAtMs = sourceChangedAtMs;
             this.sourceStatusLabel = sourceStatusLabel == null ? "" : sourceStatusLabel;
+            this.sourceAccessState = sourceAccessState == null
+                    ? CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING : sourceAccessState;
         }
     }
 
@@ -80,8 +83,10 @@ final class HybridRuntimeResolver implements AutoCloseable {
             PcmCaptureBackend.TargetWarmupStatus warmup = capture.targetWarmupStatus(nowElapsedMs);
             if (warmup == PcmCaptureBackend.TargetWarmupStatus.CONFIRMED) {
                 captureCoordinator.recordTargetObservation(capture.targetUid(), true, nowElapsedMs);
+                DiagnosticLog.transition("target_probe", "confirmed", "uid=" + capture.targetUid());
             } else if (warmup == PcmCaptureBackend.TargetWarmupStatus.FAILED) {
                 captureCoordinator.recordTargetObservation(capture.targetUid(), false, nowElapsedMs);
+                DiagnosticLog.transition("target_probe", "silent", "uid=" + capture.targetUid());
             }
         }
         PcmCaptureRequest current = capture == null ? PcmCaptureRequest.mixed() : capture.request();
@@ -93,6 +98,7 @@ final class HybridRuntimeResolver implements AutoCloseable {
 
     void recordTargetOpenFailure(int targetUid, long nowElapsedMs) {
         captureCoordinator.recordTargetObservation(targetUid, false, nowElapsedMs);
+        DiagnosticLog.transition("target_probe", "open_failed", "uid=" + targetUid);
         captureReconcileRequested.set(true);
     }
 
@@ -193,13 +199,22 @@ final class HybridRuntimeResolver implements AutoCloseable {
         List<PlaybackEndpoint> endpoints = PlaybackEndpointResolver.resolve(playback,
                 captureCoordinator.candidates(), captureCoordinator.confirmedCandidate());
         return new Snapshot(playback, endpoints, sources, pcm, capabilities, policy,
-                exactSource, exactPolicy, sourceChangedAtMs, captureCoordinator.sourceStatusLabel());
+                exactSource, exactPolicy, sourceChangedAtMs, captureCoordinator.sourceStatusLabel(), captureCoordinator.sourceAccessState());
     }
 
     private void refreshCandidates(long nowElapsedMs) {
         List<CaptureRequestCoordinator.Candidate> fresh = sessions.currentCaptureCandidates(nowElapsedMs);
         boolean access = sessions.available();
         captureCoordinator.updateCandidates(fresh, access, nowElapsedMs);
+        DiagnosticLog.transition("media_session_access", access ? "available" : "missing",
+                "candidates=" + fresh.size());
+        StringBuilder candidateLog = new StringBuilder();
+        for (CaptureRequestCoordinator.Candidate candidate : fresh) {
+            if (candidateLog.length() > 0) candidateLog.append(',');
+            candidateLog.append(candidate.source.packageName).append(':').append(candidate.source.uid);
+        }
+        DiagnosticLog.transition("source_candidates", fresh.isEmpty() ? "none" : candidateLog.toString(),
+                "count=" + fresh.size());
         if (fresh.isEmpty()) {
             candidateEvidence = Collections.emptyList();
             return;

@@ -70,8 +70,8 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
     @Override public void render(RuntimeState state) {
         summary.setText(String.format(Locale.US,
                 "Engine: %s\nCapture: %s · signal: %s · PCM: %s\n"
-                        + "Source: %s · package: %s · sourceConfidence: %s · rule: %s\n"
-                        + "meteringCapability: %s\nSpectrum: %s · age %d ms\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
+                        + "Source: %s · package: %s · sourceConfidence: %s · access: %s · rule: %s\n"
+                        + "meteringCapability: %s\nЧастотный спектр: %s · age %d ms\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
                         + "Downgrade reason: %s\nRoute: %s · Device profile: %s\n"
                         + "Media: %d/%d · effective max: %d\n"
                         + "Raw Peak %.1f dBFS · LUFS-like %.1f · reaction %s\nLog: %s",
@@ -79,7 +79,7 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 state.captureStatus, state.signalPresent ? "yes" : "no", state.pcmState,
                 state.sourceLabel.isEmpty() ? "—" : state.sourceLabel,
                 state.sourcePackage.isEmpty() ? "—" : state.sourcePackage,
-                state.sourceConfidence, state.appRuleLabel,
+                state.sourceConfidence, state.sourceAccessState, state.appRuleLabel,
                 state.meteringCapability, spectrumSource(state), state.meterAgeMs,
                 state.volumeControlCapability, state.dspTransportCapability,
                 state.downgradeReason.isEmpty() ? "—" : state.downgradeReason,
@@ -90,7 +90,7 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 state.lastReactionLatencyMs >= 0 ? state.lastReactionLatencyMs + " ms" : "—",
                 state.logStatus.isEmpty() ? "not active" : state.logStatus));
         sourceAccess.setVisibility(
-                "Не подтверждён: нет доступа к активным медиасеансам".equals(state.sourceLabel)
+                state.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING
                         ? View.VISIBLE : View.GONE);
 
         DiagnosticItem[] published = state.diagnostics();

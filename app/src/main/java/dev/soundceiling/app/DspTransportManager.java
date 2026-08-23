@@ -145,11 +145,17 @@ final class DspTransportManager implements AutoCloseable {
         return false;
     }
 
-    boolean beginGlobalProbe(String currentRouteIdentity, boolean allowedMediaActive) {
-        if (!allowedMediaActive) return false;
+    DspTransport.Capability prepareGlobalProbeTransport() {
         if (global == null) {
             global = AndroidDynamicsProcessingTransport.forNeutralGlobalProbe(channelCount);
         }
+        reason = global.reason();
+        return global.capability();
+    }
+
+    boolean beginGlobalProbe(String currentRouteIdentity, boolean allowedMediaActive) {
+        if (!allowedMediaActive) return false;
+        if (prepareGlobalProbeTransport() == DspTransport.Capability.UNAVAILABLE) return false;
         routeIdentity = currentRouteIdentity == null ? "" : currentRouteIdentity;
         return scopeProbe.begin(global, true);
     }

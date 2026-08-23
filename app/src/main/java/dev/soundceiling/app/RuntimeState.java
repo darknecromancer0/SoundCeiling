@@ -37,6 +37,7 @@ final class RuntimeState {
     final EngineCapabilities.VolumeControlCapability volumeControlCapability;
     final EngineCapabilities.DspTransportCapability dspTransportCapability;
     final String sourcePackage, sourceLabel, appRuleLabel, downgradeReason;
+    final CaptureRequestCoordinator.SourceAccessState sourceAccessState;
 
     // v0.7.1 coordinator truth: selected actuator, verified capability and pure decision inputs.
     final String controlActuator, captureReferenceMode, directionDwell;
@@ -76,6 +77,7 @@ final class RuntimeState {
         meteringCapability=b.meteringCapability; volumeControlCapability=b.volumeControlCapability;
         dspTransportCapability=b.dspTransportCapability; sourcePackage=n(b.sourcePackage);
         sourceLabel=n(b.sourceLabel); appRuleLabel=n(b.appRuleLabel); downgradeReason=n(b.downgradeReason);
+        sourceAccessState=b.sourceAccessState;
         controlActuator=n(b.controlActuator); captureReferenceMode=n(b.captureReferenceMode);
         directionDwell=n(b.directionDwell); controlCapabilityVerified=b.controlCapabilityVerified;
         linkedCeilings=b.linkedCeilings; programActive=b.programActive;
@@ -116,6 +118,7 @@ final class RuntimeState {
                 .meterAgeMs(currentMeterAgeMs).unexpectedZero(unexpectedZero)
                 .hybrid(pcmState, sourceConfidence, meteringCapability, volumeControlCapability,
                         dspTransportCapability, sourcePackage, sourceLabel, appRuleLabel, downgradeReason)
+                .sourceAccessState(sourceAccessState)
                 .coordinator(controlActuator, controlCapabilityVerified, desiredGainDb, appliedGainDb,
                         projectedPeakDbfs, controlLoudnessDb, captureReferenceMode, linkedCeilings,
                         lowerOutputCeilingDb, upperOutputCeilingDb, routeStepGainDb, programActive,
@@ -156,6 +159,7 @@ final class RuntimeState {
         EngineCapabilities.VolumeControlCapability volumeControlCapability=EngineCapabilities.VolumeControlCapability.NONE;
         EngineCapabilities.DspTransportCapability dspTransportCapability=EngineCapabilities.DspTransportCapability.UNAVAILABLE;
         String sourcePackage="", sourceLabel="", appRuleLabel="Global", downgradeReason="";
+        CaptureRequestCoordinator.SourceAccessState sourceAccessState=CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING;
         String controlActuator="NONE", captureReferenceMode="UNKNOWN", directionDwell="idle";
         boolean controlCapabilityVerified, linkedCeilings, programActive;
         float desiredGainDb, appliedGainDb, projectedPeakDbfs=Float.NaN, controlLoudnessDb=Float.NaN;
@@ -212,6 +216,10 @@ final class RuntimeState {
             volumeControlCapability=control==null?EngineCapabilities.VolumeControlCapability.NONE:control;
             dspTransportCapability=dsp==null?EngineCapabilities.DspTransportCapability.UNAVAILABLE:dsp;
             sourcePackage=pkg;sourceLabel=label;appRuleLabel=appRule;downgradeReason=downgrade;return this;
+        }
+        Builder sourceAccessState(CaptureRequestCoordinator.SourceAccessState value) {
+            sourceAccessState=value==null?CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING:value;
+            return this;
         }
         Builder coordinator(String actuator, boolean verified, float desiredGain, float appliedGain,
                             float projectedPeak, float loudness, String captureMode, boolean linked,

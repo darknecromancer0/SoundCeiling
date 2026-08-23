@@ -16,9 +16,6 @@ require_order(){
   [[ "$la" -lt "$lb" ]] || fail "expected order in $(basename "$file"): $a before $b"
 }
 
-require "$BUILD" 'versionCode=11'
-require "$BUILD" 'versionName="0.7.1"'
-require "$WF" 'name: SoundCeiling-v0.7.1-debug-apk'
 require "$WF" 'path: app/build/outputs/apk/debug/app-debug.apk'
 reject "$WF" 'app/build/outputs/apk/debug/app-debug.apk.sha256'
 require "$WF" 'run: ./scripts/run-pure-tests.sh'
@@ -72,4 +69,4 @@ require "$CHECKLIST" 'YouTube'
 require "$CHECKLIST" 'Yandex Music'
 require "$CHECKLIST" '20 dB'
 
-echo "v0.7.1 release contract: PASS"
+echo "v0.7.1 historical release behavior: PASS"

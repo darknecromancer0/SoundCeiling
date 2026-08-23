@@ -747,7 +747,7 @@ public final class V071NormalizationCorePureTest {
                                                 boolean programActive,
                                                 boolean policyAllowsPositiveGain) {
         return OutputGainPlanner.plan(new OutputGainPlanner.Input(
-                programDbfs, rawPeakDbfs, alreadyAppliedGainDb, captureReference, ceilings,
+                programDbfs, rawPeakDbfs, alreadyAppliedGainDb, 0f, captureReference, ceilings,
                 hardPeakCeilingDbfs, programActive, policyAllowsPositiveGain));
     }
 

@@ -50,6 +50,48 @@ public final class V071SettingsMigration {
         return values;
     }
 
+
+    /** Normalizer-only reset values. Logs, calibration and app rules are intentionally absent. */
+    public static Map<String, Object> normalizerDefaults() {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("target_rms", -18f);
+        values.put("peak_ceiling", -3f);
+        values.put("target_spl", 70f);
+        values.put("spl_ceiling", 80f);
+        values.put("spl_mode", false);
+        values.put("compression_percent", 100);
+        values.put("control_scale", ControlScale.MEDIA_PERCENT.key);
+        values.put("speed_preset", SpeedPreset.BALANCED.key);
+        values.put("active_profile", "");
+        values.put("min_media_index", ControlDefaults.MIN_MEDIA_INDEX);
+        values.put("fallback_min_user_set", false);
+        values.put("max_volume_percent", ControlDefaults.MAX_MEDIA_PERCENT);
+        values.put("safety_lock_enabled", ControlDefaults.SAFETY_LOCK_ENABLED);
+        values.put("safety_lock_percent", ControlDefaults.MAX_MEDIA_PERCENT);
+        values.put("quiet_index", ControlDefaults.QUIET_INDEX);
+        values.put("normalization_preset", NormalizationPreset.MEDIUM.key);
+        values.put("normalize", true);
+        values.put(TARGET_LOUDNESS, OutputCeilingState.DEFAULT_DB);
+        values.put("loudness_tolerance", NormalizationPreset.MEDIUM.toleranceLu);
+        values.put(NORMALIZATION_STRENGTH, 1f);
+        values.put("downward_attack_ms", NormalizationPreset.MEDIUM.downwardAttackMs);
+        values.put("upward_release_ms", NormalizationPreset.MEDIUM.upwardReleaseMs);
+        values.put("hold_after_loud_ms", NormalizationPreset.MEDIUM.holdAfterLoudMs);
+        values.put("max_down_steps", NormalizationPreset.MEDIUM.maxDownSteps);
+        values.put("max_up_steps", NormalizationPreset.MEDIUM.maxUpSteps);
+        values.put("source_peak_threshold", ControlDefaults.SOURCE_PEAK_THRESHOLD_DBFS);
+        values.put("transient_warning", ControlDefaults.TRANSIENT_WARNING_DB);
+        values.put("transient_emergency", ControlDefaults.TRANSIENT_EMERGENCY_DB);
+        values.put(ALLOW_AUTO_MUTE, ControlDefaults.AUTO_MUTE);
+        values.put("recovery_interval_ms", ControlDefaults.MANUAL_RECOVERY_INTERVAL_MS);
+        values.put(DEFAULT_LINKED_LOCK, true);
+        values.put(LOWER_OUTPUT_CEILING_DB, OutputCeilingState.DEFAULT_DB);
+        values.put(UPPER_OUTPUT_CEILING_DB, OutputCeilingState.DEFAULT_DB);
+        values.put(WHOLE_OUTPUT_DSP_CONSENT, true);
+        values.put(GLOBAL_DSP_USER_SET, false);
+        return values;
+    }
+
     private static float number(Object value, float fallback) {
         return value instanceof Number ? ((Number) value).floatValue() : fallback;
     }
