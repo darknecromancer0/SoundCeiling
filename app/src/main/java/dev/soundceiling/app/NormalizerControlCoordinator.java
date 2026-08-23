@@ -42,6 +42,7 @@ public final class NormalizerControlCoordinator {
         private final float transientSignalDb;
         private final boolean transientEvidence;
         private final boolean calibrationProfileValid;
+        private final boolean assumedPreVolumeFallbackAllowed;
 
         private Frame(Builder b) {
             atMs = Math.max(0L, b.atMs);
@@ -76,6 +77,7 @@ public final class NormalizerControlCoordinator {
             transientSignalDb = b.transientSignalDb;
             transientEvidence = b.transientEvidence;
             calibrationProfileValid = b.calibrationProfileValid;
+            assumedPreVolumeFallbackAllowed = b.assumedPreVolumeFallbackAllowed;
         }
 
         public static final class Builder {
@@ -109,6 +111,7 @@ public final class NormalizerControlCoordinator {
             private boolean transientEvidence;
             // Non-SPL control does not need a calibration profile. SPL callers must prove one.
             private boolean calibrationProfileValid = true;
+            private boolean assumedPreVolumeFallbackAllowed;
 
             public Builder(long atMs, int previousMediaIndex, int currentMediaIndex,
                            ControlVolumeCurve routeCurve) {
@@ -123,6 +126,7 @@ public final class NormalizerControlCoordinator {
             public Builder currentDspGainDb(float value) { currentDspGainDb = value; return this; }
             public Builder mediaGainDb(float value) { mediaGainDb = value; return this; }
             public Builder captureReference(CaptureReferenceEstimator.Mode value) { captureReference = value; return this; }
+            public Builder assumedPreVolumeFallbackAllowed(boolean value) { assumedPreVolumeFallbackAllowed = value; return this; }
             public Builder hardPeakCeilingDbfs(float value) { hardPeakCeilingDbfs = value; return this; }
             public Builder rawProgramActive(boolean value) { rawProgramActive = value; return this; }
             public Builder policyAllowsPositiveGain(boolean value) { policyAllowsPositiveGain = value; return this; }
@@ -261,14 +265,28 @@ public final class NormalizerControlCoordinator {
                     : ControlCommand.mediaIndex(quiet, "quiet_now", ControlCommand.Provenance.QUIET_NOW);
             return record(command, 0f, frame, programActive, transientEvent.severity);
         }
-        if (frame.captureReference == CaptureReferenceEstimator.Mode.UNKNOWN) {
+        CaptureReferenceEstimator.Mode controlCaptureReference = frame.captureReference;
+        boolean assumedPreVolumeFallback = controlCaptureReference == CaptureReferenceEstimator.Mode.UNKNOWN
+                && frame.assumedPreVolumeFallbackAllowed && !frame.verifiedDsp;
+        if (assumedPreVolumeFallback) {
+            // PlaybackCapture on the Samsung field route behaved pre-volume. Treat UNKNOWN as a
+            // conservative PRE-volume Media fallback only: upward Media is still constrained to
+            // app-owned debt and can never exceed the user's master anchor.
+            controlCaptureReference = CaptureReferenceEstimator.Mode.PRE_VOLUME;
+        }
+        if (controlCaptureReference == CaptureReferenceEstimator.Mode.UNKNOWN) {
             return record(ControlCommand.none("capture_reference_unverified"), 0f, frame,
                     programActive, transientEvent.severity);
         }
 
+        // Default Linked Lock is relative to the user's Samsung master. While PRE/POST is still
+        // unverified, PlaybackCapture fallback therefore compares captured source loudness directly
+        // with the linked target instead of subtracting the master a second time.
+        float planningMediaGainDb = assumedPreVolumeFallback && ceilingState.linked()
+                ? 0f : frame.mediaGainDb;
         OutputGainPlanner.Plan plan = OutputGainPlanner.plan(new OutputGainPlanner.Input(
                 frame.controlLoudnessDb, frame.rawPeakDbfs, frame.currentDspGainDb,
-                frame.mediaGainDb, frame.captureReference, ceilingState, frame.hardPeakCeilingDbfs,
+                planningMediaGainDb, controlCaptureReference, ceilingState, frame.hardPeakCeilingDbfs,
                 programActive, allowsPositiveControl(frame) || frame.globalMixDsp
                         || debtRecoveryAllowed(frame)));
 
@@ -332,10 +350,15 @@ public final class NormalizerControlCoordinator {
                 || frame.observation == VolumeObservation.APP_MISMATCH)
                 && frame.writeOrigin == VolumeWriteOrigin.USER) {
             mediaAnchorState = mediaAnchorState.recordUserIndex(frame.currentMediaIndex, frame.atMs);
-            float delta = frame.routeCurve.deltaDb(frame.previousMediaIndex, frame.currentMediaIndex);
-            ceilingState = ceilingState.onMediaIndexChanged(frame.previousMediaIndex,
-                    frame.currentMediaIndex, delta, false);
-            ceilingPersistenceRequested = true;
+            boolean sourceRelativeLinked = ceilingState.linked()
+                    && frame.captureReference == CaptureReferenceEstimator.Mode.UNKNOWN
+                    && frame.assumedPreVolumeFallbackAllowed && !frame.verifiedDsp;
+            if (!sourceRelativeLinked) {
+                float delta = frame.routeCurve.deltaDb(frame.previousMediaIndex, frame.currentMediaIndex);
+                ceilingState = ceilingState.onMediaIndexChanged(frame.previousMediaIndex,
+                        frame.currentMediaIndex, delta, false);
+                ceilingPersistenceRequested = true;
+            }
             return;
         }
         if (frame.observation == VolumeObservation.APP_ACK) {
