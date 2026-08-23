@@ -44,7 +44,8 @@ final class Prefs {
             LOWER_OUTPUT_CEILING_DB="lower_output_ceiling_db",
             UPPER_OUTPUT_CEILING_DB="upper_output_ceiling_db",
             WHOLE_OUTPUT_DSP_CONSENT="whole_output_dsp_consent",
-            GLOBAL_DSP_USER_SET="global_dsp_user_set";
+            GLOBAL_DSP_USER_SET="global_dsp_user_set",
+            CALIBRATION_ROUTE_STATE="calibration_route_state";
 
     static SharedPreferences get(Context c) {
         return c.getSharedPreferences(FILE, Context.MODE_PRIVATE);
@@ -81,6 +82,18 @@ final class Prefs {
     static boolean splMode(Context c){return get(c).getBoolean(SPL_MODE,false);}
     static int compressionPercent(Context c){return get(c).getInt(COMPRESSION_PERCENT,100);}
     static int lastMeasuredSpl(Context c){return get(c).getInt(LAST_MEASURED_SPL,70);}
+    static CalibrationPreferenceState calibrationState(Context c){
+        return CalibrationPreferenceState.decode(get(c).getString(CALIBRATION_ROUTE_STATE, ""));
+    }
+    static void saveCalibrationState(Context c, String routeId, int measuredSpl){
+        CalibrationPreferenceState state = new CalibrationPreferenceState(routeId, measuredSpl);
+        get(c).edit().putString(CALIBRATION_ROUTE_STATE, state.encode())
+                .putInt(LAST_MEASURED_SPL, state.measuredSpl).apply();
+    }
+    static void clearCalibrationState(Context c, String routeId){
+        CalibrationPreferenceState saved = calibrationState(c);
+        if (saved.matchesRoute(routeId)) get(c).edit().remove(CALIBRATION_ROUTE_STATE).apply();
+    }
     static String uiMode(Context c){return get(c).getString(UI_MODE,"simple");}
     static SpeedPreset speedPreset(Context c){return SpeedPreset.fromKey(get(c).getString(SPEED_PRESET,"balanced"));}
     static boolean allowAutoMute(Context c){return get(c).getBoolean(ALLOW_AUTO_MUTE,ControlDefaults.AUTO_MUTE);}

@@ -71,7 +71,7 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
         summary.setText(String.format(Locale.US,
                 "Engine: %s\nCapture: %s · signal: %s · PCM: %s\n"
                         + "Source: %s · package: %s · sourceConfidence: %s · rule: %s\n"
-                        + "meteringCapability: %s\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
+                        + "meteringCapability: %s\nSpectrum: %s · age %d ms\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
                         + "Downgrade reason: %s\nRoute: %s · Device profile: %s\n"
                         + "Media: %d/%d · effective max: %d\n"
                         + "Raw Peak %.1f dBFS · LUFS-like %.1f · reaction %s\nLog: %s",
@@ -80,7 +80,8 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 state.sourceLabel.isEmpty() ? "—" : state.sourceLabel,
                 state.sourcePackage.isEmpty() ? "—" : state.sourcePackage,
                 state.sourceConfidence, state.appRuleLabel,
-                state.meteringCapability, state.volumeControlCapability, state.dspTransportCapability,
+                state.meteringCapability, spectrumSource(state), state.meterAgeMs,
+                state.volumeControlCapability, state.dspTransportCapability,
                 state.downgradeReason.isEmpty() ? "—" : state.downgradeReason,
                 state.routeLabel.isEmpty() ? "—" : state.routeLabel,
                 state.profileName.isEmpty() ? "—" : state.profileName,
@@ -113,6 +114,16 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
         }
         items.removeAllViews();
         for (DiagnosticItem item : diagnostics) addItem(item);
+    }
+
+    private static String spectrumSource(RuntimeState state) {
+        boolean available = false;
+        for (float value : state.bandLevels()) if (Float.isFinite(value)) { available = true; break; }
+        if (!available) return "unavailable";
+        if (state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT
+                || state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_MIXED) return "PCM";
+        return state.captureStatus == RuntimeState.CaptureStatus.RUNNING
+                ? "Visualizer FFT" : "held last spectrum";
     }
 
     private void addItem(DiagnosticItem item) {

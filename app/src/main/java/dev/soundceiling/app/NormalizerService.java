@@ -39,6 +39,7 @@ public class NormalizerService extends Service {
     private static final int GLOBAL_DSP_PROBE_SAMPLES = 3;
     private static final long GLOBAL_DSP_PROBE_COOLDOWN_MS = 5000L;
     private static final long GLOBAL_DSP_PROBE_MAX_ACTIVE_MS = 750L;
+    private static final long SPECTRUM_HOLD_MS = 700L;
 
     private final AtomicBoolean workerRunning = new AtomicBoolean();
     private final AtomicBoolean stopping = new AtomicBoolean();
@@ -75,7 +76,8 @@ public class NormalizerService extends Service {
     private long lastSettingsRefresh;
     private long lastBandUpdate;
     private long lastSystemStreamCheck;
-    private float[] lastBands = new float[5];
+    private float[] lastBands = GlobalVisualizerReading.unavailableBands();
+    private long lastBandMeasuredAtMs;
     private int lastAppliedNonzero = -1;
     private boolean unexpectedZeroThisPoll;
     private VolumeWriteTracker.Observation lastVolumeObservation;
@@ -286,12 +288,12 @@ public class NormalizerService extends Service {
             enforceSystemStreams(deviceProfile, now);
             int current = observeVolumeAndEnforce(now);
 
-            GlobalVisualizerBackend.Reading outputMix = visualizer.isOpen() ? visualizer.read() : null;
-            boolean outputMixEvidence = outputMix != null && outputMix.valid;
+            GlobalVisualizerBackend.Reading outputMix = visualizer.read();
+            boolean outputMixEvidence = outputMix.levelAvailable;
             hybridSnapshot = hybridRuntime.resolvePcm(pcmCapture, true, signal, outputMixEvidence,
                     controlProfile, deviceProfile, now);
             if (optionalDsp != null) {
-                updateGlobalDspVerification(outputMix == null ? Float.NaN : outputMix.rmsDb,
+                updateGlobalDspVerification(outputMix.rmsDbfs,
                         outputMixEvidence, signal && hybridSnapshot.playback.active, now);
                 optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, globalDspPreference);
             }
@@ -425,22 +427,28 @@ public class NormalizerService extends Service {
             DeviceProfileV2 deviceProfile = currentDeviceProfileV2();
             enforceSystemStreams(deviceProfile, detectedAt);
             int current = observeVolumeAndEnforce(detectedAt);
-            GlobalVisualizerBackend.Reading reading = visualizer.isOpen() ? visualizer.read()
-                    : new GlobalVisualizerBackend.Reading(false, DbMath.SILENCE_DBFS, DbMath.SILENCE_DBFS);
-            boolean signal = reading.valid && reading.peakDb > -58f;
-            hybridSnapshot = hybridRuntime.resolveFallback(reading.valid, controlProfile,
+            GlobalVisualizerBackend.Reading reading = visualizer.read();
+            if (reading.levelAvailable && backendStatus.tier != AudioBackendStatus.Tier.VISUALIZER) {
+                backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.VISUALIZER, true,
+                        "output_mix_peak_rms_fft");
+                DiagnosticLog.transition("visualizer_reopen", "recovered", reading.reason);
+            }
+            float fallbackPeak = reading.levelAvailable ? reading.peakDbfs : DbMath.SILENCE_DBFS;
+            float fallbackRms = reading.levelAvailable ? reading.rmsDbfs : DbMath.SILENCE_DBFS;
+            boolean signal = reading.levelAvailable && fallbackPeak > -58f;
+            hybridSnapshot = hybridRuntime.resolveFallback(reading.levelAvailable, controlProfile,
                     deviceProfile, detectedAt);
             if (optionalDsp != null) {
-                updateGlobalDspVerification(reading.rmsDb, reading.valid,
+                updateGlobalDspVerification(fallbackRms, reading.levelAvailable,
                         signal && hybridSnapshot.playback.active, detectedAt);
                 optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, globalDspPreference);
             }
             ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.fallbackMaxPercent);
             ControlCommand command = controlCoordinator.onFrame(controlFrame(detectedAt, current,
-                    reading.peakDb, reading.rmsDb, signal, hybridSnapshot.policy, effectiveProfile,
-                    hybridSnapshot.sources.confidence, hybridSnapshot.playback, reading.rmsDb,
-                    reading.valid));
+                    fallbackPeak, fallbackRms, signal, hybridSnapshot.policy, effectiveProfile,
+                    hybridSnapshot.sources.confidence, hybridSnapshot.playback, fallbackRms,
+                    reading.levelAvailable));
             persistCoordinatorCeilings();
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
@@ -452,15 +460,17 @@ public class NormalizerService extends Service {
                     : RuntimeState.ControlActivity.HOLDING;
             RuntimeState state = baseState(new RuntimeState.Builder(), applied)
                     .running(true)
-                    .captureStatus(reading.valid ? RuntimeState.CaptureStatus.RUNNING
+                    .captureStatus(reading.levelAvailable ? RuntimeState.CaptureStatus.RUNNING
                             : RuntimeState.CaptureStatus.WAITING_SIGNAL)
                     .controlActivity(activity).signalPresent(signal)
-                    .levels(reading.rmsDb, reading.peakDb, Float.NaN, Float.NaN)
-                    .loudness(reading.peakDb, reading.rmsDb)
+                    .levels(fallbackRms, fallbackPeak, Float.NaN, Float.NaN)
+                    .loudness(fallbackPeak, fallbackRms)
                     .controller(activity.name(), command.reason(),
                             latency, emergency ? latency : -1L)
                     .message(StatusText.engine(baseState(new RuntimeState.Builder(), applied)
                             .running(true).build()))
+                    .meterAgeMs(updateFallbackBands(reading, detectedAt))
+                    .bandLevels(lastBands)
                     .build();
             RuntimeStateStore.publish(state);
             updateNotification(state);
@@ -471,11 +481,11 @@ public class NormalizerService extends Service {
                         command.reason(), current, command.mediaIndex(), applied, safetySettings.minIndex,
                         safetySettings.maxIndex, safetySettings.hardMax(),
                         hybridSnapshot.policy.sourcePeakThresholdDbfs,
-                        effectiveProfile.sourcePeakThresholdDbfs, reading.peakDb, latency,
+                        effectiveProfile.sourcePeakThresholdDbfs, fallbackPeak, latency,
                         0f, sourceSummary(hybridSnapshot),
                         hybridSnapshot.pcmState, hybridSnapshot.sources.confidence));
             }
-            try { Thread.sleep(reading.valid ? 20L : 50L); }
+            try { Thread.sleep(reading.levelAvailable ? 20L : 50L); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
         }
         if (workerRunning.get()) stopSafe("Остановлено", false);
@@ -657,6 +667,7 @@ public class NormalizerService extends Service {
         if (now - lastBandUpdate >= 80L) {
             lastBands = bands.update(buffer, n);
             lastBandUpdate = now;
+            lastBandMeasuredAtMs = now;
         }
         RuntimeState state = baseState(new RuntimeState.Builder(), applied)
                 .running(true)
@@ -679,9 +690,22 @@ public class NormalizerService extends Service {
                         controlCoordinator.snapshot().programActive(),
                         controlCoordinator.snapshot().directionDwell())
                 .message(message).lastVolumeChangeElapsedMs(lastChange)
-                .lastDecision(decision).bandLevels(lastBands).build();
+                .lastDecision(decision).meterAgeMs(Math.max(0L, now - lastBandMeasuredAtMs)).bandLevels(lastBands).build();
         RuntimeStateStore.publish(state);
         updateNotification(state);
+    }
+
+    private long updateFallbackBands(GlobalVisualizerBackend.Reading reading, long nowMs) {
+        if (reading != null && reading.bandsAvailable) {
+            lastBands = EqVisualizationMath.meterLevelsFromDb(reading.bandsDb);
+            lastBandMeasuredAtMs = reading.measuredAtMs;
+            return reading.ageMs(nowMs);
+        }
+        long age = lastBandMeasuredAtMs <= 0L ? Long.MAX_VALUE
+                : Math.max(0L, nowMs - lastBandMeasuredAtMs);
+        if (age <= SPECTRUM_HOLD_MS) return age;
+        lastBands = GlobalVisualizerReading.unavailableBands();
+        return age == Long.MAX_VALUE ? 0L : age;
     }
 
     private RuntimeState.Builder baseState(RuntimeState.Builder builder, int volume) {

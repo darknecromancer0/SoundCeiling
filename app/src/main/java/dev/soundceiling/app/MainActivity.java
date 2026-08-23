@@ -352,7 +352,7 @@ DeviceProfile profile = new DeviceProfile(
 DeviceDetector.key(device), DeviceDetector.label(device), deviceType,
 DeviceDetector.productName(device), calibrationOffset, System.currentTimeMillis());
 ProfileStore.save(this, profile);
-Prefs.get(this).edit().putInt(Prefs.LAST_MEASURED_SPL, measuredSpl).apply();
+Prefs.saveCalibrationState(this, DeviceDetector.key(device), measuredSpl);
 DiagnosticLog.event("calibration_saved", "route=" + DeviceDetector.label(device)
 + " playbackIndex=" + result.playbackIndex + " measuredSpl=" + measuredSpl);
 lastCalibrationResult = null;
@@ -367,6 +367,7 @@ Toast.makeText(this, "Для текущего выхода профиля нет
 return;
 }
 ProfileStore.delete(this, profile.key);
+Prefs.clearCalibrationState(this, DeviceDetector.key(device));
 DiagnosticLog.event("calibration_deleted", "route=" + DeviceDetector.label(device));
 Toast.makeText(this, "Профиль удалён.", Toast.LENGTH_SHORT).show();
 }

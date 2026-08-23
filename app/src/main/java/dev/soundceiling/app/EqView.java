@@ -149,7 +149,7 @@ final class EqView extends ScrollView implements RuntimeScreen {
 
     @Override public void render(RuntimeState state) {
         capability.setText(controller.status());
-        liveSpectrum.renderBands(state.bandLevels());
+        liveSpectrum.renderState(state);
     }
 
     private TextView text(String value, float sp, boolean bold) {

@@ -3,6 +3,8 @@ package dev.soundceiling.app;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Typeface;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -18,6 +20,8 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     }
 
     private final Listener listener;
+    private final AudioManager audio;
+    private String restoredRouteId = "";
     private final TextView route;
     private final TextView speakerStatus;
     private final TextView calibrationStatus;
@@ -29,6 +33,7 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     CalibrationView(Context context, Listener listener) {
         super(context);
         this.listener = listener;
+        audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         setFillViewport(true);
         setBackgroundColor(UiTheme.background(context));
 
@@ -96,6 +101,7 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
         measuredSpl.setProgress(Prefs.lastMeasuredSpl(context));
         root.addView(measuredSpl);
         updateMeasuredLabel(measuredSpl.getProgress());
+        restoreCurrentRouteCalibration();
         measuredSpl.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 updateMeasuredLabel(progress);
@@ -131,9 +137,28 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     }
 
     @Override public void render(RuntimeState state) {
+        restoreCurrentRouteCalibration();
         route.setText("Выход: " + (state.routeLabel.isEmpty() ? "определяется…" : state.routeLabel)
                 + " · Media " + state.volumeIndex + "/" + state.volumeMax
                 + (state.profileName.isEmpty() ? "\nSPL-калибровка: нет" : "\nSPL-калибровка: " + state.profileName));
+    }
+
+    private void restoreCurrentRouteCalibration() {
+        AudioDeviceInfo device = DeviceDetector.detectOutputDevice(audio);
+        String routeId = DeviceDetector.key(device);
+        if (routeId.equals(restoredRouteId)) return;
+        restoredRouteId = routeId;
+        CalibrationPreferenceState saved = Prefs.calibrationState(getContext());
+        if (saved.matchesRoute(routeId)) {
+            measuredSpl.setProgress(saved.measuredSpl);
+            updateMeasuredLabel(saved.measuredSpl);
+            calibrationStatus.setText("Сохранённая калибровка этого выхода: "
+                    + saved.measuredSpl + " dB SPL");
+        } else {
+            int fallback = CalibrationPreferenceState.EMPTY.measuredSpl;
+            measuredSpl.setProgress(fallback);
+            updateMeasuredLabel(fallback);
+        }
     }
 
     void onToneWaitingForEngineStop(ToneController.Kind kind) {

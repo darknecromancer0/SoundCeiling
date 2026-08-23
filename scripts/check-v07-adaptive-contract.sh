@@ -154,7 +154,7 @@ require "$PKG/EqView.java" 'private final FrequencyMeterView liveSpectrum'
 require "$PKG/EqView.java" 'private final EqResponseView responseView'
 require "$PKG/EqView.java" 'Живой спектр'
 require "$PKG/EqView.java" 'EQ Amount / Сила EQ'
-require "$PKG/EqView.java" 'liveSpectrum.renderBands(state.bandLevels())'
+require "$PKG/EqView.java" 'liveSpectrum.renderState(state)'
 require "$PKG/EqView.java" 'updateEqVisualization()'
 require "$PKG/EqSettings.java" 'amountPercent'
 require "$PKG/EqSettings.java" 'p.getInt(AMOUNT, 100)'
@@ -192,6 +192,19 @@ reject "$PKG/AdvancedModeView.java" 'Использовать калиброва
 # and HybridEngineCoordinator paths stay available as pure compatibility helpers, not live writers.
 require "$PKG/NormalizerService.java" 'controlCoordinator.onFrame(controlFrame('
 reject "$PKG/NormalizerService.java" 'HybridEngineCoordinator.plan('
+
+
+# v0.7.1 Task 10: fallback spectrum is real FFT data or explicitly unavailable.
+require "$PKG/VisualizerFftBands.java" 'class VisualizerFftBands'
+require "$PKG/GlobalVisualizerBackend.java" 'Visualizer.getCaptureSizeRange()'
+require "$PKG/GlobalVisualizerBackend.java" 'v.getFft(fft)'
+require "$PKG/GlobalVisualizerBackend.java" 'bandsAvailable'
+require "$PKG/GlobalVisualizerBackend.java" 'measuredAtMs'
+require "$PKG/FrequencyMeterView.java" 'Спектр временно недоступен'
+require "$PKG/FrequencyMeterView.java" 'renderState(RuntimeState state)'
+require "$PKG/DiagnosticsView.java" 'Spectrum: %s · age %d ms'
+require "$PKG/Prefs.java" 'CALIBRATION_ROUTE_STATE'
+require "$PKG/CalibrationView.java" 'restoreCurrentRouteCalibration()'
 
 # Durable log index: successfully created parts remain visible even when later discovery is empty.
 require "$PKG/LogSessionIndexModel.java" 'class LogSessionIndexModel'

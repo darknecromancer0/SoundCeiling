@@ -23,6 +23,18 @@ final class EqVisualizationMath {
         return DbMath.clamp(Math.round(strongest * 100f), 0, 100);
     }
 
+    static float meterLevelFromDb(float db) {
+        if (!Float.isFinite(db)) return 0f;
+        return DbMath.clamp((db + 80f) / 80f, 0f, 1f);
+    }
+
+    static float[] meterLevelsFromDb(float[] db) {
+        if (db == null) return new float[0];
+        float[] out = new float[db.length];
+        for (int i = 0; i < db.length; i++) out[i] = meterLevelFromDb(db[i]);
+        return out;
+    }
+
     static int[] appliedLevels(int[] configuredLevelsMb, int amountPercent) {
         if (configuredLevelsMb == null) return new int[0];
         int amount = DbMath.clamp(amountPercent, 0, 100);

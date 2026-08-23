@@ -203,7 +203,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
 
     @Override public void render(RuntimeState state) {
         if (state != null) runtime = state;
-        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderBands(runtime.bandLevels());
+        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderState(runtime);
         refreshSharedOutputControls();
         state = runtime;
         String source = state.sourcePackage.isEmpty() ? "не определён" : state.sourcePackage;
