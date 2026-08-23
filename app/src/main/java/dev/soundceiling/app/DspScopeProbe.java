@@ -66,6 +66,19 @@ final class DspScopeProbe {
                     float[] beforeDb, float[] afterDb,
                     ScopeAuthority authority, long timestampMs) {
         AndroidDynamicsProcessingTransport target = transport != null ? transport : activeTransport;
+        int sessionId = trustedHandle == null ? 0 : trustedHandle.audioSessionId;
+        String policyKey = trustedHandle == null ? "" : trustedHandle.allowedPolicyKey;
+        ScopeAuthority actualAuthority = authority == null ? ScopeAuthority.NONE : authority;
+
+        // A capture/filter rebind can cancel and neutralize the probe before the service's old
+        // before/after collector notices. Never classify those stale samples as a new route proof.
+        if (!probeActive) {
+            activeTransport = null;
+            return new Evidence(routeIdentity, sessionId, policyKey, timestampMs, 0,
+                    Float.NaN, actualAuthority, DspProbeMath.Status.UNVERIFIED,
+                    "probe_not_active");
+        }
+
         if (target != null) {
             // Restore first, then classify. No failed/ambiguous probe may leave attenuation behind.
             target.applyProbeAttenuationDb(0f);
@@ -75,9 +88,6 @@ final class DspScopeProbe {
 
         DspProbeMath.Result result = DspProbeMath.evaluateAttenuation(beforeDb, afterDb);
         int samples = beforeDb == null || afterDb == null ? 0 : Math.min(beforeDb.length, afterDb.length);
-        int sessionId = trustedHandle == null ? 0 : trustedHandle.audioSessionId;
-        String policyKey = trustedHandle == null ? "" : trustedHandle.allowedPolicyKey;
-        ScopeAuthority actualAuthority = authority == null ? ScopeAuthority.NONE : authority;
         return new Evidence(routeIdentity, sessionId, policyKey, timestampMs, samples,
                 result.meanDeltaDb, actualAuthority, result.status, result.reason);
     }
