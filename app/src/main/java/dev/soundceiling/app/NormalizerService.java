@@ -416,8 +416,26 @@ public class NormalizerService extends Service {
         loudnessState.lastUpAtMs = 0L;
         loudnessState.lastDownAtMs = 0L;
         loudnessState.loudHoldUntilMs = 0L;
-        lastBands = new float[5];
+        lastBands = GlobalVisualizerReading.unavailableBands();
         lastBandUpdate = 0L;
+        lastBandMeasuredAtMs = 0L;
+        publishCaptureRebindUnavailable();
+    }
+
+    private void publishCaptureRebindUnavailable() {
+        int current = safetySettings == null ? 0 : safetySettings.minIndex;
+        try { current = audio.getStreamVolume(AudioManager.STREAM_MUSIC); }
+        catch (RuntimeException ignored) {}
+        RuntimeState state = baseState(new RuntimeState.Builder(), current)
+                .running(true)
+                .captureStatus(RuntimeState.CaptureStatus.STARTING)
+                .controlActivity(RuntimeState.ControlActivity.IDLE)
+                .signalPresent(false)
+                .meterAgeMs(0L)
+                .bandLevels(lastBands)
+                .message("Переподключение аудио…")
+                .build();
+        RuntimeStateStore.publish(state);
     }
 
     private void loopFastGuard() {

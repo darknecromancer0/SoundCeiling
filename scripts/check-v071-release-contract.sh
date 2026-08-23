@@ -58,6 +58,14 @@ require "$FORMAT" 'captureRef='
 require "$FORMAT" 'reason='
 require "$SERVICE" 'DiagnosticLog.controlSummary('
 reject "$SERVICE" 'DiagnosticLog.event("control_summary"'
+# Task 12 review finding: capture rebind must invalidate the published spectrum immediately.
+# A newly opened capture may be silent for a while, so retaining the previous RuntimeState bands
+# would present stale evidence as live; zeros are also not a valid unavailable reading.
+require "$SERVICE" 'publishCaptureRebindUnavailable()'
+require "$SERVICE" 'lastBands = GlobalVisualizerReading.unavailableBands();'
+require "$SERVICE" '.captureStatus(RuntimeState.CaptureStatus.STARTING)'
+require "$SERVICE" '.bandLevels(lastBands)'
+reject "$SERVICE" 'lastBands = new float[5];'
 require "$CHECKLIST" 'awaiting device test'
 require "$CHECKLIST" 'APK SHA-256'
 require "$CHECKLIST" 'YouTube'
