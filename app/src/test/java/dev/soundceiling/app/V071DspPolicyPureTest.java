@@ -105,6 +105,18 @@ public final class V071DspPolicyPureTest {
         assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, duplicatedHandle.result,
                 "duplicating one handle cannot cover two active endpoints with the same key");
 
+        DspEndpointHandle firstAlias = trustedHandle(204, "first");
+        DspEndpointHandle secondAlias = DspEndpointHandle.tryCreate(204,
+                DspEndpointHandle.Provenance.APP_OWNED,
+                "second", AppPolicy.on()).orElseThrow(AssertionError::new);
+        DspPolicyArbiter.Decision physicalSessionAlias = DspPolicyArbiter.decide(
+                input(Arrays.asList(first, second))
+                        .handles(Arrays.asList(firstAlias, secondAlias))
+                        .policyScopedCapability(
+                                DspTransport.Capability.VERIFIED_POLICY_SCOPED).build());
+        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, physicalSessionAlias.result,
+                "one physical audio session cannot masquerade as two scoped handles");
+
         DspPolicyArbiter.Decision mismatched = DspPolicyArbiter.decide(input(first)
                 .handles(Collections.singletonList(wrongHandle))
                 .policyScopedCapability(DspTransport.Capability.VERIFIED_POLICY_SCOPED).build());

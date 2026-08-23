@@ -2,9 +2,10 @@ package dev.soundceiling.app;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /** Selects only a policy-compatible verified DSP tier, while keeping peak safety independent. */
 final class DspPolicyArbiter {
@@ -170,7 +171,13 @@ final class DspPolicyArbiter {
     private static boolean hasEligibleScopedHandle(Input input) {
         if (input.policyScopedCapability
                 != DspTransport.Capability.VERIFIED_POLICY_SCOPED) return false;
-        List<DspEndpointHandle> unused = new ArrayList<>(new LinkedHashSet<>(input.handles));
+        List<DspEndpointHandle> unused = new ArrayList<>();
+        Set<Integer> physicalSessionIds = new HashSet<>();
+        for (DspEndpointHandle handle : input.handles) {
+            if (handle == null || !handle.isTrusted()) continue;
+            if (!physicalSessionIds.add(handle.audioSessionId)) return false;
+            unused.add(handle);
+        }
         boolean eligibleEndpointFound = false;
         for (PlaybackEndpoint endpoint : input.endpoints) {
             if (endpoint == null || !endpoint.allowsDspControl()) continue;
