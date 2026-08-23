@@ -139,7 +139,7 @@ final class DspTransportManager implements AutoCloseable {
         }
         // Neutral is always accepted as lifecycle cleanup, but not reported as verified DSP.
         if (requestedGainDb == 0f) {
-            neutralizeAll();
+            cancelProbeAndNeutralize();
             return true;
         }
         return false;
@@ -229,8 +229,13 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     void neutralizeForFallback() {
-        neutralizeAll();
+        cancelProbeAndNeutralize();
         reason = "dsp_neutralized_before_fallback";
+    }
+
+    private void cancelProbeAndNeutralize() {
+        scopeProbe.cancel();
+        neutralizeAll();
     }
 
     private void neutralizeAll() {
