@@ -26,5 +26,6 @@ require "$CHECKLIST" 'global_dsp_probe_measurement_hold'
 require "$CHECKLIST" 'capture_reference ... evidence=3'
 require "$CHECKLIST" 'APK SHA-256'
 require "$TEST" 'hardMediaCapInterruptsProbeBeforeFallbackWrite'
+require "$TEST" 'captureRebindResetsReferenceEvidence'
 require "$TEST" 'silentMediaMoveDoesNotBecomeReferenceEvidence'
 echo "v0.7.4 release contract: PASS"
