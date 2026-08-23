@@ -70,6 +70,10 @@ The next trace is expected to answer two empirical questions that v0.7.3 could n
 
 Historical compatibility retained from **v0.5.1**, v0.6 and earlier v0.7 corrective releases includes volume-neutral calibration, non-raising Quiet Now, transient re-arm, projected-peak fixes, persistent linked-band EQ, logical single-session log sharing, Samsung user authority and debt-only Media recovery.
 
+Historical v0.7 acceptance examples remain explicit:
+- **Auto down 7 -> 5:** SoundCeiling may later recover only its own attenuation debt, never above the current user anchor.
+- **User manual down 7 -> 4:** the new user-selected Media index wins immediately and ordinary automation must not raise above it.
+
 ## Build and verification
 
 Requires JDK 17 and Android SDK 35. CI runs the pure suite, historical regression contracts, v0.7 Adaptive Envelope contract, v0.7.1 historical contracts, v0.7.2 corrective/release contracts, v0.7.3 user-authority/release contracts, the v0.7.4 Samsung field regression/corrective contract, the v0.7.4 release contract, then `:app:assembleDebug`.
