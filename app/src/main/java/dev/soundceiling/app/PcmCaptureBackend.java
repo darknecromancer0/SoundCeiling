@@ -161,13 +161,13 @@ final class PcmCaptureBackend implements AutoCloseable {
 
     @Override public void close() {
         synchronized (readLock) {
-            if (closed) return;
-            closed = true;
+            if (closed || releaseRequested) return;
             releaseRequested = true;
         }
         requestStop();
         boolean releaseNow;
         synchronized (readLock) {
+            closed = true;
             releaseNow = !readInFlight && !released;
         }
         if (releaseNow) releaseRecordOnce();
