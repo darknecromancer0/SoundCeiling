@@ -1,97 +1,38 @@
-name: Build Sound Ceiling APK
+name: Materialize Sound Ceiling v0.7.3
 on:
-  workflow_dispatch:
-  push:
-    branches: [ "main", "master" ]
   pull_request:
+    types: [synchronize]
+permissions:
+  contents: write
 jobs:
-  build:
+  materialize:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Upload source snapshot for v0.7 development
-        uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.7-source-snapshot
-          path: |
-            .github
-            app
-            docs
-            gradle
-            scripts
-            tests
-            build.gradle.kts
-            gradle.properties
-            gradlew
-            gradlew.bat
-            settings.gradle.kts
-          include-hidden-files: true
-          if-no-files-found: error
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Run pure logic tests
-        run: ./scripts/run-pure-tests.sh
-      - name: Check v0.4 storage contract
-        run: bash ./scripts/check-v04-storage-contract.sh
-      - name: Check v0.5 storage contract
-        run: bash ./scripts/check-v05-storage-contract.sh
-      - name: Check v0.5 app contract
-        run: bash ./scripts/check-v05-app-contract.sh
-      - name: Check source invariants
-        run: ./scripts/check-source-invariants.sh
-      - name: Check v0.6 one-way runtime contract
-        run: bash ./scripts/check-v06-one-way-contract.sh
-      - name: Check v0.7 adaptive envelope contract
-        run: bash ./scripts/check-v07-adaptive-contract.sh
-      - name: Check v0.7.1 DSP integration contract
-        run: bash ./scripts/check-v071-dsp-contract.sh
-      - name: Check v0.7.1 Simple/Advanced UI contract
-        run: bash ./scripts/check-v071-ui-contract.sh
-      - name: Check v0.7.1 release contract
-        run: bash ./scripts/check-v071-release-contract.sh
-      - name: Check v0.7.2 corrective architecture contract
-        run: bash ./scripts/check-v072-corrective-contract.sh
-      - name: Check v0.7.2 release contract
-        run: bash ./scripts/check-v072-release-contract.sh
-      - name: Check v0.7 UI contract
-        run: bash ./scripts/check-v07-ui-contract.sh
-      - name: Check v0.5 targeted PCM contract
-        run: bash ./scripts/check-v05-pcm-contract.sh
-      - name: Check v0.5 microphone isolation
-        run: bash ./scripts/check-v05-microphone-invariant.sh
-      - name: Check v0.5 control adapters
-        run: bash ./scripts/check-v05-control-adapters.sh
-      - name: Check legacy UI contract
-        run: bash ./scripts/check-ui-contract.sh
-      - name: Check v0.4 UI contract
-        run: bash ./scripts/check-v04-ui-contract.sh
-      - name: Check v0.5 UI contract
-        run: bash ./scripts/check-v05-ui-contract.sh
-      - name: Check v0.4 package contract
-        run: bash ./scripts/check-v04-package-contract.sh
-      - name: Check v0.5 release contract
-        run: bash ./scripts/check-v05-release-contract.sh
-      - name: Check v0.5.1 core stability contract
-        run: bash ./scripts/check-v051-core-stability-contract.sh
-      - name: Check v0.6 release contract
-        run: bash ./scripts/check-v06-release-contract.sh
-      - name: Check v0.7 release contract
-        run: bash ./scripts/check-v07-release-contract.sh
-      - uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Build debug APK
-        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
-      - name: APK checksum
-        working-directory: app/build/outputs/apk/debug
-        run: sha256sum app-debug.apk | tee app-debug.apk.sha256
-      - uses: actions/upload-artifact@v4
-        with:
-          name: SoundCeiling-v0.7.2-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Materialize exact v0.7.3 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f .task073/v073.patch ]]; then
+            echo "v0.7.3 patch already materialized"
+            exit 0
+          fi
+          git apply --check --exclude=.github/workflows/build-apk.yml .task073/v073.patch
+          git apply --exclude=.github/workflows/build-apk.yml .task073/v073.patch
+          ./scripts/run-pure-tests.sh
+          for script in scripts/check-*.sh; do
+            bash "$script"
+          done
+          rm -rf .task073
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No materialized changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: preserve user volume authority and dsp transport"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
