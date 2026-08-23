@@ -47,6 +47,8 @@ jobs:
         run: bash ./scripts/check-v06-one-way-contract.sh
       - name: Check v0.7 adaptive envelope contract
         run: bash ./scripts/check-v07-adaptive-contract.sh
+      - name: Check v0.7.1 DSP integration contract
+        run: bash ./scripts/check-v071-dsp-contract.sh
       - name: Check v0.7 UI contract
         run: bash ./scripts/check-v07-ui-contract.sh
       - name: Check v0.5 targeted PCM contract
