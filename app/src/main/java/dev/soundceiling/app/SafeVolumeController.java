@@ -38,8 +38,9 @@ final class SafeVolumeController {
                 Math.min(current, requested), current, settings, effectiveMax, allowBelowMinimum);
         if (guarded == current) {
             if (quietCommand) {
-                DiagnosticLog.event("quiet_now_hold", "current=" + current
-                        + " configured=" + requestedIndex + " reason=downward_hold");
+                DiagnosticLog.transition("quiet_now_hold",
+                        "current=" + current + ":configured=" + requestedIndex,
+                        "current=" + current + " configured=" + requestedIndex + " reason=downward_hold");
             } else if (current == settings.minIndex) {
                 DiagnosticLog.transition("zero_floor_hold", "at_stream_minimum",
                         "current=" + current + " requested=" + requestedIndex);

@@ -306,6 +306,7 @@ public class NormalizerService extends Service {
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
                     effectiveProfile.autoMute && emergency, now);
+            logControlSummary(now, command, applied, blockPeak);
             String reason = command.reason();
             long reactionLatency = applied != current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
@@ -453,6 +454,7 @@ public class NormalizerService extends Service {
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
                     effectiveProfile.autoMute && emergency, detectedAt);
+            logControlSummary(detectedAt, command, applied, fallbackPeak);
             long latency = applied < current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
             RuntimeState.ControlActivity activity = applied < current ? RuntimeState.ControlActivity.DECREASING
@@ -693,6 +695,20 @@ public class NormalizerService extends Service {
                 .lastDecision(decision).meterAgeMs(Math.max(0L, now - lastBandMeasuredAtMs)).bandLevels(lastBands).build();
         RuntimeStateStore.publish(state);
         updateNotification(state);
+    }
+
+    private void logControlSummary(long nowMs, ControlCommand command, int appliedMediaIndex,
+                                   float rawPeakDbfs) {
+        NormalizerControlCoordinator.Snapshot snapshot = controlCoordinator.snapshot();
+        float appliedGainDb = snapshot.appliedGainDb();
+        float mediaGainDb = controlCurve.gainDbForIndex(appliedMediaIndex);
+        float projectedPeakDbfs = Float.isFinite(rawPeakDbfs)
+                ? rawPeakDbfs + mediaGainDb + appliedGainDb : Float.NaN;
+        String policy = hybridSnapshot == null ? "unknown" : hybridSnapshot.policy.resolutionReason;
+        String captureReference = snapshot.measurementMode().name();
+        DiagnosticLog.controlSummary(nowMs, command == null ? snapshot.actuator() : command.kind(),
+                snapshot.desiredGainDb(), appliedGainDb, rawPeakDbfs, projectedPeakDbfs,
+                policy, captureReference, command == null ? snapshot.decisionReason() : command.reason());
     }
 
     private long updateFallbackBands(GlobalVisualizerBackend.Reading reading, long nowMs) {

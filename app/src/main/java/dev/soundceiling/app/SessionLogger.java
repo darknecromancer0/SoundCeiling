@@ -51,6 +51,12 @@ final class SessionLogger implements AutoCloseable {
         write(line);
     }
 
+    synchronized void summary(String line) {
+        if (line == null || line.isEmpty()) return;
+        decisionContext.add(line);
+        write(line);
+    }
+
     synchronized void anomaly(List<DiagnosticItem> items) {
         if (items == null || items.isEmpty()) return;
         boolean hasProblem = false;

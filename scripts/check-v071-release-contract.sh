@@ -19,6 +19,8 @@ require_order(){
 require "$BUILD" 'versionCode=11'
 require "$BUILD" 'versionName="0.7.1"'
 require "$WF" 'name: SoundCeiling-v0.7.1-debug-apk'
+require "$WF" 'path: app/build/outputs/apk/debug/app-debug.apk'
+reject "$WF" 'app/build/outputs/apk/debug/app-debug.apk.sha256'
 require "$WF" 'run: ./scripts/run-pure-tests.sh'
 require "$WF" 'run: bash ./scripts/check-v07-adaptive-contract.sh'
 require "$WF" 'run: bash ./scripts/check-v071-dsp-contract.sh'
@@ -35,6 +37,7 @@ DLOG="$PKG/DiagnosticLog.java"
 FORMAT="$PKG/LogFormatter.java"
 SAFE="$PKG/SafeVolumeController.java"
 SERVICE="$PKG/NormalizerService.java"
+CHECKLIST="$ROOT/docs/field-tests/2026-08-22-v0.7.1-samsung-checklist.md"
 
 require "$GATE" 'shouldLogPeriodic('
 require "$DLOG" 'CONTROL_SUMMARY_INTERVAL_MS = 2000L'
@@ -55,5 +58,10 @@ require "$FORMAT" 'captureRef='
 require "$FORMAT" 'reason='
 require "$SERVICE" 'DiagnosticLog.controlSummary('
 reject "$SERVICE" 'DiagnosticLog.event("control_summary"'
+require "$CHECKLIST" 'awaiting device test'
+require "$CHECKLIST" 'APK SHA-256'
+require "$CHECKLIST" 'YouTube'
+require "$CHECKLIST" 'Yandex Music'
+require "$CHECKLIST" '20 dB'
 
 echo "v0.7.1 release contract: PASS"
