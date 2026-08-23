@@ -22,6 +22,7 @@ final class PcmCaptureBackend implements AutoCloseable {
     private final long openedElapsedMs;
     private volatile long lastSampleElapsedMs;
     private volatile boolean closed;
+    private volatile boolean stopRequested;
     private volatile int consecutiveTargetSignalBlocks;
     private volatile boolean targetConfirmed;
 
@@ -71,8 +72,11 @@ final class PcmCaptureBackend implements AutoCloseable {
     }
 
     int read(short[] buffer) {
-        if (closed || buffer == null || buffer.length == 0) return AudioRecord.ERROR_BAD_VALUE;
+        if (closed || stopRequested || buffer == null || buffer.length == 0) {
+            return AudioRecord.ERROR_INVALID_OPERATION;
+        }
         int read = record.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
+        if (closed || stopRequested) return AudioRecord.ERROR_INVALID_OPERATION;
         if (read > 0) {
             long now = SystemClock.elapsedRealtime();
             lastSampleElapsedMs = now;
@@ -106,7 +110,7 @@ final class PcmCaptureBackend implements AutoCloseable {
     }
 
     boolean healthy() {
-        return !closed && record.getState() == AudioRecord.STATE_INITIALIZED
+        return !closed && !stopRequested && record.getState() == AudioRecord.STATE_INITIALIZED
                 && record.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING;
     }
 
@@ -131,10 +135,16 @@ final class PcmCaptureBackend implements AutoCloseable {
         return last <= 0L ? Long.MAX_VALUE : Math.max(0L, nowElapsedMs - last);
     }
 
+    void requestStop() {
+        if (closed || stopRequested) return;
+        stopRequested = true;
+        try { record.stop(); } catch (RuntimeException ignored) {}
+    }
+
     @Override public void close() {
         if (closed) return;
+        requestStop();
         closed = true;
-        try { record.stop(); } catch (RuntimeException ignored) {}
         try { record.release(); } catch (RuntimeException ignored) {}
     }
 }
