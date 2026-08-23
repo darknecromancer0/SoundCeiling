@@ -1,0 +1,20 @@
+�ь калиброва
+ require "$PKG/NormalizerService.java" 'controlCoordinator.onFrame(controlFrame('
+ reject "$PKG/NormalizerService.java" 'HybridEngineCoordinator.plan('
+ 
++
++# v0.7.1 Task 10: fallback spectrum is real FFT data or explicitly unavailable.
++require "$PKG/VisualizerFftBands.java" 'class VisualizerFftBands'
++require "$PKG/GlobalVisualizerBackend.java" 'Visualizer.getCaptureSizeRange()'
++require "$PKG/GlobalVisualizerBackend.java" 'v.getFft(fft)'
++require "$PKG/GlobalVisualizerBackend.java" 'bandsAvailable'
++require "$PKG/GlobalVisualizerBackend.java" 'measuredAtMs'
++require "$PKG/FrequencyMeterView.java" 'Спектр временно недоступен'
++require "$PKG/FrequencyMeterView.java" 'renderState(RuntimeState state)'
++require "$PKG/DiagnosticsView.java" 'Spectrum: %s · age %d ms'
++require "$PKG/Prefs.java" 'CALIBRATION_ROUTE_STATE'
++require "$PKG/CalibrationView.java" 'restoreCurrentRouteCalibration()'
++
+ # Durable log index: successfully created parts remain visible even when later discovery is empty.
+ require "$PKG/LogSessionIndexModel.java" 'class LogSessionIndexModel'
+ require "$PKG/LogSessionIndex.java" 'class LogSessionIndex'

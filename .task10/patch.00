@@ -1,0 +1,220 @@
+diff --git a/app/src/main/java/dev/soundceiling/app/AdvancedModeView.java b/app/src/main/java/dev/soundceiling/app/AdvancedModeView.java
+index cdbf378..07d0953 100644
+--- a/app/src/main/java/dev/soundceiling/app/AdvancedModeView.java
++++ b/app/src/main/java/dev/soundceiling/app/AdvancedModeView.java
+@@ -203,7 +203,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
+ 
+     @Override public void render(RuntimeState state) {
+         if (state != null) runtime = state;
+-        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderBands(runtime.bandLevels());
++        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderState(runtime);
+         refreshSharedOutputControls();
+         state = runtime;
+         String source = state.sourcePackage.isEmpty() ? "не определён" : state.sourcePackage;
+diff --git a/app/src/main/java/dev/soundceiling/app/CalibrationView.java b/app/src/main/java/dev/soundceiling/app/CalibrationView.java
+index 37d3fc0..da11da7 100644
+--- a/app/src/main/java/dev/soundceiling/app/CalibrationView.java
++++ b/app/src/main/java/dev/soundceiling/app/CalibrationView.java
+@@ -3,6 +3,8 @@ package dev.soundceiling.app;
+ import android.app.AlertDialog;
+ import android.content.Context;
+ import android.graphics.Typeface;
++import android.media.AudioDeviceInfo;
++import android.media.AudioManager;
+ import android.widget.Button;
+ import android.widget.LinearLayout;
+ import android.widget.ProgressBar;
+@@ -18,6 +20,8 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
+     }
+ 
+     private final Listener listener;
++    private final AudioManager audio;
++    private String restoredRouteId = "";
+     private final TextView route;
+     private final TextView speakerStatus;
+     private final TextView calibrationStatus;
+@@ -29,6 +33,7 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
+     CalibrationView(Context context, Listener listener) {
+         super(context);
+         this.listener = listener;
++        audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+         setFillViewport(true);
+         setBackgroundColor(UiTheme.background(context));
+ 
+@@ -96,6 +101,7 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
+         measuredSpl.setProgress(Prefs.lastMeasuredSpl(context));
+         root.addView(measuredSpl);
+         updateMeasuredLabel(measuredSpl.getProgress());
++        restoreCurrentRouteCalibration();
+         measuredSpl.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                 updateMeasuredLabel(progress);
+@@ -131,11 +137,30 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
+     }
+ 
+     @Override public void render(RuntimeState state) {
++        restoreCurrentRouteCalibration();
+         route.setText("Выход: " + (state.routeLabel.isEmpty() ? "определяется…" : state.routeLabel)
+                 + " · Media " + state.volumeIndex + "/" + state.volumeMax
+                 + (state.profileName.isEmpty() ? "\nSPL-калибровка: нет" : "\nSPL-калибровка: " + state.profileName));
+     }
+ 
++    private void restoreCurrentRouteCalibration() {
++        AudioDeviceInfo device = DeviceDetector.detectOutputDevice(audio);
++        String routeId = DeviceDetector.key(device);
++        if (routeId.equals(restoredRouteId)) return;
++        restoredRouteId = routeId;
++        CalibrationPreferenceState saved = Prefs.calibrationState(getContext());
++        if (saved.matchesRoute(routeId)) {
++            measuredSpl.setProgress(saved.measuredSpl);
++            updateMeasuredLabel(saved.measuredSpl);
++            calibrationStatus.setText("Сохранённая калибровка этого выхода: "
++                    + saved.measuredSpl + " dB SPL");
++        } else {
++            int fallback = CalibrationPreferenceState.EMPTY.measuredSpl;
++            measuredSpl.setProgress(fallback);
++            updateMeasuredLabel(fallback);
++        }
++    }
++
+     void onToneWaitingForEngineStop(ToneController.Kind kind) {
+         ProgressBar p = progressFor(kind);
+         p.setProgress(0);
+diff --git a/app/src/main/java/dev/soundceiling/app/DiagnosticsView.java b/app/src/main/java/dev/soundceiling/app/DiagnosticsView.java
+index 16b82c8..551a409 100644
+--- a/app/src/main/java/dev/soundceiling/app/DiagnosticsView.java
++++ b/app/src/main/java/dev/soundceiling/app/DiagnosticsView.java
+@@ -71,7 +71,7 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
+         summary.setText(String.format(Locale.US,
+                 "Engine: %s\nCapture: %s · signal: %s · PCM: %s\n"
+                         + "Source: %s · package: %s · sourceConfidence: %s · rule: %s\n"
+-                        + "meteringCapability: %s\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
++                        + "meteringCapability: %s\nSpectrum: %s · age %d ms\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
+                         + "Downgrade reason: %s\nRoute: %s · Device profile: %s\n"
+                         + "Media: %d/%d · effective max: %d\n"
+                         + "Raw Peak %.1f dBFS · LUFS-like %.1f · reaction %s\nLog: %s",
+@@ -80,7 +80,8 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
+                 state.sourceLabel.isEmpty() ? "—" : state.sourceLabel,
+                 state.sourcePackage.isEmpty() ? "—" : state.sourcePackage,
+                 state.sourceConfidence, state.appRuleLabel,
+-                state.meteringCapability, state.volumeControlCapability, state.dspTransportCapability,
++                state.meteringCapability, spectrumSource(state), state.meterAgeMs,
++                state.volumeControlCapability, state.dspTransportCapability,
+                 state.downgradeReason.isEmpty() ? "—" : state.downgradeReason,
+                 state.routeLabel.isEmpty() ? "—" : state.routeLabel,
+                 state.profileName.isEmpty() ? "—" : state.profileName,
+@@ -115,6 +116,16 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
+         for (DiagnosticItem item : diagnostics) addItem(item);
+     }
+ 
++    private static String spectrumSource(RuntimeState state) {
++        boolean available = false;
++        for (float value : state.bandLevels()) if (Float.isFinite(value)) { available = true; break; }
++        if (!available) return "unavailable";
++        if (state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT
++                || state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_MIXED) return "PCM";
++        return state.captureStatus == RuntimeState.CaptureStatus.RUNNING
++                ? "Visualizer FFT" : "held last spectrum";
++    }
++
+     private void addItem(DiagnosticItem item) {
+         int color = item.severity == DiagnosticItem.Severity.GREEN ? UiTheme.successText(activity)
+                 : item.severity == DiagnosticItem.Severity.YELLOW ? UiTheme.warningText(activity)
+diff --git a/app/src/main/java/dev/soundceiling/app/EqView.java b/app/src/main/java/dev/soundceiling/app/EqView.java
+index 8aab2c1..9e9b4bb 100644
+--- a/app/src/main/java/dev/soundceiling/app/EqView.java
++++ b/app/src/main/java/dev/soundceiling/app/EqView.java
+@@ -149,7 +149,7 @@ final class EqView extends ScrollView implements RuntimeScreen {
+ 
+     @Override public void render(RuntimeState state) {
+         capability.setText(controller.status());
+-        liveSpectrum.renderBands(state.bandLevels());
++        liveSpectrum.renderState(state);
+     }
+ 
+     private TextView text(String value, float sp, boolean bold) {
+diff --git a/app/src/main/java/dev/soundceiling/app/EqVisualizationMath.java b/app/src/main/java/dev/soundceiling/app/EqVisualizationMath.java
+index 2eded6f..1cb01b0 100644
+--- a/app/src/main/java/dev/soundceiling/app/EqVisualizationMath.java
++++ b/app/src/main/java/dev/soundceiling/app/EqVisualizationMath.java
+@@ -23,6 +23,18 @@ final class EqVisualizationMath {
+         return DbMath.clamp(Math.round(strongest * 100f), 0, 100);
+     }
+ 
++    static float meterLevelFromDb(float db) {
++        if (!Float.isFinite(db)) return 0f;
++        return DbMath.clamp((db + 80f) / 80f, 0f, 1f);
++    }
++
++    static float[] meterLevelsFromDb(float[] db) {
++        if (db == null) return new float[0];
++        float[] out = new float[db.length];
++        for (int i = 0; i < db.length; i++) out[i] = meterLevelFromDb(db[i]);
++        return out;
++    }
++
+     static int[] appliedLevels(int[] configuredLevelsMb, int amountPercent) {
+         if (configuredLevelsMb == null) return new int[0];
+         int amount = DbMath.clamp(amountPercent, 0, 100);
+diff --git a/app/src/main/java/dev/soundceiling/app/FrequencyMeterView.java b/app/src/main/java/dev/soundceiling/app/FrequencyMeterView.java
+index a606f7c..b0d0a15 100644
+--- a/app/src/main/java/dev/soundceiling/app/FrequencyMeterView.java
++++ b/app/src/main/java/dev/soundceiling/app/FrequencyMeterView.java
+@@ -11,14 +11,20 @@ import android.widget.TextView;
+ final class FrequencyMeterView extends LinearLayout {
+     private static final String[] LABELS = {"Бас", "Низкая\nсередина", "Середина", "Высокая\nсередина", "Верх"};
+     private final BandBar[] bars = new BandBar[5];
++    private final TextView status;
+ 
+     FrequencyMeterView(Context context) {
+         super(context);
+-        setOrientation(HORIZONTAL);
+-        setGravity(Gravity.BOTTOM);
++        setOrientation(VERTICAL);
+         setClipChildren(false);
+         setClipToPadding(false);
+         setMinimumHeight(dp(150));
++
++        LinearLayout meterRow = new LinearLayout(context);
++        meterRow.setOrientation(HORIZONTAL);
++        meterRow.setGravity(Gravity.BOTTOM);
++        meterRow.setClipChildren(false);
++        meterRow.setClipToPadding(false);
+         for (int i = 0; i < bars.length; i++) {
+             LinearLayout col = new LinearLayout(context);
+             col.setOrientation(VERTICAL);
+@@ -37,14 +43,45 @@ final class FrequencyMeterView extends LinearLayout {
+             label.setMinLines(2);
+             label.setMaxLines(2);
+             col.addView(label, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+-            LayoutParams lp = new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
+-            addView(col, lp);
++            meterRow.addView(col, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
++        }
++        addView(meterRow, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
++        status = new TextView(context);
++        status.setTextSize(11);
++        status.setTextColor(UiTheme.secondaryText(context));
++        status.setGravity(Gravity.CENTER_HORIZONTAL);
++        status.setPadding(0, dp(3), 0, 0);
++        addView(status, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
++    }
++
++    void renderState(RuntimeState state) {
++        if (state == null) {
++            renderBands(GlobalVisualizerReading.unavailableBands());
++            status.setText("Спектр временно недоступен");
++            return;
++        }
++        float[] levels = state.bandLevels();
++        boolean available = false;
++        for (float value : levels) if (Float.isFinite(value)) { available = true; break; }
++        renderBands(levels);
++        if (!available) {
++            status.setText("Спектр временно недоступен");
++            return;
++        }
++        boolean pcm = state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT
++                || state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_MIXED;
++        if (!pcm && state.captureStatus != RuntimeState.CaptureStatus.RUNNING && state.meterAgeMs > 0L) {
++            status.setText("Последний спектр · удержание " + state.meterAgeMs + " мс");

@@ -21,6 +21,9 @@ final class UiTheme {
     static int surface(Context context) { return isDark(context) ? Color.rgb(29,31,36) : Color.WHITE; }
     static int primaryText(Context context) { return isDark(context) ? Color.WHITE : Color.rgb(25,27,31); }
     static int secondaryText(Context context) { return isDark(context) ? Color.rgb(185,190,203) : Color.rgb(82,87,98); }
+    static int meterTrack(Context context) { return isDark(context) ? Color.rgb(48,52,60) : Color.rgb(226,229,235); }
+    static int meterFill(Context context) { return isDark(context) ? Color.rgb(112,178,146) : Color.rgb(91,143,119); }
+    static int meterGrid(Context context) { return isDark(context) ? Color.rgb(83,88,99) : Color.rgb(198,203,212); }
 
     static int successSurface(Context context) {
         return isDark(context) ? Color.rgb(24,64,42) : Color.rgb(225,246,233);

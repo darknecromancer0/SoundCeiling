@@ -7,6 +7,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DbMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/GainPlanner.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LoudnessTracker.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AsymmetricLoudnessEnvelope.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LoudnessMeter.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizationPreset.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlDefaults.java" \
@@ -17,17 +18,35 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/OutputDevicePriority.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeCurveMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlVolumeCurve.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/CaptureReferenceEstimator.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/OutputGainPlanner.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ControlCommand.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteOrigin.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/StableOutputController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ComfortScale.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/TargetScale.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/OutputCeilingState.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/OutputCeilingScale.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/SimpleModeModel.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/V071SettingsMigration.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/MediaLevelScale.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ControlScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SpeedPreset.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AudibleFloorPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlDecision.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DecisionEngine.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ToneSamples.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/FrequencyBandTracker.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/VisualizerFftBands.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/GlobalVisualizerReading.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/CalibrationPreferenceState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/RuntimeState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/StatusText.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/HelpText.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFormatter.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFilePolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/LogSessionIndexModel.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DiagnosticItem.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AnomalyDetector.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DecisionRingBuffer.java" \
@@ -37,6 +56,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SafetyGuard.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ManualSafetyController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ManualThresholdFollower.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AdaptiveVolumeEnvelope.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/UnexpectedZeroPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PeakSafetyDetector.java" \
@@ -45,8 +65,21 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/QuietNowPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CalibrationToneStateMachine.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EqLinkMath.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/EqVisualizationMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EngineCapabilities.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackEndpoint.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspEndpointHandle.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspScope.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspApplyResult.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspTransport.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/UnsupportedDspTransport.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspPolicyArbiter.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspProbeMath.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspGainSlew.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackSnapshot.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PcmCaptureRequest.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/CaptureRequestCoordinator.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackEndpointResolver.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceDescriptor.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceSet.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmAvailabilityState.java" \
@@ -68,6 +101,18 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/MultiSourceResolver.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PolicyResolver.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/HybridEngineCoordinator.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DirectionDwellGate.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ProgramActivityGate.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071TraceRegressionPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071RouteCurvePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071CaptureReferencePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071LinkedLockPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071NormalizationCorePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071CoordinatorPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071DspPolicyPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071CaptureCoordinatorPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071SimpleModePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071VisualizerPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -80,7 +125,25 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/tests/EqLinkPureTest.java" \
  "$ROOT/tests/V060OneWayPureTest.java" \
  "$ROOT/tests/V060FastLoudnessPureTest.java" \
- "$ROOT/tests/V060RuntimeStatePureTest.java"
+ "$ROOT/tests/V060RuntimeStatePureTest.java" \
+ "$ROOT/tests/V070AdaptiveEnvelopePureTest.java" \
+ "$ROOT/tests/V070RuntimeTelemetryPureTest.java" \
+ "$ROOT/tests/V070VolumeProvenancePureTest.java" \
+ "$ROOT/tests/V070CalibrationSafetyPureTest.java" \
+ "$ROOT/tests/V070TargetScalePureTest.java" \
+ "$ROOT/tests/V070HelpTextPureTest.java" \
+ "$ROOT/tests/V070StatusModePureTest.java" \
+ "$ROOT/tests/V070EqVisualizationPureTest.java" \
+ "$ROOT/tests/V070MediaLevelScalePureTest.java" \
+ "$ROOT/tests/V070RecoveryHelpPureTest.java" \
+ "$ROOT/tests/V070DbControlPureTest.java" \
+ "$ROOT/tests/V070CeilingBasisHelpPureTest.java" \
+ "$ROOT/tests/V070TransientFieldRegressionPureTest.java" \
+ "$ROOT/tests/V070LegacyLimiterSemanticsPureTest.java" \
+ "$ROOT/tests/V070TransientRecoveryPureTest.java" \
+ "$ROOT/tests/V070TransientPureTest.java" \
+ "$ROOT/tests/V070LogIndexPureTest.java" \
+ "$ROOT/tests/V070ControlScalePureTest.java"
 java -cp "$OUT" dev.soundceiling.app.PureLogicTest
 java -cp "$OUT" dev.soundceiling.app.DiagnosticsPureTest
 java -cp "$OUT" dev.soundceiling.app.LoudnessPolicyPeakThresholdTest
@@ -94,3 +157,32 @@ java -cp "$OUT" dev.soundceiling.app.EqLinkPureTest
 java -cp "$OUT" dev.soundceiling.app.V060OneWayPureTest
 java -cp "$OUT" dev.soundceiling.app.V060FastLoudnessPureTest
 java -cp "$OUT" dev.soundceiling.app.V060RuntimeStatePureTest
+java -cp "$OUT" dev.soundceiling.app.V070AdaptiveEnvelopePureTest
+java -cp "$OUT" dev.soundceiling.app.V070RuntimeTelemetryPureTest
+java -cp "$OUT" dev.soundceiling.app.V070VolumeProvenancePureTest
+java -cp "$OUT" dev.soundceiling.app.V070CalibrationSafetyPureTest
+java -cp "$OUT" dev.soundceiling.app.V070TargetScalePureTest
+java -cp "$OUT" dev.soundceiling.app.V070HelpTextPureTest
+java -cp "$OUT" dev.soundceiling.app.V070StatusModePureTest
+java -cp "$OUT" dev.soundceiling.app.V070EqVisualizationPureTest
+java -cp "$OUT" dev.soundceiling.app.V070MediaLevelScalePureTest
+java -cp "$OUT" dev.soundceiling.app.V070RecoveryHelpPureTest
+java -cp "$OUT" dev.soundceiling.app.V070DbControlPureTest
+java -cp "$OUT" dev.soundceiling.app.V070CeilingBasisHelpPureTest
+java -cp "$OUT" dev.soundceiling.app.V070TransientFieldRegressionPureTest
+java -cp "$OUT" dev.soundceiling.app.V070LegacyLimiterSemanticsPureTest
+java -cp "$OUT" dev.soundceiling.app.V070TransientRecoveryPureTest
+java -cp "$OUT" dev.soundceiling.app.V070TransientPureTest
+
+java -cp "$OUT" dev.soundceiling.app.V070LogIndexPureTest
+java -cp "$OUT" dev.soundceiling.app.V070ControlScalePureTest
+java -cp "$OUT" dev.soundceiling.app.V071TraceRegressionPureTest
+java -cp "$OUT" dev.soundceiling.app.V071RouteCurvePureTest
+java -cp "$OUT" dev.soundceiling.app.V071CaptureReferencePureTest
+java -cp "$OUT" dev.soundceiling.app.V071LinkedLockPureTest
+java -cp "$OUT" dev.soundceiling.app.V071NormalizationCorePureTest
+java -cp "$OUT" dev.soundceiling.app.V071CoordinatorPureTest
+java -cp "$OUT" dev.soundceiling.app.V071DspPolicyPureTest
+java -cp "$OUT" dev.soundceiling.app.V071CaptureCoordinatorPureTest
+java -cp "$OUT" dev.soundceiling.app.V071SimpleModePureTest
+java -cp "$OUT" dev.soundceiling.app.V071VisualizerPureTest

@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PKG="$ROOT/app/src/main/java/dev/soundceiling/app"
+require(){ local file="$1"; local needle="$2"; [[ -f "$file" ]] || { echo "Missing v0.7 file: $(basename "$file")" >&2; exit 1; }; grep -Fq -- "$needle" "$file" || { echo "Missing v0.7 contract: $(basename "$file") -> $needle" >&2; exit 1; }; }
+reject(){ local file="$1"; local needle="$2"; if [[ -f "$file" ]] && grep -Fq -- "$needle" "$file"; then echo "Forbidden v0.7 pattern: $(basename "$file") -> $needle" >&2; exit 1; fi; }
+
+# Tasks 1-3: user-authority envelope plus explicit bounded recovery.
+require "$PKG/AdaptiveVolumeEnvelope.java" 'class AdaptiveVolumeEnvelope'
+require "$PKG/AdaptiveVolumeEnvelope.java" 'userCeilingIndex'
+require "$PKG/AdaptiveVolumeEnvelope.java" 'recoverableCeilingIndex'
+require "$PKG/LoudnessControlPolicy.java" 'recoveryCeilingIndex'
+require "$PKG/LoudnessControlPolicy.java" 'loudness_recover_up'
+require "$PKG/VolumeWriteTracker.java" 'NORMALIZER_UP'
+require "$PKG/SafetyGuard.java" 'clampRecovery'
+require "$PKG/SafeVolumeController.java" 'applyRecovery'
+require "$PKG/HybridEngineCoordinator.java" 'adaptive_recovery'
+
+# Recovery must remain isolated from ordinary downward/emergency/Quiet Now writes.
+require "$PKG/SafeVolumeController.java" 'SafetyGuard.clampAutomatic'
+require "$PKG/SafeVolumeController.java" 'SafetyGuard.clampRecovery'
+require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
+
+# Task 4 compatibility: the adaptive envelope remains pure compatibility/recovery logic. Approved
+# v0.7.1 design §§7-9 moves live Samsung user authority to NormalizerControlCoordinator, so the
+# service must not run a second envelope authority model.
+require "$PKG/RuntimeState.java" 'RECOVERING'
+require "$PKG/RuntimeState.java" 'userCeilingIndex'
+require "$PKG/RuntimeState.java" 'automaticAttenuationDb'
+require "$PKG/NormalizerService.java" 'safeVolume.applyRecovery'
+require "$PKG/NormalizerService.java" 'RuntimeState.ControlActivity.RECOVERING'
+require "$PKG/NormalizerService.java" '.envelope('
+
+# Task 5.1: one coordinator owns every regular control tick. Approved v0.7.1 design §§7-9:
+# app-origin writes are actuator effects, not user-ceiling authority; hard safety remains immediate.
+require "$PKG/NormalizerControlCoordinator.java" 'effectivePolicy('
+require "$PKG/NormalizerControlCoordinator.java" 'sourceEvidence('
+require "$PKG/NormalizerControlCoordinator.java" 'playbackEndpoints('
+require "$PKG/NormalizerControlCoordinator.java" 'ControlCommand.Kind actuator()'
+require "$PKG/NormalizerControlCoordinator.java" 'TransientGuard transientGuard'
+require "$PKG/NormalizerControlCoordinator.java" 'transientGuard.onPlaybackState'
+require "$PKG/NormalizerControlCoordinator.java" 'OutputGainPlanner.plan('
+require "$PKG/NormalizerControlCoordinator.java" 'calibrationProfileValid'
+require "$PKG/NormalizerControlCoordinator.java" '&& frame.calibrationProfileValid'
+require "$PKG/NormalizerControlCoordinator.java" 'missing_spl_profile'
+require "$PKG/ControlCommand.java" 'enum Provenance'
+# Superseded by approved v0.7.1 Task 7: DSP transport slew receives explicit hard-safety provenance.
+require "$PKG/NormalizerService.java" 'optionalDsp.applyGain('
+require "$PKG/NormalizerService.java" 'command.requestedGainDb(), isSafetyCommand(command))'
+require "$PKG/NormalizerService.java" 'hardMediaCeilingIndex'
+require "$PKG/NormalizerService.java" '.playbackEndpoints('
+require "$PKG/NormalizerService.java" '.transientConfig('
+require "$PKG/NormalizerService.java" '.transientSignal('
+require "$PKG/NormalizerService.java" '.calibrationProfileValid(!Prefs.splMode(this) || currentProfile != null)'
+require "$PKG/NormalizerService.java" 'switch (command.provenance())'
+reject "$PKG/NormalizerService.java" 'safeVolume.enforceHardMax'
+reject "$PKG/NormalizerService.java" 'volumeEnvelope.onUserChange'
+reject "$PKG/NormalizerService.java" 'volumeEnvelope.onDeliberateLowering'
+reject "$PKG/NormalizerService.java" 'volumeEnvelope.onAppWriteAck'
+reject "$PKG/NormalizerService.java" 'decisionReason().startsWith'
+reject "$PKG/NormalizerService.java" 'command.reason().contains'
+reject "$PKG/NormalizerService.java" 'command.reason().startsWith'
+reject "$PKG/NormalizerService.java" 'command.reason().equals'
+
+# Task 5: calibration is volume/route-stable and may not silently leave protection off.
+require "$PKG/CalibrationToneStateMachine.java" 'armEnvironment'
+require "$PKG/CalibrationToneStateMachine.java" 'validateEnvironment'
+require "$PKG/CalibrationToneStateMachine.java" 'consumeProtectionRestore'
+require "$PKG/CalibrationToneStateMachine.java" 'media_changed'
+require "$PKG/CalibrationToneStateMachine.java" 'route_changed'
+require "$PKG/MainActivity.java" 'toneStateMachine.armEnvironment'
+require "$PKG/MainActivity.java" 'validateToneEnvironment'
+require "$PKG/MainActivity.java" 'tone_protection_restore'
+require "$PKG/MainActivity.java" 'NormalizerService.EXTRA_FAST_ONLY'
+require "$PKG/CalibrationView.java" '-12 dBFS задаёт только цифровой уровень тестового сигнала'
+require "$PKG/CalibrationView.java" 'не гарантирует безопасную акустическую громкость'
+require "$PKG/CalibrationView.java" 'SoundCeiling отслеживает оба параметра и отменяет тест при изменении'
+reject "$PKG/CalibrationView.java" 'Безопасный тест: 1 кГц · -12 dBFS'
+
+# Task 6 compatibility: TargetScale remains canonical for Advanced. v0.7.1 Task 9 promotes
+# shared Minimum/Maximum Output Ceiling controls in Simple instead of duplicating the old Target slider.
+require "$PKG/TargetScale.java" 'final class TargetScale'
+require "$PKG/SimpleModeModel.java" 'OutputCeilingScale.percentForDb'
+reject "$PKG/SimpleModeView.java" 'private static float loudnessForPercent'
+reject "$PKG/SimpleModeView.java" 'private static int percentForLoudness'
+require "$PKG/AdvancedModeView.java" 'targetLoudness = addSlider("Target", HelpText.TARGET_LOUDNESS, 0, 100,'
+require "$PKG/AdvancedModeView.java" 'TargetScale.percentForLoudness(Prefs.targetLoudness(context))'
+require "$PKG/AdvancedModeView.java" 'TargetScale.loudnessForPercent(p)'
+reject "$PKG/AdvancedModeView.java" 'Math.round(Prefs.targetLoudness(context) + 30f)'
+reject "$PKG/AdvancedModeView.java" '-30f + p'
+
+# Task 7: every Advanced help button must explain the control it is attached to.
+require "$PKG/AdvancedModeView.java" 'quietIndex = addSlider("Quiet Now level", HelpText.QUIET_LEVEL'
+require "$PKG/AdvancedModeView.java" 'maxDownSteps = addSlider("Max down steps", HelpText.MAX_DOWN_STEPS'
+reject "$PKG/AdvancedModeView.java" 'quietIndex = addSlider("Quiet Now level", HelpText.MIN_MEDIA'
+reject "$PKG/AdvancedModeView.java" 'maxDownSteps = addSlider("Max down steps", HelpText.DOWN_ATTACK'
+
+# Task 8a: canonical v0.7 policy vocabulary is bounded recovery. Legacy downwardOnly data may
+# remain readable for storage compatibility, but it may not revoke repayment of app-owned debt.
+require "$PKG/EffectivePolicy.java" 'allowBoundedRecovery'
+require "$PKG/EffectivePolicy.java" 'downwardOnly'
+require "$PKG/EffectivePolicy.java" 'recoveryBlockReason'
+require "$PKG/EffectivePolicy.java" 'Temporary source aliases for v0.5/v0.6 callers.'
+require "$PKG/AppPolicy.java" 'allowsBoundedRecovery()'
+require "$PKG/AppPolicy.java" 'return mode != AppRule.Mode.OFF;'
+require "$PKG/AppPolicy.java" 'downwardOnly'
+require "$PKG/MultiSourceResolver.java" 'downwardOnly'
+reject "$PKG/MultiSourceResolver.java" 'limiterOnly'
+require "$PKG/PolicyResolver.java" 'allowBoundedRecovery'
+require "$PKG/PolicyResolver.java" 'recoveryBlockReason'
+require "$PKG/PolicyResolver.java" 'downwardOnly'
+reject "$PKG/PolicyResolver.java" 'allowRaise'
+reject "$PKG/PolicyResolver.java" 'String blockReason'
+require "$PKG/HybridEngineCoordinator.java" 'recoveryBlocked'
+require "$PKG/HybridEngineCoordinator.java" 'policy.recoveryBlockReason'
+require "$PKG/HybridEngineCoordinator.java" 'recoveryAllowed && !manualPause && recoveryCeiling > current'
+reject "$PKG/HybridEngineCoordinator.java" '!policy.downwardOnly'
+reject "$PKG/AppPolicyEditorView.java" 'private final CheckBox downwardOnly'
+reject "$PKG/AppPolicyEditorView.java" 'Только снижение · не восстанавливать собственное снижение автоматически'
+reject "$PKG/AppPolicyEditorView.java" 'Limiter only · никогда не повышать автоматически'
+# Keep the legacy JSON key so saved app policies remain readable across the migration.
+require "$PKG/AppPolicyStore.java" '"limiterOnly"'
+require "$PKG/AppPolicyStore.java" 'p.downwardOnly'
+
+# v0.7.1 Task 9 supersedes the old Simple intro with shared Global DSP + Linked Lock copy.
+require "$PKG/SimpleModeView.java" 'Global DSP управляет способом обработки'
+require "$PKG/SimpleModeView.java" 'Default Linked Lock'
+reject "$PKG/SimpleModeView.java" 'Один one-way движок'
+reject "$PKG/SimpleModeView.java" 'normalizeLabel.setText("Normalization: " + percent + "% · " + word + " · только вниз")'
+require "$PKG/AdvancedModeView.java" 'Восстановление возвращает только ранее сделанное SoundCeiling снижение'
+require "$PKG/AdvancedModeView.java" 'section("Динамика нормализации")'
+reject "$PKG/AdvancedModeView.java" 'section("Поведение · только снижение")'
+require "$PKG/AdvancedModeView.java" 'Без неё обычная защита и нормализация продолжают работать'
+reject "$PKG/AdvancedModeView.java" 'Без неё обычный PCM, Peak, LUFS-like, Ceiling и нормализация работают нормально.'
+
+# Task 10: theme-aware spectrum and EQ visualization must be readable and unclipped.
+require "$PKG/UiTheme.java" 'meterTrack(Context context)'
+require "$PKG/UiTheme.java" 'meterFill(Context context)'
+require "$PKG/UiTheme.java" 'meterGrid(Context context)'
+require "$PKG/FrequencyMeterView.java" 'UiTheme.meterTrack(getContext())'
+require "$PKG/FrequencyMeterView.java" 'UiTheme.meterFill(getContext())'
+require "$PKG/FrequencyMeterView.java" 'UiTheme.secondaryText(context)'
+require "$PKG/FrequencyMeterView.java" 'setClipChildren(false)'
+require "$PKG/FrequencyMeterView.java" 'setClipToPadding(false)'
+require "$PKG/FrequencyMeterView.java" 'setMinimumHeight(dp(150))'
+require "$PKG/FrequencyMeterView.java" 'new LinearLayout.LayoutParams(dp(24), dp(96))'
+require "$PKG/FrequencyMeterView.java" 'label.setIncludeFontPadding(true)'
+reject "$PKG/FrequencyMeterView.java" 'Color.LTGRAY'
+reject "$PKG/FrequencyMeterView.java" 'Color.rgb(54, 58, 66)'
+require "$PKG/EqVisualizationMath.java" 'final class EqVisualizationMath'
+require "$PKG/EqResponseView.java" 'final class EqResponseView'
+require "$PKG/EqResponseView.java" 'EqVisualizationMath.normalizedLevel'
+require "$PKG/EqView.java" 'private final FrequencyMeterView liveSpectrum'
+require "$PKG/EqView.java" 'private final EqResponseView responseView'
+require "$PKG/EqView.java" 'Живой спектр'
+require "$PKG/EqView.java" 'EQ Amount / Сила EQ'
+require "$PKG/EqView.java" 'liveSpectrum.renderBands(state.bandLevels())'
+require "$PKG/EqView.java" 'updateEqVisualization()'
+require "$PKG/EqSettings.java" 'amountPercent'
+require "$PKG/EqSettings.java" 'p.getInt(AMOUNT, 100)'
+require "$PKG/EqSettings.java" 'withAmount(int value)'
+require "$PKG/EqVisualizationMath.java" 'appliedLevels(int[] configuredLevelsMb, int amountPercent)'
+require "$PKG/EqController.java" 'EqVisualizationMath.appliedLevels('
+require "$PKG/EqController.java" 'settings.amountPercent'
+require "$PKG/EqController.java" 'Verified DSP transport: unavailable'
+require "$PKG/EqView.java" 'EQ Amount / Сила EQ'
+require "$PKG/EqView.java" 'settings.withAmount(progress)'
+require "$PKG/EqView.java" 'responseView.setLevels(settings.levelsMb, settings.amountPercent'
+require "$PKG/EqResponseView.java" 'int amountPercent'
+reject "$PKG/EqView.java" 'EqVisualizationMath.strengthPercent(settings.levelsMb'
+
+# Task 11: user-facing Media bounds are percent sliders; dB SPL is an alternate calibrated ceiling basis.
+require "$PKG/MediaLevelScale.java" 'indexForPercent'
+require "$PKG/MediaLevelScale.java" 'percentForIndex(int index, int minIndex, int maxIndex)'
+# v0.7.1 Simple uses shared dB output ceilings plus a percent Safety Maximum.
+require "$PKG/SimpleModeView.java" 'lowerSeek = addCeilingSeek()'
+require "$PKG/SimpleModeView.java" 'upperSeek = addCeilingSeek()'
+require "$PKG/SimpleModeView.java" 'safetySeek.setMin(1); safetySeek.setMax(100)'
+require "$PKG/SimpleModeView.java" 'MediaLevelScale.indexForPercent'
+require "$PKG/SimpleModeModel.java" 'OutputCeilingScale.displayForPercent'
+require "$PKG/AdvancedModeView.java" 'section("Шкала управления")'
+require "$PKG/AdvancedModeView.java" 'HelpText.CEILING_BASIS'
+require "$PKG/AdvancedModeView.java" 'addControlScale("Media %", ControlScale.MEDIA_PERCENT)'
+require "$PKG/AdvancedModeView.java" 'addControlScale("Digital dB", ControlScale.DIGITAL_DB)'
+require "$PKG/AdvancedModeView.java" 'addControlScale("Calibrated dB SPL", ControlScale.CALIBRATED_SPL)'
+require "$PKG/Prefs.java" 'CONTROL_SCALE'
+require "$PKG/AdvancedModeView.java" 'MediaLevelScale.indexForPercent'
+require "$PKG/AdvancedModeView.java" 'MediaLevelScale.percentForIndex'
+require "$PKG/AdvancedModeView.java" 'Prefs.SPL_MODE'
+reject "$PKG/AdvancedModeView.java" 'Использовать калиброванный dB SPL'
+# Approved v0.7.1 design §§7-9 makes the coordinator the final actuator authority. The legacy SPL
+# and HybridEngineCoordinator paths stay available as pure compatibility helpers, not live writers.
+require "$PKG/NormalizerService.java" 'controlCoordinator.onFrame(controlFrame('
+reject "$PKG/NormalizerService.java" 'HybridEngineCoordinator.plan('
+
+# Durable log index: successfully created parts remain visible even when later discovery is empty.
+require "$PKG/LogSessionIndexModel.java" 'class LogSessionIndexModel'
+require "$PKG/LogSessionIndex.java" 'class LogSessionIndex'
+require "$PKG/SessionLogger.java" 'LogSessionIndex.recordPart'
+require "$PKG/LogStorage.java" 'LogSessionIndex.records(context)'
+require "$PKG/LogStorage.java" 'LogSessionIndexModel.reconcile'
+require "$PKG/LogAccess.java" 'LogSessionIndex.removeUri'
+
+echo "v0.7 adaptive runtime checkpoint: PASS"

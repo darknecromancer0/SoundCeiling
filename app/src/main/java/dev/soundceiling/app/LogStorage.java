@@ -105,16 +105,34 @@ final class LogStorage {
     }
 
     static List<Session> listSessions(Context context) {
-        List<Item> items = listItems(context);
-        java.util.LinkedHashMap<String, List<Item>> grouped = new java.util.LinkedHashMap<>();
-        items.sort(Comparator.comparing((Item i) -> i.name));
-        for (Item item : items) {
+        List<LogSessionIndexModel.Part> indexed = LogSessionIndex.records(context);
+        List<Item> discoveredItems = listItems(context);
+        ArrayList<LogSessionIndexModel.Part> discovered = new ArrayList<>();
+        LogSessionIndexModel.LocationKind kind = isCustom(context)
+                ? LogSessionIndexModel.LocationKind.SAF_TREE
+                : LogSessionIndexModel.LocationKind.DEFAULT_MEDIASTORE;
+        for (Item item : discoveredItems) {
             String id = LogFilePolicy.sessionId(item.name);
-            if (id.isEmpty()) continue;
-            grouped.computeIfAbsent(id, k -> new ArrayList<>()).add(item);
+            if (id.isEmpty() || item.uri == null) continue;
+            LogSessionIndexModel.Part part = new LogSessionIndexModel.Part(id, item.name,
+                    item.uri.toString(), item.modified, item.bytes, kind);
+            discovered.add(part);
+            LogSessionIndex.recordDiscovered(context, part);
         }
+
+        List<LogSessionIndexModel.Part> merged = LogSessionIndexModel.reconcile(indexed, discovered);
+        List<LogSessionIndexModel.Session> logical = LogSessionIndexModel.sessions(merged);
         ArrayList<Session> sessions = new ArrayList<>();
-        for (java.util.Map.Entry<String, List<Item>> e : grouped.entrySet()) sessions.add(new Session(e.getKey(), e.getValue()));
+        for (LogSessionIndexModel.Session source : logical) {
+            ArrayList<Item> parts = new ArrayList<>();
+            for (LogSessionIndexModel.Part part : source.parts) {
+                Uri uri;
+                try { uri = Uri.parse(part.uri); }
+                catch (RuntimeException error) { continue; }
+                parts.add(new Item(part.displayName, part.bytes, part.modifiedAtMs, uri));
+            }
+            if (!parts.isEmpty()) sessions.add(new Session(source.id, parts));
+        }
         sessions.sort((a, b) -> Long.compare(b.modified, a.modified));
         return sessions;
     }
@@ -135,8 +153,11 @@ final class LogStorage {
 
     static boolean delete(Context context, Uri uri) {
         if (uri == null) return false;
-        try { return context.getContentResolver().delete(uri, null, null) > 0; }
-        catch (RuntimeException e) { return false; }
+        try {
+            boolean deleted = context.getContentResolver().delete(uri, null, null) > 0;
+            if (deleted) LogSessionIndex.removeUri(context, uri);
+            return deleted;
+        } catch (RuntimeException e) { return false; }
     }
 
     private static String treeUri(Context context) {

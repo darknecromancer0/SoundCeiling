@@ -2,7 +2,6 @@ package dev.soundceiling.app;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.view.Gravity;
 import android.view.View;
@@ -17,19 +16,26 @@ final class FrequencyMeterView extends LinearLayout {
         super(context);
         setOrientation(HORIZONTAL);
         setGravity(Gravity.BOTTOM);
+        setClipChildren(false);
+        setClipToPadding(false);
+        setMinimumHeight(dp(150));
         for (int i = 0; i < bars.length; i++) {
             LinearLayout col = new LinearLayout(context);
             col.setOrientation(VERTICAL);
             col.setGravity(Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM);
+            col.setClipChildren(false);
             BandBar bar = new BandBar(context);
             bars[i] = bar;
-            col.addView(bar, new LinearLayout.LayoutParams(dp(24), dp(110)));
+            col.addView(bar, new LinearLayout.LayoutParams(dp(24), dp(96)));
             TextView label = new TextView(context);
             label.setText(LABELS[i]);
-            label.setTextColor(Color.LTGRAY);
+            label.setTextColor(UiTheme.secondaryText(context));
             label.setTextSize(10);
             label.setGravity(Gravity.CENTER);
+            label.setIncludeFontPadding(true);
+            label.setPadding(dp(1), dp(2), dp(1), dp(4));
             label.setMinLines(2);
+            label.setMaxLines(2);
             col.addView(label, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
             LayoutParams lp = new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
             addView(col, lp);
@@ -60,9 +66,9 @@ final class FrequencyMeterView extends LinearLayout {
 
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            paint.setColor(Color.rgb(54, 58, 66));
+            paint.setColor(UiTheme.meterTrack(getContext()));
             canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
-            paint.setColor(Color.rgb(120, 205, 164));
+            paint.setColor(UiTheme.meterFill(getContext()));
             float top = getHeight() * (1f - level);
             canvas.drawRect(0, top, getWidth(), getHeight(), paint);
         }

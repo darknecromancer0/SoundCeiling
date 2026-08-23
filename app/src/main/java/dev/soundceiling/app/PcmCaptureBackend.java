@@ -11,15 +11,24 @@ import android.os.SystemClock;
 final class PcmCaptureBackend implements AutoCloseable {
     static final int SAMPLE_RATE = 48_000;
     static final int CHANNELS = 2;
+    private static final long TARGET_WARMUP_TIMEOUT_MS = 1_500L;
+    private static final int TARGET_CONFIRM_BLOCKS = 3;
+    private static final int TARGET_SIGNAL_ABS_THRESHOLD = 42; // ~ -58 dBFS PCM16 peak.
+
+    enum TargetWarmupStatus { NOT_TARGETED, PENDING, CONFIRMED, FAILED }
 
     private final AudioRecord record;
     private final PcmCaptureRequest request;
+    private final long openedElapsedMs;
     private volatile long lastSampleElapsedMs;
     private volatile boolean closed;
+    private volatile int consecutiveTargetSignalBlocks;
+    private volatile boolean targetConfirmed;
 
     private PcmCaptureBackend(AudioRecord record, PcmCaptureRequest request) {
         this.record = record;
         this.request = request;
+        this.openedElapsedMs = SystemClock.elapsedRealtime();
     }
 
     static PcmCaptureBackend open(MediaProjection projection, PcmCaptureRequest request) {
@@ -64,8 +73,36 @@ final class PcmCaptureBackend implements AutoCloseable {
     int read(short[] buffer) {
         if (closed || buffer == null || buffer.length == 0) return AudioRecord.ERROR_BAD_VALUE;
         int read = record.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
-        if (read > 0) lastSampleElapsedMs = SystemClock.elapsedRealtime();
+        if (read > 0) {
+            long now = SystemClock.elapsedRealtime();
+            lastSampleElapsedMs = now;
+            observeTargetWarmup(buffer, read);
+        }
         return read;
+    }
+
+    private void observeTargetWarmup(short[] buffer, int count) {
+        if (!request.targeted() || targetConfirmed || count <= 0) return;
+        int peak = 0;
+        for (int i = 0; i < count; i++) {
+            peak = Math.max(peak, Math.abs((int) buffer[i]));
+        }
+        if (peak >= TARGET_SIGNAL_ABS_THRESHOLD) {
+            consecutiveTargetSignalBlocks++;
+            if (consecutiveTargetSignalBlocks >= TARGET_CONFIRM_BLOCKS) targetConfirmed = true;
+        } else {
+            consecutiveTargetSignalBlocks = 0;
+        }
+    }
+
+    TargetWarmupStatus targetWarmupStatus(long nowElapsedMs) {
+        if (!request.targeted()) return TargetWarmupStatus.NOT_TARGETED;
+        if (targetConfirmed) return TargetWarmupStatus.CONFIRMED;
+        if (nowElapsedMs >= openedElapsedMs
+                && nowElapsedMs - openedElapsedMs >= TARGET_WARMUP_TIMEOUT_MS) {
+            return TargetWarmupStatus.FAILED;
+        }
+        return TargetWarmupStatus.PENDING;
     }
 
     boolean healthy() {
@@ -79,6 +116,10 @@ final class PcmCaptureBackend implements AutoCloseable {
 
     int targetUid() {
         return request.targetUid;
+    }
+
+    PcmCaptureRequest request() {
+        return request;
     }
 
     long lastSampleElapsedMs() {

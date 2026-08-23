@@ -1,7 +1,10 @@
 package dev.soundceiling.app;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Typeface;
+import android.provider.Settings;
+import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -14,6 +17,7 @@ import java.util.Locale;
 final class DiagnosticsView extends ScrollView implements RuntimeScreen {
     private final Activity activity;
     private final TextView summary;
+    private final Button sourceAccess;
     private final LinearLayout items;
 
     DiagnosticsView(Activity activity) {
@@ -36,6 +40,17 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
         summary = text("", 14, UiTheme.primaryText(activity));
         summary.setPadding(0, dp(14), 0, dp(12));
         root.addView(summary);
+
+        sourceAccess = new Button(activity);
+        sourceAccess.setAllCaps(false);
+        sourceAccess.setText("Открыть доступ к активным медиасеансам");
+        sourceAccess.setVisibility(View.GONE);
+        sourceAccess.setOnClickListener(v -> {
+            try {
+                this.activity.startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+            } catch (RuntimeException ignored) {}
+        });
+        root.addView(sourceAccess, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50)));
 
         items = new LinearLayout(activity);
         items.setOrientation(LinearLayout.VERTICAL);
@@ -73,6 +88,9 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 state.rawPeakDbfs, state.sourceLoudness,
                 state.lastReactionLatencyMs >= 0 ? state.lastReactionLatencyMs + " ms" : "—",
                 state.logStatus.isEmpty() ? "not active" : state.logStatus));
+        sourceAccess.setVisibility(
+                "Не подтверждён: нет доступа к активным медиасеансам".equals(state.sourceLabel)
+                        ? View.VISIBLE : View.GONE);
 
         DiagnosticItem[] published = state.diagnostics();
         List<DiagnosticItem> diagnostics;
