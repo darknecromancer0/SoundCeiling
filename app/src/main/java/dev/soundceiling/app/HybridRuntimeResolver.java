@@ -8,11 +8,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Android evidence collector + pure policy bridge. It never writes any volume. */
+/** Android evidence collector + pure policy/capture bridge. It never writes any volume. */
 final class HybridRuntimeResolver implements AutoCloseable {
+    private static final long CAPTURE_SOURCE_COALESCE_MS = 250L;
+
     static final class Snapshot {
         final PlaybackSnapshot playback;
+        final List<PlaybackEndpoint> playbackEndpoints;
         final SourceSet sources;
         final PcmAvailabilityState pcmState;
         final EngineCapabilities capabilities;
@@ -20,11 +24,15 @@ final class HybridRuntimeResolver implements AutoCloseable {
         final SourceDescriptor exactSource;
         final AppPolicy exactAppPolicy;
         final long sourceChangedAtMs;
+        final String sourceStatusLabel;
 
-        Snapshot(PlaybackSnapshot playback, SourceSet sources, PcmAvailabilityState pcmState,
+        Snapshot(PlaybackSnapshot playback, List<PlaybackEndpoint> playbackEndpoints,
+                 SourceSet sources, PcmAvailabilityState pcmState,
                  EngineCapabilities capabilities, EffectivePolicy policy,
-                 SourceDescriptor exactSource, AppPolicy exactAppPolicy, long sourceChangedAtMs) {
+                 SourceDescriptor exactSource, AppPolicy exactAppPolicy, long sourceChangedAtMs,
+                 String sourceStatusLabel) {
             this.playback = playback;
+            this.playbackEndpoints = Collections.unmodifiableList(new ArrayList<>(playbackEndpoints));
             this.sources = sources;
             this.pcmState = pcmState;
             this.capabilities = capabilities;
@@ -32,49 +40,82 @@ final class HybridRuntimeResolver implements AutoCloseable {
             this.exactSource = exactSource;
             this.exactAppPolicy = exactAppPolicy;
             this.sourceChangedAtMs = sourceChangedAtMs;
+            this.sourceStatusLabel = sourceStatusLabel == null ? "" : sourceStatusLabel;
         }
     }
 
     private final Context context;
     private final PlaybackObserver observer;
     private final MediaSessionEvidenceProvider sessions;
+    private final AtomicBoolean captureReconcileRequested = new AtomicBoolean(true);
     private long epoch = 1L;
     private long sourceChangedAtMs;
     private String sourceSignature = "";
-    private SourceDescriptor captureTarget;
+    private CaptureRequestCoordinator captureCoordinator =
+            new CaptureRequestCoordinator(CAPTURE_SOURCE_COALESCE_MS);
     private List<PlaybackEvidence> candidateEvidence = Collections.emptyList();
 
     HybridRuntimeResolver(Context context, AudioManager audio) {
         this.context = context.getApplicationContext();
-        this.observer = new PlaybackObserver(audio);
-        this.sessions = new MediaSessionEvidenceProvider(context);
+        this.observer = new PlaybackObserver(audio, this::requestCaptureReconcile);
+        this.sessions = new MediaSessionEvidenceProvider(context, this::requestCaptureReconcile);
     }
 
     boolean start() {
-        return observer.start();
+        boolean observerReady = observer.start();
+        sessions.start();
+        refreshCandidates(SystemClock.elapsedRealtime());
+        return observerReady;
     }
 
+    /** Start conservative. Live reconciliation may promote mixed capture after 250 ms of stability. */
     PcmCaptureRequest prepareCaptureRequest() {
-        refreshCandidates();
-        SourceSet candidates = SourceResolver.resolve(candidateEvidence, epoch);
-        if (candidates.sources().size() == 1
-                && candidates.confidence == EngineCapabilities.SourceIdentityConfidence.LIKELY) {
-            captureTarget = candidates.sources().get(0);
-            return PcmCaptureRequest.targeted(captureTarget.uid);
-        }
-        captureTarget = null;
+        refreshCandidates(SystemClock.elapsedRealtime());
         return PcmCaptureRequest.mixed();
+    }
+
+    CaptureRequestCoordinator.Decision reconcileCapture(PcmCaptureBackend capture, long nowElapsedMs) {
+        refreshCandidates(nowElapsedMs);
+        if (capture != null && capture.targeted()) {
+            PcmCaptureBackend.TargetWarmupStatus warmup = capture.targetWarmupStatus(nowElapsedMs);
+            if (warmup == PcmCaptureBackend.TargetWarmupStatus.CONFIRMED) {
+                captureCoordinator.recordTargetObservation(capture.targetUid(), true, nowElapsedMs);
+            } else if (warmup == PcmCaptureBackend.TargetWarmupStatus.FAILED) {
+                captureCoordinator.recordTargetObservation(capture.targetUid(), false, nowElapsedMs);
+            }
+        }
+        PcmCaptureRequest current = capture == null ? PcmCaptureRequest.mixed() : capture.request();
+        CaptureRequestCoordinator.Decision decision = captureCoordinator.reconcile(
+                current, observer.snapshot(), nowElapsedMs);
+        captureReconcileRequested.set(false);
+        return decision;
+    }
+
+    void recordTargetOpenFailure(int targetUid, long nowElapsedMs) {
+        captureCoordinator.recordTargetObservation(targetUid, false, nowElapsedMs);
+        captureReconcileRequested.set(true);
+    }
+
+    boolean consumeCaptureReconcileRequest() {
+        return captureReconcileRequested.getAndSet(false);
+    }
+
+    String sourceStatusLabel() {
+        return captureCoordinator.sourceStatusLabel();
     }
 
     Snapshot resolvePcm(PcmCaptureBackend capture, boolean validPcm, boolean signalPresent,
                         boolean outputMixEvidence, ControlProfile globalProfile,
                         DeviceProfileV2 deviceProfile, long nowElapsedMs) {
         PlaybackSnapshot playback = observer.snapshot();
-        refreshCandidates();
+        refreshCandidates(nowElapsedMs);
         ArrayList<PlaybackEvidence> evidence = new ArrayList<>(candidateEvidence);
-        if (capture != null && capture.targeted() && captureTarget != null
-                && validPcm && signalPresent && capture.targetUid() == captureTarget.uid) {
-            evidence.add(PlaybackEvidence.targetedPcmProof(captureTarget, epoch));
+        CaptureRequestCoordinator.Candidate confirmed = captureCoordinator.confirmedCandidate();
+        if (capture != null && capture.targeted() && confirmed != null
+                && capture.targetUid() == confirmed.source.uid
+                && capture.targetWarmupStatus(nowElapsedMs)
+                == PcmCaptureBackend.TargetWarmupStatus.CONFIRMED) {
+            evidence.add(PlaybackEvidence.targetedPcmProof(confirmed.source, epoch));
         }
         SourceSet sources = SourceResolver.resolve(evidence, epoch);
         markSourceTransition(sources, nowElapsedMs);
@@ -88,7 +129,8 @@ final class HybridRuntimeResolver implements AutoCloseable {
                 .validPcm(validPcm)
                 .signalPresent(signalPresent)
                 .independentAudioEvidence(outputMixEvidence)
-                .noValidPcmMs(noPcmMs == Long.MAX_VALUE ? PcmStateResolver.BLOCKED_AFTER_MS + 1 : noPcmMs)
+                .noValidPcmMs(noPcmMs == Long.MAX_VALUE
+                        ? PcmStateResolver.BLOCKED_AFTER_MS + 1 : noPcmMs)
                 .build();
         PcmAvailabilityState pcm = PcmStateResolver.resolve(input).state;
         boolean exactPcm = capture != null && capture.targeted()
@@ -112,7 +154,7 @@ final class HybridRuntimeResolver implements AutoCloseable {
     Snapshot resolveFallback(boolean outputMixAvailable, ControlProfile globalProfile,
                              DeviceProfileV2 deviceProfile, long nowElapsedMs) {
         PlaybackSnapshot playback = observer.snapshot();
-        refreshCandidates();
+        refreshCandidates(nowElapsedMs);
         SourceSet sources = SourceResolver.resolve(candidateEvidence, epoch);
         markSourceTransition(sources, nowElapsedMs);
         EngineCapabilities capabilities = new EngineCapabilities(
@@ -139,7 +181,8 @@ final class HybridRuntimeResolver implements AutoCloseable {
         SystemStreamPolicy media = deviceProfile.streamPolicies().get(SystemStreamPolicy.Kind.MEDIA);
         EffectivePolicy policy = PolicyResolver.resolve(globalProfile, deviceProfile, sources,
                 overrides, media, capabilities, pcm, nowElapsedMs, sourceChangedAtMs);
-        SourceDescriptor exactSource = sources.confidence == EngineCapabilities.SourceIdentityConfidence.EXACT
+        SourceDescriptor exactSource = sources.confidence
+                == EngineCapabilities.SourceIdentityConfidence.EXACT
                 && sources.sources().size() == 1 ? sources.sources().get(0) : null;
         AppPolicy exactPolicy = null;
         if (exactSource != null) {
@@ -147,18 +190,36 @@ final class HybridRuntimeResolver implements AutoCloseable {
                     exactSource.systemApp, exactSource.samsungApp);
             exactPolicy = AppPolicyStore.load(context, exactSource.packageName, defaultMode);
         }
-        return new Snapshot(playback, sources, pcm, capabilities, policy,
-                exactSource, exactPolicy, sourceChangedAtMs);
+        List<PlaybackEndpoint> endpoints = PlaybackEndpointResolver.resolve(playback,
+                captureCoordinator.candidates(), captureCoordinator.confirmedCandidate());
+        return new Snapshot(playback, endpoints, sources, pcm, capabilities, policy,
+                exactSource, exactPolicy, sourceChangedAtMs, captureCoordinator.sourceStatusLabel());
     }
 
-    private void refreshCandidates() {
-        List<PlaybackEvidence> fresh = sessions.currentCandidates(epoch);
-        candidateEvidence = fresh == null ? Collections.emptyList() : fresh;
+    private void refreshCandidates(long nowElapsedMs) {
+        List<CaptureRequestCoordinator.Candidate> fresh = sessions.currentCaptureCandidates(nowElapsedMs);
+        boolean access = sessions.available();
+        captureCoordinator.updateCandidates(fresh, access, nowElapsedMs);
+        if (fresh.isEmpty()) {
+            candidateEvidence = Collections.emptyList();
+            return;
+        }
+        ArrayList<PlaybackEvidence> evidence = new ArrayList<>();
+        for (CaptureRequestCoordinator.Candidate candidate : fresh) {
+            evidence.add(PlaybackEvidence.mediaSessionCandidate(candidate.source, epoch));
+        }
+        candidateEvidence = Collections.unmodifiableList(evidence);
+    }
+
+    private void requestCaptureReconcile() {
+        captureReconcileRequested.set(true);
     }
 
     private void markSourceTransition(SourceSet sources, long nowElapsedMs) {
         StringBuilder signature = new StringBuilder(sources.confidence.name()).append(':');
-        for (SourceDescriptor source : sources.sources()) signature.append(source.packageName).append('|');
+        for (SourceDescriptor source : sources.sources()) {
+            signature.append(source.packageName).append(':').append(source.uid).append('|');
+        }
         String next = signature.toString();
         if (!next.equals(sourceSignature)) {
             sourceSignature = next;
@@ -171,11 +232,13 @@ final class HybridRuntimeResolver implements AutoCloseable {
         epoch++;
         sourceSignature = "";
         sourceChangedAtMs = SystemClock.elapsedRealtime();
-        captureTarget = null;
+        captureCoordinator = new CaptureRequestCoordinator(CAPTURE_SOURCE_COALESCE_MS);
         candidateEvidence = Collections.emptyList();
+        captureReconcileRequested.set(true);
     }
 
     @Override public void close() {
         observer.close();
+        sessions.close();
     }
 }

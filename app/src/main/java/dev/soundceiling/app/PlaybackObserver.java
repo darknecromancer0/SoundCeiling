@@ -9,9 +9,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** Observes public playback activity only. It deliberately makes no package/UID claims. */
+/** Observes immutable public playback facts only. It deliberately makes no package/UID claims. */
 final class PlaybackObserver implements AutoCloseable {
+    interface Listener { void onPlaybackEvidenceChanged(); }
+
     private final AudioManager audio;
+    private final Listener listener;
     private volatile PlaybackSnapshot snapshot = new PlaybackSnapshot(
             false, Collections.emptyList(), 0, 0L, false, "not_started");
     private boolean registered;
@@ -24,7 +27,12 @@ final class PlaybackObserver implements AutoCloseable {
             };
 
     PlaybackObserver(AudioManager audio) {
+        this(audio, null);
+    }
+
+    PlaybackObserver(AudioManager audio, Listener listener) {
         this.audio = audio;
+        this.listener = listener;
     }
 
     boolean start() {
@@ -38,6 +46,7 @@ final class PlaybackObserver implements AutoCloseable {
             snapshot = new PlaybackSnapshot(false, Collections.emptyList(), 0,
                     SystemClock.elapsedRealtime(), false,
                     "observer_start_failed:" + e.getClass().getSimpleName());
+            notifyListener();
             return false;
         }
     }
@@ -47,21 +56,32 @@ final class PlaybackObserver implements AutoCloseable {
     }
 
     private void publish(List<AudioPlaybackConfiguration> configs) {
-        ArrayList<Integer> usages = new ArrayList<>();
+        long now = SystemClock.elapsedRealtime();
+        ArrayList<PlaybackSnapshot.PlayerFact> facts = new ArrayList<>();
         int activePlayers = 0;
         // AudioManager#getActivePlaybackConfigurations() and the callback payload already
-        // contain the currently active configurations. AudioPlaybackConfiguration does not
-        // expose a public isActive() method, so do not invent a second activity test here.
+        // contain the currently active configurations. Public API exposes AudioAttributes but
+        // not a third-party UID/session mapping suitable for control authority.
         if (configs != null) {
             for (AudioPlaybackConfiguration config : configs) {
                 if (config == null) continue;
                 activePlayers++;
                 AudioAttributes attributes = config.getAudioAttributes();
-                if (attributes != null) usages.add(attributes.getUsage());
+                int usage = attributes == null ? AudioAttributes.USAGE_UNKNOWN : attributes.getUsage();
+                int contentType = attributes == null
+                        ? AudioAttributes.CONTENT_TYPE_UNKNOWN : attributes.getContentType();
+                facts.add(new PlaybackSnapshot.PlayerFact(usage, contentType, now));
             }
         }
-        snapshot = new PlaybackSnapshot(activePlayers > 0, usages, activePlayers,
-                SystemClock.elapsedRealtime(), true, "public_playback_callback");
+        snapshot = PlaybackSnapshot.fromPlayerFacts(facts, activePlayers, now, true,
+                "public_playback_callback");
+        notifyListener();
+    }
+
+    private void notifyListener() {
+        if (listener == null) return;
+        try { listener.onPlaybackEvidenceChanged(); }
+        catch (RuntimeException ignored) {}
     }
 
     @Override public void close() {

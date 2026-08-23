@@ -2,7 +2,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG="$ROOT/app/src/main/java/dev/soundceiling/app"
-require(){ local file="$1"; local needle="$2"; [[ -f "$file" ]] || { echo "Missing v0.5 UI file: $(basename "$file")" >&2; exit 1; }; grep -Fq "$needle" "$file" || { echo "Missing v0.5 UI contract: $(basename "$file") -> $needle" >&2; exit 1; }; }
+require(){ local file="$1"; local needle="$2"; [[ -f "$file" ]] || { echo "Missing v0.5 UI file: $(basename "$file")" >&2; exit 1; }; grep -Fq -- "$needle" "$file" || { echo "Missing v0.5 UI contract: $(basename "$file") -> $needle" >&2; exit 1; }; }
+reject(){ local file="$1"; local needle="$2"; if [[ -f "$file" ]] && grep -Fq -- "$needle" "$file"; then echo "Obsolete UI status survived: $(basename "$file") -> $needle" >&2; exit 1; fi; }
 
 # Task 12: per-app and system-stream policy UI.
 require "$PKG/AppDestination.java" "APPS_SYSTEM"
@@ -29,7 +30,8 @@ require "$PKG/AppsSystemView.java" "Assistant"
 require "$PKG/AppsSystemView.java" "ceilingPercent"
 
 # Task 13: Device Profiles 2.0 and truthful hybrid-engine status surfaces.
-# v0.6 keeps these surfaces while replacing obsolete auto-raise wording and duplicate Main status text.
+# v0.7 preserves the status architecture while replacing implementation-shaped v0.5 labels
+# with user-facing capability levels. Raw capabilities remain visible in diagnostics.
 require "$PKG/AppDestination.java" "DEVICE_PROFILES"
 require "$PKG/DrawerLayoutController.java" "Профили устройств"
 require "$PKG/MainActivity.java" "DeviceProfilesView"
@@ -39,13 +41,16 @@ require "$PKG/DeviceProfilesView.java" "Media ceiling"
 require "$PKG/DeviceProfilesView.java" "Fallback ceiling"
 require "$PKG/DeviceProfilesView.java" "App overrides"
 require "$PKG/SimpleModeView.java" "StatusCardView"
-require "$PKG/StatusText.java" "Smart PCM"
-require "$PKG/StatusText.java" "PCM blocked - safe fallback"
-require "$PKG/StatusText.java" "Mixed apps · shared down-only control"
-require "$PKG/StatusText.java" "Source uncertain · Global down-only control"
-require "$PKG/StatusText.java" "Waiting for audio"
-require "$PKG/StatusText.java" "System limiter only"
-require "$PKG/StatusText.java" "DSP active"
+require "$PKG/StatusText.java" "Precise PCM"
+require "$PKG/StatusText.java" "Safe fallback"
+require "$PKG/StatusText.java" "System-only protection"
+require "$PKG/StatusText.java" "Recovery:"
+require "$PKG/StatusText.java" "SoundCeiling"
+reject "$PKG/StatusText.java" "Smart PCM"
+reject "$PKG/StatusText.java" "System limiter only"
+reject "$PKG/StatusText.java" "DSP active"
+reject "$PKG/StatusText.java" "Mixed apps · shared down-only control"
+reject "$PKG/StatusText.java" "Source uncertain · Global down-only control"
 require "$PKG/AdvancedModeView.java" "StatusCardView"
 require "$PKG/StatusCardView.java" "Source confidence"
 require "$PKG/StatusCardView.java" "Metering capability"
@@ -56,4 +61,4 @@ require "$PKG/DiagnosticsView.java" "meteringCapability"
 require "$PKG/DiagnosticsView.java" "volumeControlCapability"
 require "$PKG/DiagnosticsView.java" "dspTransportCapability"
 
-echo "v0.5 UI contract: PASS"
+echo "v0.5/v0.7 UI compatibility contract: PASS"

@@ -1,0 +1,185 @@
++        values.put("transient_emergency", ControlDefaults.TRANSIENT_EMERGENCY_DB);
++        values.put(ALLOW_AUTO_MUTE, ControlDefaults.AUTO_MUTE);
++        values.put("recovery_interval_ms", ControlDefaults.MANUAL_RECOVERY_INTERVAL_MS);
++        values.put(DEFAULT_LINKED_LOCK, true);
++        values.put(LOWER_OUTPUT_CEILING_DB, OutputCeilingState.DEFAULT_DB);
++        values.put(UPPER_OUTPUT_CEILING_DB, OutputCeilingState.DEFAULT_DB);
++        values.put(WHOLE_OUTPUT_DSP_CONSENT, true);
++        values.put(GLOBAL_DSP_USER_SET, false);
++        return values;
++    }
++
+     private static float number(Object value, float fallback) {
+         return value instanceof Number ? ((Number) value).floatValue() : fallback;
+     }
+diff --git a/app/src/test/java/dev/soundceiling/app/V071CaptureCoordinatorPureTest.java b/app/src/test/java/dev/soundceiling/app/V071CaptureCoordinatorPureTest.java
+index 8d61a37..08abebe 100644
+--- a/app/src/test/java/dev/soundceiling/app/V071CaptureCoordinatorPureTest.java
++++ b/app/src/test/java/dev/soundceiling/app/V071CaptureCoordinatorPureTest.java
+@@ -101,7 +101,7 @@ public final class V071CaptureCoordinatorPureTest {
+                 PcmCaptureRequest.mixed(), mediaSnapshot(0L), 0L);
+         assertEquals(CaptureRequestCoordinator.Action.KEEP, unavailable.action,
+                 "missing media-session access must keep safe mixed capture");
+-        assertEquals("Не подтверждён: нет доступа к активным медиасеансам",
++        assertEquals("Нет доступа: разрешите распознавание активных медиасеансов",
+                 coordinator.sourceStatusLabel(), "actionable missing-access label");
+ 
+         coordinator.updateCandidates(Collections.singletonList(candidate(
+diff --git a/app/src/test/java/dev/soundceiling/app/V071NormalizationCorePureTest.java b/app/src/test/java/dev/soundceiling/app/V071NormalizationCorePureTest.java
+index 27ad7eb..9c005d0 100644
+--- a/app/src/test/java/dev/soundceiling/app/V071NormalizationCorePureTest.java
++++ b/app/src/test/java/dev/soundceiling/app/V071NormalizationCorePureTest.java
+@@ -747,7 +747,7 @@ public final class V071NormalizationCorePureTest {
+                                                 boolean programActive,
+                                                 boolean policyAllowsPositiveGain) {
+         return OutputGainPlanner.plan(new OutputGainPlanner.Input(
+-                programDbfs, rawPeakDbfs, alreadyAppliedGainDb, captureReference, ceilings,
++                programDbfs, rawPeakDbfs, alreadyAppliedGainDb, 0f, captureReference, ceilings,
+                 hardPeakCeilingDbfs, programActive, policyAllowsPositiveGain));
+     }
+ 
+diff --git a/app/src/test/java/dev/soundceiling/app/V072FallbackFloorPureTest.java b/app/src/test/java/dev/soundceiling/app/V072FallbackFloorPureTest.java
+new file mode 100644
+index 0000000..edfd501
+--- /dev/null
++++ b/app/src/test/java/dev/soundceiling/app/V072FallbackFloorPureTest.java
+@@ -0,0 +1,42 @@
++package dev.soundceiling.app;
++
++public final class V072FallbackFloorPureTest {
++    public static void main(String[] args) {
++        automaticFloorIsRelativeToSamsungUserAnchor();
++        lowUserAnchorDoesNotInventRoomBelowPhysicalMinimum();
++        explicitAdvancedMinimumWinsOverAutomaticFloor();
++        System.out.println("V072FallbackFloorPureTest: PASS");
++    }
++
++    private static void automaticFloorIsRelativeToSamsungUserAnchor() {
++        ControlVolumeCurve curve = samsungCurve();
++        int floor = FallbackFloorPolicy.ordinaryFloor(curve, 8, false, 1);
++        assertEquals(4, floor,
++                "8/15 anchor should allow about 18 dB ordinary attenuation, not collapse to 1/15");
++    }
++
++    private static void lowUserAnchorDoesNotInventRoomBelowPhysicalMinimum() {
++        ControlVolumeCurve curve = samsungCurve();
++        int floor = FallbackFloorPolicy.ordinaryFloor(curve, 2, false, 1);
++        assertEquals(1, floor, "low anchor may use only the physical room that exists");
++    }
++
++    private static void explicitAdvancedMinimumWinsOverAutomaticFloor() {
++        ControlVolumeCurve curve = samsungCurve();
++        int floor = FallbackFloorPolicy.ordinaryFloor(curve, 8, true, 2);
++        assertEquals(2, floor, "explicit Advanced fallback minimum is user authority");
++    }
++
++    private static ControlVolumeCurve samsungCurve() {
++        return ControlVolumeCurve.fromVendorRaw(0, 15, new float[]{
++                -80f, -53f, -48f, -43f, -38f, -33f, -28f, -23f,
++                -21f, -19f, -16.5f, -14f, -11f, -8f, -4.5f, 0f
++        });
++    }
++
++    private static void assertEquals(int expected, int actual, String message) {
++        if (expected != actual) {
++            throw new AssertionError(message + " expected=" + expected + " actual=" + actual);
++        }
++    }
++}
+diff --git a/app/src/test/java/dev/soundceiling/app/V072GlobalDspProbePureTest.java b/app/src/test/java/dev/soundceiling/app/V072GlobalDspProbePureTest.java
+new file mode 100644
+index 0000000..c00f677
+--- /dev/null
++++ b/app/src/test/java/dev/soundceiling/app/V072GlobalDspProbePureTest.java
+@@ -0,0 +1,46 @@
++package dev.soundceiling.app;
++
++import java.util.Collections;
++
++public final class V072GlobalDspProbePureTest {
++    public static void main(String[] args) {
++        outputMixMeterWinsWhenAvailable();
++        playbackPcmCanProveWhenVisualizerMeterIsUnavailable();
++        noMeasurementCannotStartProof();
++        verifiedWholeOutputMixSurvivesUnknownEndpointEvidence();
++        System.out.println("V072GlobalDspProbePureTest: PASS");
++    }
++
++    private static void outputMixMeterWinsWhenAvailable() {
++        assertEquals(GlobalDspProbeDecision.Meter.OUTPUT_MIX,
++                GlobalDspProbeDecision.choose(true, true, true, true), "output-mix first");
++    }
++
++    private static void playbackPcmCanProveWhenVisualizerMeterIsUnavailable() {
++        assertEquals(GlobalDspProbeDecision.Meter.PLAYBACK_PCM,
++                GlobalDspProbeDecision.choose(true, true, false, true), "PCM fallback proof meter");
++    }
++
++    private static void noMeasurementCannotStartProof() {
++        assertEquals(GlobalDspProbeDecision.Meter.NONE,
++                GlobalDspProbeDecision.choose(true, true, false, false), "no fabricated proof");
++        assertEquals(GlobalDspProbeDecision.Meter.NONE,
++                GlobalDspProbeDecision.choose(false, true, true, true), "preference OFF");
++    }
++
++    private static void verifiedWholeOutputMixSurvivesUnknownEndpointEvidence() {
++        PlaybackEndpoint unresolved = PlaybackEndpoint.unresolved(1);
++        DspPolicyArbiter.Decision decision = DspPolicyArbiter.decide(
++                new DspPolicyArbiter.Input.Builder(Collections.singletonList(unresolved))
++                        .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX, DspScope.GLOBAL_MIX)
++                        .wholeOutputScopeConsent(true).build());
++        assertEquals(DspPolicyArbiter.Result.GLOBAL_MIX_DSP, decision.result,
++                "verified indivisible whole-output mode must not depend on exact package identity");
++    }
++
++    private static void assertEquals(Object expected, Object actual, String message) {
++        if (expected == null ? actual != null : !expected.equals(actual)) {
++            throw new AssertionError(message + " expected=" + expected + " actual=" + actual);
++        }
++    }
++}
+diff --git a/app/src/test/java/dev/soundceiling/app/V072LinkedLockRuntimePureTest.java b/app/src/test/java/dev/soundceiling/app/V072LinkedLockRuntimePureTest.java
+new file mode 100644
+index 0000000..088455c
+--- /dev/null
++++ b/app/src/test/java/dev/soundceiling/app/V072LinkedLockRuntimePureTest.java
+@@ -0,0 +1,84 @@
++package dev.soundceiling.app;
++
++public final class V072LinkedLockRuntimePureTest {
++    public static void main(String[] args) {
++        uiUnlockDoesNotCreateServiceWriteback();
++        appOwnedMediaWriteDoesNotCreateServiceWriteback();
++        userMediaShiftRequestsExactlyOnePersistence();
++        System.out.println("V072LinkedLockRuntimePureTest: PASS");
++    }
++
++    private static void uiUnlockDoesNotCreateServiceWriteback() {
++        NormalizerControlCoordinator coordinator = new NormalizerControlCoordinator();
++        coordinator.setCeilingState(OutputCeilingState.of(false, -28f, -12f));
++        assertFalse(coordinator.consumeCeilingPersistenceRequest(),
++                "preference-to-runtime sync must not request reverse persistence");
++        assertFalse(coordinator.ceilingState().linked(), "UI unlock must remain unlocked");
++    }
++
++    private static void appOwnedMediaWriteDoesNotCreateServiceWriteback() {
++        NormalizerControlCoordinator coordinator = new NormalizerControlCoordinator();
++        coordinator.setCeilingState(OutputCeilingState.of(false, -28f, -12f));
++        ControlVolumeCurve curve = curve();
++        coordinator.onFrame(frame(0, 5, 5, curve,
++                NormalizerControlCoordinator.VolumeObservation.UNCHANGED,
++                VolumeWriteOrigin.NORMALIZATION));
++        coordinator.onFrame(frame(100, 5, 4, curve,
++                NormalizerControlCoordinator.VolumeObservation.APP_ACK,
++                VolumeWriteOrigin.NORMALIZATION));
++        assertFalse(coordinator.consumeCeilingPersistenceRequest(),
++                "app-owned attenuation must never overwrite a newer Linked Lock preference");
++        assertFalse(coordinator.ceilingState().linked(), "app write must preserve unlocked state");
++    }
++
++    private static void userMediaShiftRequestsExactlyOnePersistence() {
++        NormalizerControlCoordinator coordinator = new NormalizerControlCoordinator();
++        ControlVolumeCurve curve = curve();
++        coordinator.setCeilingState(OutputCeilingState.of(true, -20f, -20f));
++        coordinator.onFrame(frame(0, 4, 4, curve,
++                NormalizerControlCoordinator.VolumeObservation.UNCHANGED,

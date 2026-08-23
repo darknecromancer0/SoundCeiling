@@ -1,0 +1,147 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 5113721..ca29310 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -1,6 +1,6 @@
+ plugins { id("com.android.application") }
+ android { namespace="dev.soundceiling.app"; compileSdk=35
+- defaultConfig { applicationId="dev.soundceiling.app"; minSdk=29; targetSdk=35; versionCode=11; versionName="0.7.1" }
++ defaultConfig { applicationId="dev.soundceiling.app"; minSdk=29; targetSdk=35; versionCode=12; versionName="0.7.2" }
+  buildFeatures { buildConfig = true }
+  buildTypes { release { isMinifyEnabled=false; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),"proguard-rules.pro") } }
+  compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 }
+diff --git a/app/src/main/java/dev/soundceiling/app/AdvancedModeView.java b/app/src/main/java/dev/soundceiling/app/AdvancedModeView.java
+index 07d0953..0c8b984 100644
+--- a/app/src/main/java/dev/soundceiling/app/AdvancedModeView.java
++++ b/app/src/main/java/dev/soundceiling/app/AdvancedModeView.java
+@@ -247,8 +247,11 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
+         if (Prefs.MIN_MEDIA_INDEX.equals(key)) min = value; else if (Prefs.MAX_VOLUME_PERCENT.equals(key)) max = value;
+         else if (Prefs.SAFETY_LOCK_PERCENT.equals(key)) safety = value; else if (Prefs.QUIET_INDEX.equals(key)) quiet = value;
+         ControlSettingConstraints.Result c = ControlSettingConstraints.normalize(streamMin, streamMax, min, max, safety, quiet);
+-        Prefs.get(getContext()).edit().putInt(Prefs.MIN_MEDIA_INDEX, c.minIndex).putInt(Prefs.MAX_VOLUME_PERCENT, c.maxPercent)
+-                .putInt(Prefs.SAFETY_LOCK_PERCENT, c.safetyPercent).putInt(Prefs.QUIET_INDEX, c.quietIndex).apply();
++        android.content.SharedPreferences.Editor boundsEdit = Prefs.get(getContext()).edit()
++                .putInt(Prefs.MIN_MEDIA_INDEX, c.minIndex).putInt(Prefs.MAX_VOLUME_PERCENT, c.maxPercent)
++                .putInt(Prefs.SAFETY_LOCK_PERCENT, c.safetyPercent).putInt(Prefs.QUIET_INDEX, c.quietIndex);
++        if (Prefs.MIN_MEDIA_INDEX.equals(key)) boundsEdit.putBoolean(Prefs.FALLBACK_MIN_USER_SET, true);
++        boundsEdit.apply();
+         boolean old = loading; loading = true;
+         minMedia.setProgress(MediaLevelScale.percentForIndex(c.minIndex, streamMin, streamMax)); maxMedia.setProgress(c.maxPercent);
+         safetyPercent.setProgress(c.safetyPercent);
+diff --git a/app/src/main/java/dev/soundceiling/app/CaptureRequestCoordinator.java b/app/src/main/java/dev/soundceiling/app/CaptureRequestCoordinator.java
+index 0724152..093ddbd 100644
+--- a/app/src/main/java/dev/soundceiling/app/CaptureRequestCoordinator.java
++++ b/app/src/main/java/dev/soundceiling/app/CaptureRequestCoordinator.java
+@@ -9,6 +9,10 @@ import java.util.Objects;
+ /** Pure live-capture state machine. Package candidates remain unconfirmed until targeted PCM proves them. */
+ final class CaptureRequestCoordinator {
+     enum Action { KEEP, OPEN_MIXED, OPEN_TARGETED, CLOSE }
++    enum SourceAccessState {
++        ACCESS_MISSING, NO_CANDIDATE, CANDIDATE_UNCONFIRMED, MULTIPLE_CANDIDATES,
++        TARGET_CONFIRMED, TARGET_SUPPRESSED_SILENT
++    }
+ 
+     static final class Candidate {
+         final SourceDescriptor source;
+@@ -179,13 +183,41 @@ final class CaptureRequestCoordinator {
+         return mediaSessionAccess;
+     }
+ 
+-    String sourceStatusLabel() {
+-        if (!mediaSessionAccess) return "Не подтверждён: нет доступа к активным медиасеансам";
+-        if (confirmedCandidate != null) return confirmedCandidate.source.displayName;
++    SourceAccessState sourceAccessState() {
++        if (!mediaSessionAccess) return SourceAccessState.ACCESS_MISSING;
++        if (confirmedCandidate != null) return SourceAccessState.TARGET_CONFIRMED;
+         Candidate only = uniqueCandidate();
+-        if (only != null) return "Не подтверждён: " + only.source.displayName;
+-        if (candidates.size() > 1) return "Не подтверждён: несколько активных источников";
+-        return "Не подтверждён: источник не определён";
++        if (only != null && suppressedTargetUid == only.source.uid
++                && suppressedSignature.equals(candidateSignature)) {
++            return SourceAccessState.TARGET_SUPPRESSED_SILENT;
++        }
++        if (candidates.size() > 1) return SourceAccessState.MULTIPLE_CANDIDATES;
++        if (only != null) return SourceAccessState.CANDIDATE_UNCONFIRMED;
++        return SourceAccessState.NO_CANDIDATE;
++    }
++
++    String sourceStatusLabel() {
++        switch (sourceAccessState()) {
++            case ACCESS_MISSING:
++                return "Нет доступа: разрешите распознавание активных медиасеансов";
++            case TARGET_CONFIRMED:
++                return confirmedCandidate == null ? "Источник подтверждён" : confirmedCandidate.source.displayName;
++            case TARGET_SUPPRESSED_SILENT: {
++                Candidate only = uniqueCandidate();
++                return "Кандидат " + (only == null ? "приложения" : only.source.displayName)
++                        + " не дал аудио в targeted PCM";
++            }
++            case MULTIPLE_CANDIDATES:
++                return "Не подтверждён: несколько активных источников";
++            case CANDIDATE_UNCONFIRMED: {
++                Candidate only = uniqueCandidate();
++                return "Кандидат: " + (only == null ? "приложение" : only.source.displayName)
++                        + " · ждём targeted PCM";
++            }
++            case NO_CANDIDATE:
++            default:
++                return "Доступ есть, но нет активного медиасеанса-кандидата";
++        }
+     }
+ 
+     private Candidate uniqueCandidate() {
+diff --git a/app/src/main/java/dev/soundceiling/app/ControlCommand.java b/app/src/main/java/dev/soundceiling/app/ControlCommand.java
+index 04c61c6..c89ef3e 100644
+--- a/app/src/main/java/dev/soundceiling/app/ControlCommand.java
++++ b/app/src/main/java/dev/soundceiling/app/ControlCommand.java
+@@ -5,7 +5,7 @@ import java.util.Objects;
+ /** Actuator-independent normalization command. */
+ public final class ControlCommand {
+     public enum Kind { NONE, DSP_GAIN, MEDIA_INDEX }
+-    public enum Provenance { NORMALIZATION, HARD_PEAK_SAFETY, HARD_CAP, QUIET_NOW, DSP_NEUTRALIZATION }
++    public enum Provenance { NORMALIZATION, DEBT_RECOVERY, HARD_PEAK_SAFETY, HARD_CAP, QUIET_NOW, DSP_NEUTRALIZATION }
+ 
+     private final Kind kind;
+     private final float requestedGainDb;
+diff --git a/app/src/main/java/dev/soundceiling/app/DiagnosticsView.java b/app/src/main/java/dev/soundceiling/app/DiagnosticsView.java
+index 551a409..d97ccca 100644
+--- a/app/src/main/java/dev/soundceiling/app/DiagnosticsView.java
++++ b/app/src/main/java/dev/soundceiling/app/DiagnosticsView.java
+@@ -70,8 +70,8 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
+     @Override public void render(RuntimeState state) {
+         summary.setText(String.format(Locale.US,
+                 "Engine: %s\nCapture: %s · signal: %s · PCM: %s\n"
+-                        + "Source: %s · package: %s · sourceConfidence: %s · rule: %s\n"
+-                        + "meteringCapability: %s\nSpectrum: %s · age %d ms\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
++                        + "Source: %s · package: %s · sourceConfidence: %s · access: %s · rule: %s\n"
++                        + "meteringCapability: %s\nЧастотный спектр: %s · age %d ms\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
+                         + "Downgrade reason: %s\nRoute: %s · Device profile: %s\n"
+                         + "Media: %d/%d · effective max: %d\n"
+                         + "Raw Peak %.1f dBFS · LUFS-like %.1f · reaction %s\nLog: %s",
+@@ -79,7 +79,7 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
+                 state.captureStatus, state.signalPresent ? "yes" : "no", state.pcmState,
+                 state.sourceLabel.isEmpty() ? "—" : state.sourceLabel,
+                 state.sourcePackage.isEmpty() ? "—" : state.sourcePackage,
+-                state.sourceConfidence, state.appRuleLabel,
++                state.sourceConfidence, state.sourceAccessState, state.appRuleLabel,
+                 state.meteringCapability, spectrumSource(state), state.meterAgeMs,
+                 state.volumeControlCapability, state.dspTransportCapability,
+                 state.downgradeReason.isEmpty() ? "—" : state.downgradeReason,
+@@ -90,7 +90,7 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
+                 state.lastReactionLatencyMs >= 0 ? state.lastReactionLatencyMs + " ms" : "—",
+                 state.logStatus.isEmpty() ? "not active" : state.logStatus));
+         sourceAccess.setVisibility(
+-                "Не подтверждён: нет доступа к активным медиасеансам".equals(state.sourceLabel)
++                state.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING
+                         ? View.VISIBLE : View.GONE);
+ 
+         DiagnosticItem[] published = state.diagnostics();
+diff --git a/app/src/main/java/dev/soundceiling/app/DspTransportManager.java b/app/src/main/java/dev/soundceiling/app/DspTransportManager.java
+index 651153c..ea0d0da 100644
+--- a/app/src/main/java/dev/soundceiling/app/DspTransportManager.java
++++ b/app/src/main/java/dev/soundceiling/app/DspTransportManager.java
+@@ -145,11 +145,17 @@ final class DspTransportManager implements AutoCloseable {
+         return false;
+     }
+ 

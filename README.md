@@ -1,88 +1,60 @@
-# Sound Ceiling for Android - v0.6.0
+# Sound Ceiling for Android - v0.7.1
 
-No-root Android 10+ adaptive audio safety controller. v0.6.0 introduces the **One-Way Adaptive Engine**: automatic control may hold or reduce Media volume when audio exceeds the configured safety/loudness target, but it never raises the system Media slider on its own.
+SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.1 keeps the v0.7 **Adaptive Envelope** safety model and adds verified Global DSP, shared Default Linked Lock, live source rebinding, truthful FFT fallback and bounded diagnostics.
 
-## Что изменилось в v0.6.0
+## v0.7.1 highlights
 
-- **Никакого automatic-UP.** Ручное снижение Media остаётся решением пользователя. Ни Target, ни Minimum, ни normalization recovery не возвращают ползунок вверх.
-- **Target теперь односторонний.** Он задаёт порог, выше которого SoundCeiling может ослабить слишком громкий материал. Более тихий материал не усиливается системным Media slider.
-- **Быстрый down-path.** Control loudness и transient/peak safety используют быстрые оценки для реакции на громкие скачки; более медленный LUFS-like meter остаётся отдельным отображаемым измерением.
-- **Volume provenance.** Приложение различает ручные изменения, подтверждённые собственные writes и mismatches, чтобы не принимать действия пользователя за сбой или за команду на восстановление громкости.
-- **Quiet Now строго downward-only.** Он может только оставить текущую Media ступень или сделать тише.
-- **Основное / Расширенные = один engine.** Это два интерфейса к одной и той же логике, а не два конкурирующих режима управления.
-- **Калибровочный тон volume-neutral.** ToneController больше не двигает системный Media slider. Если громкость практически нулевая, приложение просит поднять её вручную.
-- **Детерминированная калибровка.** Если engine запущен, calibration state machine сначала останавливает его, ждёт подтверждения остановки с timeout и только затем запускает tone.
-- **Логи собраны в один UX.** В drawer один пункт `Логи`; Log Sessions умеет открыть папку, выбрать папку, вернуть Default location и поделиться последней сессией.
-- **Rotated log parts делятся как один файл.** Части одной logical session объединяются во временный cache-файл и отправляются одним URI через FileProvider.
-- **Светлая тема использует semantic palette.** Success/warning/error/neutral карточки получают согласованные surface/text цвета вместо тёмных RGB-констант и белого текста поверх светлого фона.
-- **EQ остаётся независимым persistent-модулем.** Настройки и Link Strength сохраняются, application-owned controller восстанавливает EQ при старте, а уход с вкладки EQ не уничтожает effect.
-- **Apps & System Sounds остаётся асинхронным.** Package list загружается вне UI thread.
-
-## Почему Android показывает разрешение «захвата экрана»
-
-Для точного playback PCM Android использует `AudioPlaybackCapture`, а его разрешение выдаётся через `MediaProjection`. Поэтому перед новой precise PCM session SoundCeiling сначала объясняет это, а затем Android показывает системное окно, похожее на разрешение записи/трансляции экрана.
-
-SoundCeiling использует полученный доступ для анализа **PCM воспроизводимого аудио**. Приложение не записывает видео экрана. Если пользователь не хочет выдавать MediaProjection или Android/OEM не позволяет precise PCM, можно запустить `Safe fallback`; статус при этом не выдаёт fallback за точный PCM.
-
-## Как SoundCeiling понимает громкость
-
-- `Media index` — системная ступень Android/Samsung, например 3/15.
-- `dBFS / Raw Peak` — цифровой уровень playback PCM там, где Android разрешает его получить.
-- `RMS` — усреднённая энергия цифрового сигнала за небольшой интервал.
-- `LUFS-like` — внутренняя приблизительная realtime-оценка воспринимаемой громкости для нормализации. Это не сертифицированный broadcast LUFS meter.
-- `dB SPL` — оценка физической акустической громкости только после калибровки конкретного output device внешним SPL-метром.
-
-Эти величины показываются отдельно и не считаются взаимозаменяемыми.
+- **Global DSP** is ON by default as a user preference in both Simple and Advanced mode. It becomes active only after the existing session-zero `DynamicsProcessing` path is actually verified for the current route. Successful effect construction alone is not proof.
+- When verified Global DSP is active, ordinary positive and negative normalization uses DSP gain/limiter first so the Samsung Media slider can stay where the user put it. Hard Media safety remains independent.
+- If Global DSP is unavailable or loses proof, the effect is neutralized and SoundCeiling falls back to compatible selective/DSP-like/Media control without claiming a verified global path.
+- **Default Linked Lock** is shared by Simple and Advanced. When ON, Minimum/Maximum Output Ceiling remain visible but disabled/dimmed; when OFF they unlock in place without a value jump. User Samsung Media movement may shift the linked target, app-owned writes may not.
+- Apps/System exclusions remain honest: controls that cannot be guaranteed on an indivisible verified global mix are disabled only while that global path is actually active.
+- Playback source evidence remains live. YouTube and **Yandex Music** become exact only after UID-targeted PCM produces stable program audio; candidate identity alone is not verification.
+- Visualizer fallback now uses real FFT bands, timestamps and explicit unavailable state. Stale or failed readings are not rendered as five fake zero measurements.
+- Calibration persistence is route-bound and affects only approximate dB SPL display.
+- Runtime control summaries are transition/rate-limited. Stable summaries are written at most once every 2 seconds while decision context remains available in the in-memory ring for anomaly snapshots.
 
 ## Safety model
 
-- `SafetyGuard.clampAutomatic()` — последний automatic clamp перед Media write и не разрешает автоматический результат выше наблюдаемой текущей Media ступени.
-- `Safety Lock` остаётся жёстким верхним ограничением.
-- Peak/transient protection может быстро снизить Media при опасном projected output.
-- Ручное снижение пользователя не превращается в команду вернуть громкость вверх.
-- Minimum — нижняя граница для **автоматического снижения**, а не приказ поднять Media, если пользователь уже находится ниже неё.
-- При неизвестном source identity или недостоверном PCM engine выбирает HOLD/down-only fallback, а не агрессивное восстановление.
-- Microphone input не является анализируемым трактом SoundCeiling; основной precise meter использует playback capture APIs.
-- Экспериментальный EQ/DSP не входит в критический safety path и не может отключить основной limiter.
+The v0.7 Adaptive Envelope invariant remains:
 
-## Калибровка
+`automatic target <= User ceiling <= Safety ceiling`
 
-Калибровка нужна только для приблизительного `dB SPL`. Для обычной работы SoundCeiling она не обязательна. Без внешнего SPL-метра оставьте SPL mode выключенным: dBFS, LUFS-like normalization, peak/transient protection и системные ceilings продолжают работать.
+Automatic recovery may repay only attenuation previously created by SoundCeiling. Manual down remains authoritative. Peak/transient protection and hard cap use a separate immediate downward path. `Quiet Now` remains non-raising. Microphone/call audio is not used as a production analysis source.
 
-Калибровочный tone не меняет Media volume. При запущенном engine приложение сначала останавливает control loop и ждёт фактической остановки. При timeout или невозможности воспроизвести tone показывается ошибка вместо скрытого изменения громкости.
+Global DSP and Linked Lock are independent. Global DSP chooses how SoundCeiling acts on audio; Linked Lock chooses how the output ceilings are represented.
 
-## Логи
+## Playback capture
 
-Default location: `Downloads/SoundCeilingLogs`.
+Precise PCM uses Android `AudioPlaybackCapture`, whose permission is exposed through `MediaProjection`. SoundCeiling uses it for playback-audio analysis, not screen video. If exact capture is unavailable, diagnostics show the fallback instead of inventing exact source evidence.
 
-Одна работа SoundCeiling = одна логическая session. Если сессия превышает технический размер части, она может храниться в нескольких физических `.log` files, но Log Sessions группирует их вместе. При `Поделиться` все части последовательно объединяются в один временный `.log` и передаются одним URI. Общий retention budget остаётся 16 MiB; старые полные sessions удаляются первыми. PCM/audio payload в лог не записывается и автоматически никуда не отправляется.
+## Spectrum and calibrated dB SPL
 
-## История регрессий v0.5.1
+PCM spectrum is preferred when precise capture is available. Otherwise the output-mix Visualizer FFT may provide fallback bands. A short labeled hold can preserve the last live shape during a transient gap, after which the spectrum becomes explicitly unavailable.
 
-v0.6 сохраняет проверенные field-log fixes из `v0.5.1`: transient re-arm, projected peak calculation, healthy PCM_MIXED handling, async Apps loading, persistent linked-band EQ, logical log sessions и downward-only Quiet Now. Старые CI-gates теперь являются historical regression gates и не фиксируют текущий номер версии или имя release artifact.
+Calibrated dB SPL is an approximate route-specific display. A saved value is restored only for the same output route and never changes digital normalization or safety behavior.
 
-## Сборка и проверки
+## Logs
 
-Требуются JDK 17 и Android SDK 35.
+Default location: `Downloads/SoundCeilingLogs`. Session parts are tracked index-first and reconciled with MediaStore/SAF discovery, so an empty **MediaStore** discovery does not erase a just-created session.
 
-```bash
-./scripts/run-pure-tests.sh
-bash ./scripts/check-v04-storage-contract.sh
-bash ./scripts/check-v05-storage-contract.sh
-bash ./scripts/check-v05-app-contract.sh
-./scripts/check-source-invariants.sh
-bash ./scripts/check-v06-one-way-contract.sh
-bash ./scripts/check-v05-pcm-contract.sh
-bash ./scripts/check-v05-microphone-invariant.sh
-bash ./scripts/check-v05-control-adapters.sh
-bash ./scripts/check-ui-contract.sh
-bash ./scripts/check-v04-ui-contract.sh
-bash ./scripts/check-v05-ui-contract.sh
-bash ./scripts/check-v04-package-contract.sh
-bash ./scripts/check-v05-release-contract.sh
-bash ./scripts/check-v051-core-stability-contract.sh
-bash ./scripts/check-v06-release-contract.sh
-./gradlew --no-daemon :app:assembleDebug
-```
+Transitions are logged immediately. Unchanged control summaries are bounded to one line per 2 seconds and include actuator, desired/applied gain, raw/projected peak, effective policy, capture reference and reason.
 
-GitHub Actions публикует `SoundCeiling-v0.6.0-debug-apk` с `app-debug.apk` и `app-debug.apk.sha256`.
+## Samsung field test
+
+The device checklist is `docs/field-tests/2026-08-22-v0.7.1-samsung-checklist.md`. Physical observations remain `awaiting device test` until the final APK is installed on the Samsung and one full new log is returned.
+
+Historical v0.7 probes remain part of that run:
+
+- **Auto down 7 -> 5:** bounded recovery may return only SoundCeiling-owned attenuation debt.
+- **User manual down 7 -> 4:** automation must not raise above the new user ceiling.
+- YouTube and Yandex Music source evidence must remain truthful.
+- Session visibility must survive temporary MediaStore discovery gaps.
+
+Historical compatibility retained from **v0.5.1** and v0.6 includes volume-neutral calibration, non-raising Quiet Now, transient re-arm, projected-peak fixes, persistent linked-band EQ and logical single-session log sharing.
+
+## Build and verification
+
+Requires JDK 17 and Android SDK 35. CI runs the pure suite, historical regression contracts, v0.7 Adaptive Envelope contract, v0.7.1 DSP/UI/release contracts, then `:app:assembleDebug`.
+
+The field-build artifact is **`SoundCeiling-v0.7.1-debug-apk`** and contains `app-debug.apk`. The workflow calculates an SHA-256 checksum before upload; Task 12 records the immutable final artifact hash used for the Samsung test.

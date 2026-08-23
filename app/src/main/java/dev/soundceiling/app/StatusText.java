@@ -19,6 +19,7 @@ final class StatusText {
         return switch (s.controlActivity) {
             case HOLDING -> "Регулятор: удерживает";
             case DECREASING -> "Регулятор: снижает";
+            case RECOVERING -> "Recovery: плавно возвращает только снижение, ранее сделанное SoundCeiling";
             case MINIMUM_LIMIT -> "Регулятор: ограничен слышимым минимумом";
             case MAXIMUM_LIMIT -> "Регулятор: ограничен максимумом";
             case ERROR -> "Регулятор: ошибка";
@@ -32,32 +33,18 @@ final class StatusText {
 
     static String engine(RuntimeState s) {
         if (!s.running) return "Sound Ceiling выключен";
-        if (s.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL
-                || s.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_SOURCE) {
-            return "DSP active";
-        }
-        if (s.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.MIXED) {
-            return "Mixed apps · shared down-only control";
-        }
-        if (s.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.LIKELY
-                || s.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.UNKNOWN) {
-            return "Source uncertain · Global down-only control";
-        }
-        if (s.pcmState == PcmAvailabilityState.BLOCKED) {
-            return "PCM blocked - safe fallback";
-        }
-        if (s.pcmState == PcmAvailabilityState.UNCERTAIN
-                || s.pcmState == PcmAvailabilityState.ERROR) {
-            return "Safe fallback";
-        }
-        if (s.pcmState == PcmAvailabilityState.ACTIVE
-                && s.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT) {
-            return "Smart PCM";
-        }
-        if (s.meteringCapability == EngineCapabilities.MeteringCapability.OUTPUT_MIX_PEAK_RMS) {
-            return "System limiter only";
-        }
-        return "Waiting for audio";
+
+        boolean precisePcm = s.pcmState == PcmAvailabilityState.ACTIVE
+                && s.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT
+                && s.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.EXACT;
+        if (precisePcm) return "Precise PCM";
+
+        boolean signalFallback = s.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT
+                || s.meteringCapability == EngineCapabilities.MeteringCapability.PCM_MIXED
+                || s.meteringCapability == EngineCapabilities.MeteringCapability.OUTPUT_MIX_PEAK_RMS;
+        if (signalFallback) return "Safe fallback";
+
+        return "System-only protection";
     }
 
     private StatusText() {}

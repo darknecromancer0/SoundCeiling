@@ -3,6 +3,9 @@ package dev.soundceiling.app;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.util.Map;
+import java.util.Set;
+
 final class Prefs {
     private static final String FILE = "sound_ceiling";
 
@@ -34,10 +37,40 @@ final class Prefs {
             TRANSIENT_EMERGENCY="transient_emergency",
             RECOVERY_INTERVAL_MS="recovery_interval_ms",
             ACTIVE_PROFILE="active_profile",
-            THEME_MODE="theme_mode";
+            THEME_MODE="theme_mode",
+            CONTROL_SCALE="control_scale",
+            PREF_SCHEMA_VERSION="pref_schema_version",
+            DEFAULT_LINKED_LOCK="default_linked_lock",
+            LOWER_OUTPUT_CEILING_DB="lower_output_ceiling_db",
+            UPPER_OUTPUT_CEILING_DB="upper_output_ceiling_db",
+            WHOLE_OUTPUT_DSP_CONSENT="whole_output_dsp_consent",
+            GLOBAL_DSP_USER_SET="global_dsp_user_set",
+            CALIBRATION_ROUTE_STATE="calibration_route_state";
 
     static SharedPreferences get(Context c) {
         return c.getSharedPreferences(FILE, Context.MODE_PRIVATE);
+    }
+
+    /** Applies v0.7.1 normalization as one editor transaction; schema version is written last. */
+    static void migrateV071(Context c) {
+        SharedPreferences preferences = get(c);
+        Map<String, Object> migrated = V071SettingsMigration.migrate(preferences.getAll());
+        SharedPreferences.Editor editor = preferences.edit();
+        for (Map.Entry<String, Object> entry : migrated.entrySet()) {
+            if (!PREF_SCHEMA_VERSION.equals(entry.getKey())) put(editor, entry.getKey(), entry.getValue());
+        }
+        put(editor, PREF_SCHEMA_VERSION, migrated.get(PREF_SCHEMA_VERSION));
+        editor.apply();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void put(SharedPreferences.Editor editor, String key, Object value) {
+        if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
+        else if (value instanceof Float) editor.putFloat(key, (Float) value);
+        else if (value instanceof Integer) editor.putInt(key, (Integer) value);
+        else if (value instanceof Long) editor.putLong(key, (Long) value);
+        else if (value instanceof String) editor.putString(key, (String) value);
+        else if (value instanceof Set) editor.putStringSet(key, (Set<String>) value);
     }
 
     static float targetRms(Context c){return get(c).getFloat(TARGET_RMS,-18f);}
@@ -49,6 +82,18 @@ final class Prefs {
     static boolean splMode(Context c){return get(c).getBoolean(SPL_MODE,false);}
     static int compressionPercent(Context c){return get(c).getInt(COMPRESSION_PERCENT,100);}
     static int lastMeasuredSpl(Context c){return get(c).getInt(LAST_MEASURED_SPL,70);}
+    static CalibrationPreferenceState calibrationState(Context c){
+        return CalibrationPreferenceState.decode(get(c).getString(CALIBRATION_ROUTE_STATE, ""));
+    }
+    static void saveCalibrationState(Context c, String routeId, int measuredSpl){
+        CalibrationPreferenceState state = new CalibrationPreferenceState(routeId, measuredSpl);
+        get(c).edit().putString(CALIBRATION_ROUTE_STATE, state.encode())
+                .putInt(LAST_MEASURED_SPL, state.measuredSpl).apply();
+    }
+    static void clearCalibrationState(Context c, String routeId){
+        CalibrationPreferenceState saved = calibrationState(c);
+        if (saved.matchesRoute(routeId)) get(c).edit().remove(CALIBRATION_ROUTE_STATE).apply();
+    }
     static String uiMode(Context c){return get(c).getString(UI_MODE,"simple");}
     static SpeedPreset speedPreset(Context c){return SpeedPreset.fromKey(get(c).getString(SPEED_PRESET,"balanced"));}
     static boolean allowAutoMute(Context c){return get(c).getBoolean(ALLOW_AUTO_MUTE,ControlDefaults.AUTO_MUTE);}
@@ -57,6 +102,25 @@ final class Prefs {
     static boolean safetyLockEnabled(Context c){return get(c).getBoolean(SAFETY_LOCK_ENABLED,ControlDefaults.SAFETY_LOCK_ENABLED);}
     static int safetyLockPercent(Context c){return get(c).getInt(SAFETY_LOCK_PERCENT,maxVolumePercent(c));}
     static int quietIndex(Context c){return get(c).getInt(QUIET_INDEX,ControlDefaults.QUIET_INDEX);}
+
+
+    static boolean defaultLinkedLock(Context c){return get(c).getBoolean(DEFAULT_LINKED_LOCK,true);}
+    static float lowerOutputCeilingDb(Context c){return get(c).getFloat(LOWER_OUTPUT_CEILING_DB,OutputCeilingState.DEFAULT_DB);}
+    static float upperOutputCeilingDb(Context c){return get(c).getFloat(UPPER_OUTPUT_CEILING_DB,OutputCeilingState.DEFAULT_DB);}
+    static OutputCeilingState outputCeilings(Context c){
+        return OutputCeilingState.of(defaultLinkedLock(c), lowerOutputCeilingDb(c), upperOutputCeilingDb(c));
+    }
+    static void saveOutputCeilings(Context c, OutputCeilingState state){
+        if (state == null) return;
+        get(c).edit().putBoolean(DEFAULT_LINKED_LOCK,state.linked())
+                .putFloat(LOWER_OUTPUT_CEILING_DB,state.lowerDb())
+                .putFloat(UPPER_OUTPUT_CEILING_DB,state.upperDb()).apply();
+    }
+    static boolean globalDspEnabled(Context c){return get(c).getBoolean(WHOLE_OUTPUT_DSP_CONSENT,true);}
+    static void setGlobalDspEnabled(Context c, boolean enabled){
+        get(c).edit().putBoolean(WHOLE_OUTPUT_DSP_CONSENT,enabled)
+                .putBoolean(GLOBAL_DSP_USER_SET,true).apply();
+    }
 
     static NormalizationPreset normalizationPreset(Context c) {
         SharedPreferences p=get(c);
@@ -81,6 +145,11 @@ final class Prefs {
     static String activeProfile(Context c){return get(c).getString(ACTIVE_PROFILE,"");}
     static String activeProfileKey(Context c){return activeProfile(c);}
     static String themeMode(Context c){return get(c).getString(THEME_MODE,"system");}
+    static ControlScale controlScale(Context c) {
+        SharedPreferences p = get(c);
+        if (p.contains(CONTROL_SCALE)) return ControlScale.fromKey(p.getString(CONTROL_SCALE, ControlScale.MEDIA_PERCENT.key));
+        return splMode(c) ? ControlScale.CALIBRATED_SPL : ControlScale.MEDIA_PERCENT;
+    }
 
     static ControlProfile currentControlProfile(Context c) {
         return new ControlProfile(minMediaIndex(c), maxVolumePercent(c), safetyLockEnabled(c),
