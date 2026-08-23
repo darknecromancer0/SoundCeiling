@@ -4,8 +4,7 @@ public final class V074SamsungFieldRegressionPureTest {
     public static void main(String[] args) {
         globalProbeAttenuationMustSurviveCoordinatorTick();
         hardMediaCapInterruptsProbeBeforeFallbackWrite();
-        playbackCaptureFilterRebindPreservesReferenceProof();
-        backendChangeStillInvalidatesReferenceProof();
+        captureRebindResetsReferenceEvidence();
         silentMediaMoveDoesNotBecomeReferenceEvidence();
         System.out.println("V074SamsungFieldRegressionPureTest: PASS");
     }
@@ -45,22 +44,13 @@ public final class V074SamsungFieldRegressionPureTest {
         eq(4, next.mediaIndex(), "hard cap target");
     }
 
-    private static void playbackCaptureFilterRebindPreservesReferenceProof() {
+    private static void captureRebindResetsReferenceEvidence() {
         LiveCaptureReference reference = verifiedPreVolumeReference();
         eq(CaptureReferenceEstimator.Mode.PRE_VOLUME, reference.mode(), "precondition");
-        reference.onPlaybackCaptureFilterRebound();
-        eq(CaptureReferenceEstimator.Mode.PRE_VOLUME, reference.mode(),
-                "mixed-targeted PlaybackCapture rebind must preserve route reference proof");
         reference.onCaptureReplaced();
-        eq(CaptureReferenceEstimator.Mode.PRE_VOLUME, reference.mode(),
-                "current service rebind callback must preserve the same proof");
-    }
-
-    private static void backendChangeStillInvalidatesReferenceProof() {
-        LiveCaptureReference reference = verifiedPreVolumeReference();
-        reference.onCaptureBackendChanged();
         eq(CaptureReferenceEstimator.Mode.UNKNOWN, reference.mode(),
-                "changing measurement backend must invalidate capture reference proof");
+                "capture-dependent PRE/POST proof must reset when capture is replaced");
+        eq(0, reference.evidenceCount(), "rebind clears capture-reference evidence");
     }
 
     private static void silentMediaMoveDoesNotBecomeReferenceEvidence() {
