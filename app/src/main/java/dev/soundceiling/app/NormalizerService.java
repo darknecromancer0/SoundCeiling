@@ -572,11 +572,21 @@ public class NormalizerService extends Service {
                                                               boolean transientEvidence) {
         VolumeWriteTracker.Observation observed = lastVolumeObservation;
         int previous = observed == null ? current : observed.previousIndex;
+        boolean playbackCapturePreFallback = !fastOnlyMode && pcmCapture != null
+                && backendStatus.tier == AudioBackendStatus.Tier.PLAYBACK_CAPTURE;
+        boolean usingAssumedPre = playbackCapturePreFallback
+                && liveCaptureReference.mode() == CaptureReferenceEstimator.Mode.UNKNOWN
+                && (optionalDsp == null || !isVerifiedDspCapability(optionalDsp.capability()));
+        DiagnosticLog.transition("capture_reference_fallback",
+                usingAssumedPre ? "PRE_VOLUME_ASSUMED" : "inactive",
+                "active=" + usingAssumedPre + " backend=" + backendStatus.tier
+                        + " measured=" + liveCaptureReference.mode());
         return new NormalizerControlCoordinator.Frame.Builder(now, previous, current, controlCurve)
                 .rawPeakDbfs(rawPeakDbfs).controlLoudnessDb(controlLoudnessDb)
                 .currentDspGainDb(optionalDsp == null ? 0f : optionalDsp.appliedGainDb())
                 .mediaGainDb(controlCurve.gainDbForIndex(current))
                 .captureReference(liveCaptureReference.mode())
+                .assumedPreVolumeFallbackAllowed(playbackCapturePreFallback)
                 .hardPeakCeilingDbfs(profile.sourcePeakThresholdDbfs)
                 .hardMediaCeilingIndex(safetySettings.hardMax())
                 .rawProgramActive(rawProgramActive)
