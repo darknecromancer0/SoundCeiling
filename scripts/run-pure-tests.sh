@@ -73,6 +73,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspProbeMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspGainSlew.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackSnapshot.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PcmCaptureRequest.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceDescriptor.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/SourceSet.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmAvailabilityState.java" \
@@ -103,6 +104,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071NormalizationCorePureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071CoordinatorPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071DspPolicyPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071CaptureCoordinatorPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -173,3 +175,4 @@ java -cp "$OUT" dev.soundceiling.app.V071LinkedLockPureTest
 java -cp "$OUT" dev.soundceiling.app.V071NormalizationCorePureTest
 java -cp "$OUT" dev.soundceiling.app.V071CoordinatorPureTest
 java -cp "$OUT" dev.soundceiling.app.V071DspPolicyPureTest
+java -cp "$OUT" dev.soundceiling.app.V071CaptureCoordinatorPureTest
