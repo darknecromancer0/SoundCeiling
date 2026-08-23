@@ -1,6 +1,15 @@
-# Sound Ceiling for Android - v0.7.3
+# Sound Ceiling for Android - v0.7.4
 
-SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.3 is a corrective field build based on the next Samsung SM-A528B trace. **user authority is absolute for Samsung Media UP**: ordinary normalization can never raise the Samsung slider above the latest externally chosen index; only SoundCeiling-owned attenuation debt may be repaid back to that anchor. A capture rebind preserves the route-scoped DSP transport and user anchor instead of pretending the physical route changed.
+SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.4 is a field-driven corrective build based on the physical Samsung SM-A528B v0.7.3 trace. The trace proved that Samsung can instantiate the session-zero `DynamicsProcessing` candidate through the default-config fallback, but also exposed a control-loop bug that immediately neutralized SoundCeiling's own bounded -2 dB verification probe. v0.7.4 fixes that proof lifecycle without relaxing Samsung Media user authority.
+
+## v0.7.4 corrective highlights
+
+- **Global DSP probe no longer cancels itself.** The only legal non-zero gain on an unverified global transport is the bounded -2 dB scope probe. Ordinary coordinator control now holds while that probe is measured instead of misclassifying it as stale DSP and immediately writing 0 dB.
+- **Safety still interrupts the probe correctly.** Hard Media cap and Quiet Now neutralize the in-flight probe first; fallback/Media action follows only after neutral DSP state, preserving neutralize-before-fallback ordering.
+- **Stale rebind samples cannot verify Global DSP.** If a mixed↔targeted capture replacement cancels a live probe, its old before/after collector cannot turn post-rebind samples into a new route proof. A fresh probe is required.
+- **Capture-reference evidence survives UID-filter rebinds.** mixed↔targeted PlaybackCapture uses the same measurement backend, so verified/accumulated PRE/POST evidence is preserved instead of being erased on every source rebind.
+- **Silence is not PRE/POST evidence.** Media changes whose before/after PCM is effectively silent are ignored by the capture-reference estimator.
+- **v0.7.3 user authority remains intact.** Ordinary Media UP remains debt-only and can never exceed the latest user anchor; hard safety retains independent downward authority.
 
 ## v0.7.3 corrective highlights
 
@@ -55,19 +64,14 @@ Transitions are logged immediately. Unchanged control summaries are bounded to o
 
 ## Samsung field test
 
-The device checklist is `docs/field-tests/2026-08-23-v0.7.3-samsung-corrective-checklist.md`. Physical observations remain `awaiting device test` until the final APK is installed on the Samsung and one full new log is returned.
+The current device checklist is `docs/field-tests/2026-08-24-v0.7.4-samsung-corrective-checklist.md`. Physical acceptance remains **awaiting device test** until the exact v0.7.4 CI APK is installed on the Samsung and one full new exported log is returned.
 
-Historical v0.7 probes remain part of that run:
+The next trace is expected to answer two empirical questions that v0.7.3 could not answer because of the probe-control bug: whether Samsung's default-config session-zero DynamicsProcessing really changes the measured output mix, and whether preserved live capture-reference evidence reaches PRE/POST without being erased by source rebinds.
 
-- **Auto down 7 -> 5:** bounded recovery may return only SoundCeiling-owned attenuation debt.
-- **User manual down 7 -> 4:** automation must not raise above the new user ceiling.
-- YouTube and Yandex Music source evidence must remain truthful.
-- Session visibility must survive temporary MediaStore discovery gaps.
-
-Historical compatibility retained from **v0.5.1** and v0.6 includes volume-neutral calibration, non-raising Quiet Now, transient re-arm, projected-peak fixes, persistent linked-band EQ and logical single-session log sharing.
+Historical compatibility retained from **v0.5.1**, v0.6 and earlier v0.7 corrective releases includes volume-neutral calibration, non-raising Quiet Now, transient re-arm, projected-peak fixes, persistent linked-band EQ, logical single-session log sharing, Samsung user authority and debt-only Media recovery.
 
 ## Build and verification
 
-Requires JDK 17 and Android SDK 35. CI runs the pure suite, historical regression contracts, v0.7 Adaptive Envelope contract, v0.7.1 historical contracts plus v0.7.2 historical contracts plus v0.7.3 user-authority/DSP/release contracts, then `:app:assembleDebug`.
+Requires JDK 17 and Android SDK 35. CI runs the pure suite, historical regression contracts, v0.7 Adaptive Envelope contract, v0.7.1 historical contracts, v0.7.2 corrective/release contracts, v0.7.3 user-authority/release contracts, the v0.7.4 Samsung field regression/corrective contract, the v0.7.4 release contract, then `:app:assembleDebug`.
 
-The field-build artifact is **`SoundCeiling-v0.7.3-debug-apk`** and contains `app-debug.apk`. The workflow calculates an SHA-256 checksum before upload; Task 12 records the immutable final artifact hash used for the Samsung test.
+The field-build artifact is **`SoundCeiling-v0.7.4-debug-apk`** and contains `app-debug.apk`. The workflow calculates an SHA-256 checksum before upload; the exact final artifact hash is recorded for the Samsung test.
