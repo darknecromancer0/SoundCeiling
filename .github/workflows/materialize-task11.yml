@@ -1,0 +1,45 @@
+name: Materialize Task 11 exact sources
+on:
+  pull_request:
+permissions:
+  contents: write
+jobs:
+  materialize:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/v0.7-adaptive-envelope
+          fetch-depth: 0
+      - name: Apply exact Task 11 patch and self-remove
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .task11/p00 .task11/p01 .task11/p02 > /tmp/task11.patch
+          test "$(git hash-object /tmp/task11.patch)" = "a1c815cf4602c58980d809c2527e13babf806706"
+          git apply /tmp/task11.patch
+
+          check_hash(){ test "$(git hash-object "$2")" = "$1" || { echo "hash mismatch: $2" >&2; exit 1; }; }
+          check_hash 0c0cc4c20c607f52f6b9273519f62f4e65f67baa .github/workflows/build-apk.yml
+          check_hash 0e035d3ac3470cf9926d058eb3ee55a9a5e060c2 README.md
+          check_hash 511372174523a24403e4ea39a4652bf473d7ded0 app/build.gradle.kts
+          check_hash dcfdd3091e65c9caa79692e0784a23fe0f02f123 app/src/main/java/dev/soundceiling/app/DiagnosticLog.java
+          check_hash 2fafc4594ccf3d0a5482f680ff859c057d9bbcdb app/src/main/java/dev/soundceiling/app/LogFormatter.java
+          check_hash ef4b4daf0e990bd2f437bda20ae923d745c52c70 app/src/main/java/dev/soundceiling/app/NormalizerService.java
+          check_hash 361e0cd619ce35bbec2ffad42fd28b6e50d4e848 app/src/main/java/dev/soundceiling/app/SafeVolumeController.java
+          check_hash d1ced55702889884c5468b90a7fd8a1db5cb289b app/src/main/java/dev/soundceiling/app/SessionLogger.java
+          check_hash ab0ba43457f4caa3f4911bb1fb88494228430132 app/src/main/java/dev/soundceiling/app/SoundCeilingApplication.java
+          check_hash 1a63e1e5a6fa044e6456da211f3fa81fdf1b8969 app/src/main/java/dev/soundceiling/app/TransitionLogGate.java
+          check_hash 2cafeb24cb2cd6f65fec82e5e8c3ad544b703235 app/src/test/java/dev/soundceiling/app/V071LoggingPureTest.java
+          check_hash c9b9487268b37bcba72af5c15738bd05e3bdd55b docs/field-tests/2026-08-22-v0.7.1-samsung-checklist.md
+          check_hash e05b0be3a0b1a91baf23937c8bdb21d3d8bb2608 scripts/check-v07-release-contract.sh
+          check_hash e0f87c9b8f1770565ea687688bdf2c858274a9af scripts/check-v071-release-contract.sh
+          check_hash 888a8004f9df835ccd3db0e74aa3da1fd4f111f8 scripts/run-pure-tests.sh
+
+          rm -rf .task11 .github/workflows/materialize-task11.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: prepare v0.7.1 release diagnostics"
+          git push origin HEAD:feature/v0.7-adaptive-envelope

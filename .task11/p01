@@ -1,0 +1,122 @@
+/src/main/java/dev/soundceiling/app/NormalizerService.java
++++ b/app/src/main/java/dev/soundceiling/app/NormalizerService.java
+@@ -306,6 +306,7 @@ public class NormalizerService extends Service {
+             boolean emergency = isSafetyCommand(command);
+             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
+                     effectiveProfile.autoMute && emergency, now);
++            logControlSummary(now, command, applied, blockPeak);
+             String reason = command.reason();
+             long reactionLatency = applied != current
+                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
+@@ -453,6 +454,7 @@ public class NormalizerService extends Service {
+             boolean emergency = isSafetyCommand(command);
+             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
+                     effectiveProfile.autoMute && emergency, detectedAt);
++            logControlSummary(detectedAt, command, applied, fallbackPeak);
+             long latency = applied < current
+                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
+             RuntimeState.ControlActivity activity = applied < current ? RuntimeState.ControlActivity.DECREASING
+@@ -695,6 +697,20 @@ public class NormalizerService extends Service {
+         updateNotification(state);
+     }
+ 
++    private void logControlSummary(long nowMs, ControlCommand command, int appliedMediaIndex,
++                                   float rawPeakDbfs) {
++        NormalizerControlCoordinator.Snapshot snapshot = controlCoordinator.snapshot();
++        float appliedGainDb = snapshot.appliedGainDb();
++        float mediaGainDb = controlCurve.gainDbForIndex(appliedMediaIndex);
++        float projectedPeakDbfs = Float.isFinite(rawPeakDbfs)
++                ? rawPeakDbfs + mediaGainDb + appliedGainDb : Float.NaN;
++        String policy = hybridSnapshot == null ? "unknown" : hybridSnapshot.policy.resolutionReason;
++        String captureReference = snapshot.measurementMode().name();
++        DiagnosticLog.controlSummary(nowMs, command == null ? snapshot.actuator() : command.kind(),
++                snapshot.desiredGainDb(), appliedGainDb, rawPeakDbfs, projectedPeakDbfs,
++                policy, captureReference, command == null ? snapshot.decisionReason() : command.reason());
++    }
++
+     private long updateFallbackBands(GlobalVisualizerBackend.Reading reading, long nowMs) {
+         if (reading != null && reading.bandsAvailable) {
+             lastBands = EqVisualizationMath.meterLevelsFromDb(reading.bandsDb);
+diff --git a/app/src/main/java/dev/soundceiling/app/SafeVolumeController.java b/app/src/main/java/dev/soundceiling/app/SafeVolumeController.java
+index a447d70..361e0cd 100644
+--- a/app/src/main/java/dev/soundceiling/app/SafeVolumeController.java
++++ b/app/src/main/java/dev/soundceiling/app/SafeVolumeController.java
+@@ -38,8 +38,9 @@ final class SafeVolumeController {
+                 Math.min(current, requested), current, settings, effectiveMax, allowBelowMinimum);
+         if (guarded == current) {
+             if (quietCommand) {
+-                DiagnosticLog.event("quiet_now_hold", "current=" + current
+-                        + " configured=" + requestedIndex + " reason=downward_hold");
++                DiagnosticLog.transition("quiet_now_hold",
++                        "current=" + current + ":configured=" + requestedIndex,
++                        "current=" + current + " configured=" + requestedIndex + " reason=downward_hold");
+             } else if (current == settings.minIndex) {
+                 DiagnosticLog.transition("zero_floor_hold", "at_stream_minimum",
+                         "current=" + current + " requested=" + requestedIndex);
+diff --git a/app/src/main/java/dev/soundceiling/app/SessionLogger.java b/app/src/main/java/dev/soundceiling/app/SessionLogger.java
+index a64b21f..d1ced55 100644
+--- a/app/src/main/java/dev/soundceiling/app/SessionLogger.java
++++ b/app/src/main/java/dev/soundceiling/app/SessionLogger.java
+@@ -51,6 +51,12 @@ final class SessionLogger implements AutoCloseable {
+         write(line);
+     }
+ 
++    synchronized void summary(String line) {
++        if (line == null || line.isEmpty()) return;
++        decisionContext.add(line);
++        write(line);
++    }
++
+     synchronized void anomaly(List<DiagnosticItem> items) {
+         if (items == null || items.isEmpty()) return;
+         boolean hasProblem = false;
+diff --git a/app/src/main/java/dev/soundceiling/app/SoundCeilingApplication.java b/app/src/main/java/dev/soundceiling/app/SoundCeilingApplication.java
+index 456732a..ab0ba43 100644
+--- a/app/src/main/java/dev/soundceiling/app/SoundCeilingApplication.java
++++ b/app/src/main/java/dev/soundceiling/app/SoundCeilingApplication.java
+@@ -5,6 +5,7 @@ import android.app.Application;
+ public final class SoundCeilingApplication extends Application {
+     @Override public void onCreate() {
+         super.onCreate();
++        DiagnosticLog.resetProcessGates();
+         EqController.get(this).applySaved();
+     }
+ }
+diff --git a/app/src/main/java/dev/soundceiling/app/TransitionLogGate.java b/app/src/main/java/dev/soundceiling/app/TransitionLogGate.java
+index c09f9cb..1a63e1e 100644
+--- a/app/src/main/java/dev/soundceiling/app/TransitionLogGate.java
++++ b/app/src/main/java/dev/soundceiling/app/TransitionLogGate.java
+@@ -3,18 +3,50 @@ package dev.soundceiling.app;
+ import java.util.HashMap;
+ import java.util.Map;
+ 
+-/** Small state-change gate used to prevent high-frequency runtime snapshots from spamming logs. */
++/** State/rate gate used to keep runtime logging bounded without delaying real transitions. */
+ final class TransitionLogGate {
+-    private final Map<String, String> lastStateByCode = new HashMap<>();
++    private static final class Entry {
++        String state;
++        long lastLoggedAtMs;
++        Entry(String state, long lastLoggedAtMs) { this.state = state; this.lastLoggedAtMs = lastLoggedAtMs; }
++    }
++
++    private final Map<String, Entry> entries = new HashMap<>();
+ 
+     synchronized boolean shouldLog(String code, String state) {
+         if (code == null || code.isEmpty()) return false;
+         String normalized = state == null ? "" : state;
+-        String previous = lastStateByCode.put(code, normalized);
+-        return previous == null || !previous.equals(normalized);
++        Entry previous = entries.get(code);
++        if (previous != null && previous.state.equals(normalized)) return false;
++        entries.put(code, new Entry(normalized, previous == null ? 0L : previous.lastLoggedAtMs));
++        return true;
+     }
+ 
+-    synchronized void reset() {
+-        lastStateByCode.clear();
++    /**
++     * State changes are immediate. An unchanged state is emitted only after minIntervalMs.
++     * nowMs is monotonic runtime time; a clock reset is treated as a new summary boundary.
++     */
++    synchronized boolean shouldLogP
