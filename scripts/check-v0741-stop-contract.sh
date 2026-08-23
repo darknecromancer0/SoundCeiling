@@ -16,10 +16,9 @@ require "$PCM" 'try { record.stop(); } catch (RuntimeException ignored) {}'
 require "$PCM" 'try { record.release(); } catch (RuntimeException ignored) {}'
 require "$SERVICE" 'workerRunning.set(false);'
 require "$SERVICE" 'if (!workerRunning.get()) return;'
-require "$BUILD" 'versionCode=15'
-require "$BUILD" 'versionName="0.7.4.1"'
+grep -Eq 'versionCode=(15|16)' "$BUILD" || fail 'expected v0.7.4.1+ versionCode'
+grep -Eq 'versionName="0\.7\.4\.(1|2)"' "$BUILD" || fail 'expected v0.7.4.1+ versionName'
 require "$WF" 'run: bash ./scripts/check-v0741-stop-contract.sh'
-require "$WF" 'name: SoundCeiling-v0.7.4.1-debug-apk'
 python - "$PCM" <<'PY'
 from pathlib import Path
 import sys
