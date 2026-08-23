@@ -1,0 +1,27 @@
+ic boolean allowAutoMute(Context c){return get(c).getBoolean(ALLOW_AUTO_MUTE,ControlDefaults.AUTO_MUTE);}
+diff --git a/app/src/test/java/dev/soundceiling/app/V071VisualizerPureTest.java b/app/src/test/java/dev/soundceiling/app/V071VisualizerPureTest.java
+index 0fa4d13..3aea52d 100644
+--- a/app/src/test/java/dev/soundceiling/app/V071VisualizerPureTest.java
++++ b/app/src/test/java/dev/soundceiling/app/V071VisualizerPureTest.java
+@@ -1,7 +1,5 @@
+ package dev.soundceiling.app;
+ 
+-import java.util.Arrays;
+-
+ public final class V071VisualizerPureTest {
+     public static void main(String[] args) {
+         eachToneRaisesExpectedBand();
+diff --git a/scripts/check-v07-adaptive-contract.sh b/scripts/check-v07-adaptive-contract.sh
+index 22257f2..eb73eef 100755
+--- a/scripts/check-v07-adaptive-contract.sh
++++ b/scripts/check-v07-adaptive-contract.sh
+@@ -154,7 +154,7 @@ require "$PKG/EqView.java" 'private final FrequencyMeterView liveSpectrum'
+ require "$PKG/EqView.java" 'private final EqResponseView responseView'
+ require "$PKG/EqView.java" 'Живой спектр'
+ require "$PKG/EqView.java" 'EQ Amount / Сила EQ'
+-require "$PKG/EqView.java" 'liveSpectrum.renderBands(state.bandLevels())'
++require "$PKG/EqView.java" 'liveSpectrum.renderState(state)'
+ require "$PKG/EqView.java" 'updateEqVisualization()'
+ require "$PKG/EqSettings.java" 'amountPercent'
+ require "$PKG/EqSettings.java" 'p.getInt(AMOUNT, 100)'
+@@ -193,6 +193,19 @@ reject "$PKG/AdvancedModeView.java" 'Использова�

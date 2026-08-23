@@ -1,7 +1,5 @@
 package dev.soundceiling.app;
 
-import java.util.Arrays;
-
 public final class V071VisualizerPureTest {
     public static void main(String[] args) {
         eachToneRaisesExpectedBand();
