@@ -10,9 +10,11 @@ TEST="$ROOT/app/src/test/java/dev/soundceiling/app/V074SamsungFieldRegressionPur
 javac -Xlint:all -Werror -cp "$OUT" -d "$OUT" "$TEST"
 java -cp "$OUT" dev.soundceiling.app.V074SamsungFieldRegressionPureTest
 
-grep -q 'globalDspProbeActive' "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java"
+grep -q 'BOUNDED_GLOBAL_DSP_PROBE_GAIN_DB' "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java"
+grep -q 'global_dsp_probe_measurement_hold' "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java"
 grep -q 'onPlaybackCaptureFilterRebound' "$ROOT/app/src/main/java/dev/soundceiling/app/LiveCaptureReference.java"
 grep -q 'onCaptureBackendChanged' "$ROOT/app/src/main/java/dev/soundceiling/app/LiveCaptureReference.java"
-grep -q 'resetGlobalProbeState' "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizerService.java"
+grep -q 'MIN_REFERENCE_SIGNAL_DB' "$ROOT/app/src/main/java/dev/soundceiling/app/LiveCaptureReference.java"
+grep -q 'probe_not_active' "$ROOT/app/src/main/java/dev/soundceiling/app/DspScopeProbe.java"
 
 echo "v0.7.4 corrective contract: PASS"
