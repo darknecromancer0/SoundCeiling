@@ -51,6 +51,8 @@ jobs:
         run: bash ./scripts/check-v071-dsp-contract.sh
       - name: Check v0.7.1 Simple/Advanced UI contract
         run: bash ./scripts/check-v071-ui-contract.sh
+      - name: Check v0.7.1 release contract
+        run: bash ./scripts/check-v071-release-contract.sh
       - name: Check v0.7 UI contract
         run: bash ./scripts/check-v07-ui-contract.sh
       - name: Check v0.5 targeted PCM contract
