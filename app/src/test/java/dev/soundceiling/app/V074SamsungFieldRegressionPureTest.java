@@ -6,6 +6,7 @@ public final class V074SamsungFieldRegressionPureTest {
         hardMediaCapStillWinsDuringGlobalProbe();
         playbackCaptureFilterRebindPreservesReferenceProof();
         backendChangeStillInvalidatesReferenceProof();
+        silentMediaMoveDoesNotBecomeReferenceEvidence();
         System.out.println("V074SamsungFieldRegressionPureTest: PASS");
     }
 
@@ -41,6 +42,16 @@ public final class V074SamsungFieldRegressionPureTest {
         reference.onCaptureBackendChanged();
         eq(CaptureReferenceEstimator.Mode.UNKNOWN, reference.mode(),
                 "changing measurement backend must invalidate capture reference proof");
+    }
+
+    private static void silentMediaMoveDoesNotBecomeReferenceEvidence() {
+        LiveCaptureReference reference = new LiveCaptureReference();
+        reference.observeMediaChange(-5f, -90f, -90f, false);
+        reference.observeMediaChange(5f, -18.1f, -18.0f, true);
+        reference.observeMediaChange(5f, -18.0f, -17.9f, true);
+        eq(2, reference.evidenceCount(), "silent Media move must not count as reference evidence");
+        eq(CaptureReferenceEstimator.Mode.UNKNOWN, reference.mode(),
+                "two real samples plus one silent move are still insufficient proof");
     }
 
     private static LiveCaptureReference verifiedPreVolumeReference() {
