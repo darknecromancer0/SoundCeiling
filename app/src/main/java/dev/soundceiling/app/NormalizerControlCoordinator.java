@@ -8,6 +8,8 @@ import java.util.Objects;
  * the service's responsibility.
  */
 public final class NormalizerControlCoordinator {
+    private static final float BOUNDED_GLOBAL_DSP_PROBE_GAIN_DB = -2f;
+
     public enum VolumeObservation { UNCHANGED, USER, APP_ACK, APP_STALE, APP_MISMATCH }
 
     /** Immutable evidence collected by the Android service before a control tick. */
@@ -222,10 +224,27 @@ public final class NormalizerControlCoordinator {
                 ? transientGuard.update(frame.atMs, frame.transientSignalDb)
                 : TransientGuard.Event.none(Float.NaN);
 
+        // The only legal non-zero gain on an unverified global transport is the bounded -2 dB
+        // scope probe. Hold ordinary control long enough to measure it instead of immediately
+        // mistaking our own probe for stale DSP. Safety/Quiet interruptions still neutralize first.
+        boolean boundedGlobalProbe = !frame.verifiedDsp
+                && Math.abs(frame.currentDspGainDb - BOUNDED_GLOBAL_DSP_PROBE_GAIN_DB) <= .001f;
+        if (boundedGlobalProbe
+                && frame.currentMediaIndex <= frame.hardMediaCeilingIndex
+                && frame.writeOrigin != VolumeWriteOrigin.QUIET_NOW) {
+            return record(ControlCommand.none("global_dsp_probe_measurement_hold"), 0f, frame,
+                    programActive, transientEvent.severity);
+        }
+
         // A lost non-neutral DSP must be neutralized before any Media fallback or hard cap. Keep
         // returning the same one-command neutralization until transport feedback confirms zero.
         if (!frame.verifiedDsp && Math.abs(frame.currentDspGainDb) > .001f) {
-            return record(ControlCommand.dspGain(0f, "dsp_capability_lost_neutralize",
+            String neutralizeReason = boundedGlobalProbe
+                    ? frame.currentMediaIndex > frame.hardMediaCeilingIndex
+                    ? "dsp_probe_interrupted_for_hard_cap"
+                    : "dsp_probe_interrupted_for_quiet_now"
+                    : "dsp_capability_lost_neutralize";
+            return record(ControlCommand.dspGain(0f, neutralizeReason,
                     ControlCommand.Provenance.DSP_NEUTRALIZATION), 0f, frame, programActive,
                     transientEvent.severity);
         }
