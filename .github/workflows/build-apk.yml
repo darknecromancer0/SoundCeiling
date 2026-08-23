@@ -65,6 +65,8 @@ jobs:
         run: bash ./scripts/check-v073-release-contract.sh
       - name: Check v0.7.4 release contract
         run: bash ./scripts/check-v074-release-contract.sh
+      - name: Check v0.7.4.1 stop lifecycle contract
+        run: bash ./scripts/check-v0741-stop-contract.sh
       - name: Check v0.7 UI contract
         run: bash ./scripts/check-v07-ui-contract.sh
       - name: Check v0.5 targeted PCM contract
@@ -100,6 +102,6 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.7.4-debug-apk
+          name: SoundCeiling-v0.7.4.1-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
