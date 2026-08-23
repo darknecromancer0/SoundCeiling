@@ -152,7 +152,6 @@ case SIMPLE:
 default: {
 SimpleModeView simple = new SimpleModeView(this, new SimpleModeView.Listener() {
 @Override public void onStartStop() { startStop(); }
-@Override public void onQuietNow() { quietNow(); }
 });
 activeScreen = simple;
 screen = simple;

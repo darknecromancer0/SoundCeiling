@@ -8,6 +8,8 @@ public final class V071SimpleModePureTest {
         fallbackFormatterUsesActualDiscreteMediaStepForBothCeilings();
         samsungUserDeltaMovesLinkedTargetButOwnedWriteDoesNot();
         helpRegistryCoversEveryVisibleDiagnosticTerm();
+        globalDspDefaultAndFallbackStatusStayTruthful();
+        globalDspAndLinkedLockAreIndependentInAllFourStates();
         System.out.println("V071SimpleModePureTest: PASS");
     }
 
@@ -69,6 +71,37 @@ public final class V071SimpleModePureTest {
         }
     }
 
+
+    private static void globalDspDefaultAndFallbackStatusStayTruthful() {
+        ControlVolumeCurve curve = samsungCurve();
+        SimpleModeModel fresh = SimpleModeModel.defaults(curve, false);
+        assertTrue(fresh.globalDspPreferred(), "Global DSP fresh/default preference must be ON");
+        assertFalse(fresh.globalDspActive(), "preference ON is not the same as verified active");
+        assertContains(fresh.globalDspStatusText(), "недоступен",
+                "unverified preference must show compatible fallback, not active");
+        SimpleModeModel active = new SimpleModeModel(OutputCeilingState.defaultLinked(), curve,
+                true, true, true);
+        assertTrue(active.globalDspActive(), "verified global mix can become active");
+        assertFalse(active.selectiveControlsEnabled(),
+                "indivisible active global mix disables selective controls");
+    }
+
+    private static void globalDspAndLinkedLockAreIndependentInAllFourStates() {
+        ControlVolumeCurve curve = samsungCurve();
+        for (boolean global : new boolean[]{false, true}) {
+            for (boolean linked : new boolean[]{false, true}) {
+                SimpleModeModel model = new SimpleModeModel(
+                        OutputCeilingState.of(linked, -24f, linked ? -24f : -12f),
+                        curve, global, global, global);
+                assertEquals(Boolean.valueOf(linked), Boolean.valueOf(model.linkedChecked()),
+                        "Linked Lock must not depend on Global DSP");
+                assertEquals(Boolean.valueOf(global), Boolean.valueOf(model.globalDspPreferred()),
+                        "Global DSP preference must not depend on Linked Lock");
+                assertEquals(Boolean.valueOf(!linked), Boolean.valueOf(model.ceilingControlsEnabled()),
+                        "both Simple and Advanced can use the same shared lock state");
+            }
+        }
+    }
     private static void assertFallbackShape(String value, String label) {
         assertContains(value, " dB · ступень ", label + " must include dB and actual step");
         assertContains(value, " из 15 · ", label + " must include route max step");

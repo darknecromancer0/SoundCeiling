@@ -122,25 +122,30 @@ final class DspPolicyArbiter {
 
     static Decision decide(Input input) {
         Objects.requireNonNull(input, "input");
+        if (input.endpoints.isEmpty()) {
+            return decision(Result.ATTENUATION_ONLY, input, "no_active_endpoint_evidence");
+        }
+
+        // Global DSP is an explicit whole-output mode. When the user preference is ON and the
+        // session-zero transport is actually verified, per-app/per-system exclusions cannot be
+        // truthfully enforced on the indivisible mix and therefore do not veto this actuator.
+        boolean globalVerified = input.globalCapability
+                == DspTransport.Capability.VERIFIED_GLOBAL_MIX
+                && input.globalScope == DspScope.GLOBAL_MIX;
+        if (input.wholeOutputScopeConsent && globalVerified) {
+            return decision(Result.GLOBAL_MIX_DSP, input,
+                    "verified_global_mix_global_dsp_mode");
+        }
+
         boolean anyAllowed = false;
         boolean anyOff = false;
-        boolean anyUnwaivableOff = false;
-        boolean anyDspDisabledAllowed = false;
         for (PlaybackEndpoint endpoint : input.endpoints) {
             if (endpoint == null || !endpoint.policyResolved || endpoint.policy == null) {
                 return decision(Result.ATTENUATION_ONLY, input,
                         "unresolved_usage_or_policy");
             }
-            if (endpoint.allowsPositiveControl()) {
-                anyAllowed = true;
-                if (!endpoint.allowsDspControl()) anyDspDisabledAllowed = true;
-            } else {
-                anyOff = true;
-                if (!endpoint.isDefaultProtectedUsageOff()) anyUnwaivableOff = true;
-            }
-        }
-        if (input.endpoints.isEmpty()) {
-            return decision(Result.ATTENUATION_ONLY, input, "no_active_endpoint_evidence");
+            if (endpoint.allowsPositiveControl()) anyAllowed = true;
+            else anyOff = true;
         }
 
         if (hasEligibleScopedHandle(input)) {
@@ -148,19 +153,6 @@ final class DspPolicyArbiter {
         }
         if (!anyAllowed) {
             return decision(Result.NO_POSITIVE_CONTROL, input, "all_active_endpoints_off");
-        }
-
-        boolean globalVerified = input.globalCapability
-                == DspTransport.Capability.VERIFIED_GLOBAL_MIX
-                && input.globalScope == DspScope.GLOBAL_MIX;
-        boolean globalScopeAuthorized = input.wholeOutputScopeConsent
-                || input.documentedOemProtectedUsageExclusion;
-        boolean globalPolicyCompatible = !anyUnwaivableOff && !anyDspDisabledAllowed;
-        if (globalVerified && globalScopeAuthorized && globalPolicyCompatible) {
-            return decision(Result.GLOBAL_MIX_DSP, input,
-                    input.wholeOutputScopeConsent
-                            ? "verified_global_mix_explicit_consent"
-                            : "verified_global_mix_documented_scope");
         }
         if (anyOff) {
             return decision(Result.FALLBACK_ONLY, input, "mixed_allowed_and_off_scope");

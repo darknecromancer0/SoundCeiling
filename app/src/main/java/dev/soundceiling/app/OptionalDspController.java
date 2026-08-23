@@ -41,7 +41,8 @@ final class OptionalDspController implements AutoCloseable {
                 .build();
         policyDecision = DspPolicyArbiter.decide(input);
         if (policyDecision.result != DspPolicyArbiter.Result.POLICY_SCOPED_DSP
-                && policyDecision.result != DspPolicyArbiter.Result.GLOBAL_MIX_DSP) {
+                && policyDecision.result != DspPolicyArbiter.Result.GLOBAL_MIX_DSP
+                && !transports.globalProbeActive()) {
             transports.neutralizeForFallback();
         }
         detail = policyDecision.reason;
@@ -95,6 +96,8 @@ final class OptionalDspController implements AutoCloseable {
     String detail() {
         return detail;
     }
+
+    boolean globalProbeActive() { return transports.globalProbeActive(); }
 
     boolean applyGain(float requestedGainDb, boolean hardSafety) {
         if (requestedGainDb != 0f && (policyDecision == null

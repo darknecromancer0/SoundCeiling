@@ -77,11 +77,10 @@ require "$PKG/CalibrationView.java" 'не гарантирует безопас�
 require "$PKG/CalibrationView.java" 'SoundCeiling отслеживает оба параметра и отменяет тест при изменении'
 reject "$PKG/CalibrationView.java" 'Безопасный тест: 1 кГц · -12 dBFS'
 
-# Task 6: Basic and Advanced must share one Target scale and storage mapping.
+# Task 6 compatibility: TargetScale remains canonical for Advanced. v0.7.1 Task 9 promotes
+# shared Minimum/Maximum Output Ceiling controls in Simple instead of duplicating the old Target slider.
 require "$PKG/TargetScale.java" 'final class TargetScale'
-require "$PKG/SimpleModeView.java" 'TargetScale.percentForLoudness(Prefs.targetLoudness(context))'
-require "$PKG/SimpleModeView.java" 'TargetScale.loudnessForPercent(progress)'
-require "$PKG/SimpleModeView.java" 'TargetScale.loudnessForPercent(percent)'
+require "$PKG/SimpleModeModel.java" 'OutputCeilingScale.percentForDb'
 reject "$PKG/SimpleModeView.java" 'private static float loudnessForPercent'
 reject "$PKG/SimpleModeView.java" 'private static int percentForLoudness'
 require "$PKG/AdvancedModeView.java" 'targetLoudness = addSlider("Target", HelpText.TARGET_LOUDNESS, 0, 100,'
@@ -123,9 +122,9 @@ reject "$PKG/AppPolicyEditorView.java" 'Limiter only · никогда не по
 require "$PKG/AppPolicyStore.java" '"limiterOnly"'
 require "$PKG/AppPolicyStore.java" 'p.downwardOnly'
 
-# Task 9: Basic/Advanced copy must describe Adaptive Envelope instead of the v0.6 one-way model.
-require "$PKG/SimpleModeView.java" 'Adaptive Envelope:'
-require "$PKG/SimpleModeView.java" 'Ручное снижение пользователя и Maximum имеют приоритет'
+# v0.7.1 Task 9 supersedes the old Simple intro with shared Global DSP + Linked Lock copy.
+require "$PKG/SimpleModeView.java" 'Global DSP управляет способом обработки'
+require "$PKG/SimpleModeView.java" 'Default Linked Lock'
 reject "$PKG/SimpleModeView.java" 'Один one-way движок'
 reject "$PKG/SimpleModeView.java" 'normalizeLabel.setText("Normalization: " + percent + "% · " + word + " · только вниз")'
 require "$PKG/AdvancedModeView.java" 'Восстановление возвращает только ранее сделанное SoundCeiling снижение'
@@ -173,9 +172,12 @@ reject "$PKG/EqView.java" 'EqVisualizationMath.strengthPercent(settings.levelsMb
 # Task 11: user-facing Media bounds are percent sliders; dB SPL is an alternate calibrated ceiling basis.
 require "$PKG/MediaLevelScale.java" 'indexForPercent'
 require "$PKG/MediaLevelScale.java" 'percentForIndex(int index, int minIndex, int maxIndex)'
-require "$PKG/SimpleModeView.java" 'minSeek.setMin(0); minSeek.setMax(100)'
+# v0.7.1 Simple uses shared dB output ceilings plus a percent Safety Maximum.
+require "$PKG/SimpleModeView.java" 'lowerSeek = addCeilingSeek()'
+require "$PKG/SimpleModeView.java" 'upperSeek = addCeilingSeek()'
+require "$PKG/SimpleModeView.java" 'safetySeek.setMin(1); safetySeek.setMax(100)'
 require "$PKG/SimpleModeView.java" 'MediaLevelScale.indexForPercent'
-require "$PKG/SimpleModeView.java" 'MediaLevelScale.percentForIndex'
+require "$PKG/SimpleModeModel.java" 'OutputCeilingScale.displayForPercent'
 require "$PKG/AdvancedModeView.java" 'section("Шкала управления")'
 require "$PKG/AdvancedModeView.java" 'HelpText.CEILING_BASIS'
 require "$PKG/AdvancedModeView.java" 'addControlScale("Media %", ControlScale.MEDIA_PERCENT)'

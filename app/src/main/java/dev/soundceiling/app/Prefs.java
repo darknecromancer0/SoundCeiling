@@ -43,7 +43,8 @@ final class Prefs {
             DEFAULT_LINKED_LOCK="default_linked_lock",
             LOWER_OUTPUT_CEILING_DB="lower_output_ceiling_db",
             UPPER_OUTPUT_CEILING_DB="upper_output_ceiling_db",
-            WHOLE_OUTPUT_DSP_CONSENT="whole_output_dsp_consent";
+            WHOLE_OUTPUT_DSP_CONSENT="whole_output_dsp_consent",
+            GLOBAL_DSP_USER_SET="global_dsp_user_set";
 
     static SharedPreferences get(Context c) {
         return c.getSharedPreferences(FILE, Context.MODE_PRIVATE);
@@ -88,6 +89,25 @@ final class Prefs {
     static boolean safetyLockEnabled(Context c){return get(c).getBoolean(SAFETY_LOCK_ENABLED,ControlDefaults.SAFETY_LOCK_ENABLED);}
     static int safetyLockPercent(Context c){return get(c).getInt(SAFETY_LOCK_PERCENT,maxVolumePercent(c));}
     static int quietIndex(Context c){return get(c).getInt(QUIET_INDEX,ControlDefaults.QUIET_INDEX);}
+
+
+    static boolean defaultLinkedLock(Context c){return get(c).getBoolean(DEFAULT_LINKED_LOCK,true);}
+    static float lowerOutputCeilingDb(Context c){return get(c).getFloat(LOWER_OUTPUT_CEILING_DB,OutputCeilingState.DEFAULT_DB);}
+    static float upperOutputCeilingDb(Context c){return get(c).getFloat(UPPER_OUTPUT_CEILING_DB,OutputCeilingState.DEFAULT_DB);}
+    static OutputCeilingState outputCeilings(Context c){
+        return OutputCeilingState.of(defaultLinkedLock(c), lowerOutputCeilingDb(c), upperOutputCeilingDb(c));
+    }
+    static void saveOutputCeilings(Context c, OutputCeilingState state){
+        if (state == null) return;
+        get(c).edit().putBoolean(DEFAULT_LINKED_LOCK,state.linked())
+                .putFloat(LOWER_OUTPUT_CEILING_DB,state.lowerDb())
+                .putFloat(UPPER_OUTPUT_CEILING_DB,state.upperDb()).apply();
+    }
+    static boolean globalDspEnabled(Context c){return get(c).getBoolean(WHOLE_OUTPUT_DSP_CONSENT,true);}
+    static void setGlobalDspEnabled(Context c, boolean enabled){
+        get(c).edit().putBoolean(WHOLE_OUTPUT_DSP_CONSENT,enabled)
+                .putBoolean(GLOBAL_DSP_USER_SET,true).apply();
+    }
 
     static NormalizationPreset normalizationPreset(Context c) {
         SharedPreferences p=get(c);

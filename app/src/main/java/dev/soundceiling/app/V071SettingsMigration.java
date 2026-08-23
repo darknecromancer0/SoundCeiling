@@ -5,12 +5,13 @@ import java.util.Map;
 
 /** Lossless pure preference normalization used by the Android preference transaction. */
 public final class V071SettingsMigration {
-    static final int SCHEMA_VERSION = 71;
+    static final int SCHEMA_VERSION = 72;
     static final String PREF_SCHEMA_VERSION = "pref_schema_version";
     static final String DEFAULT_LINKED_LOCK = "default_linked_lock";
     static final String LOWER_OUTPUT_CEILING_DB = "lower_output_ceiling_db";
     static final String UPPER_OUTPUT_CEILING_DB = "upper_output_ceiling_db";
     static final String WHOLE_OUTPUT_DSP_CONSENT = "whole_output_dsp_consent";
+    static final String GLOBAL_DSP_USER_SET = "global_dsp_user_set";
     private static final String TARGET_LOUDNESS = "target_loudness";
     private static final String NORMALIZATION_STRENGTH = "normalization_strength";
     private static final String ALLOW_AUTO_MUTE = "allow_auto_mute";
@@ -26,7 +27,9 @@ public final class V071SettingsMigration {
         boolean hasUpper = values.get(UPPER_OUTPUT_CEILING_DB) instanceof Number;
         OutputCeilingState ceilings;
         if (hasLower && hasUpper) {
-            ceilings = OutputCeilingState.of(false, number(values.get(LOWER_OUTPUT_CEILING_DB), target),
+            boolean linked = values.get(DEFAULT_LINKED_LOCK) instanceof Boolean
+                    ? (Boolean) values.get(DEFAULT_LINKED_LOCK) : false;
+            ceilings = OutputCeilingState.of(linked, number(values.get(LOWER_OUTPUT_CEILING_DB), target),
                     number(values.get(UPPER_OUTPUT_CEILING_DB), target));
         } else {
             ceilings = OutputCeilingState.of(true, target, target);
@@ -37,7 +40,12 @@ public final class V071SettingsMigration {
         values.put(DEFAULT_LINKED_LOCK, ceilings.linked());
         if (!values.containsKey(NORMALIZATION_STRENGTH)) values.put(NORMALIZATION_STRENGTH, 1f);
         if (!values.containsKey(ALLOW_AUTO_MUTE)) values.put(ALLOW_AUTO_MUTE, false);
-        values.put(WHOLE_OUTPUT_DSP_CONSENT, false);
+        // v0.7.1 Task 9 superseding requirement: Global DSP is the fresh/default mode.
+        // A previous default-false value is not treated as an explicit user choice. Only the
+        // new marker can preserve an intentional OFF made after this schema exists.
+        boolean explicitlySetGlobalDsp = Boolean.TRUE.equals(values.get(GLOBAL_DSP_USER_SET));
+        if (!explicitlySetGlobalDsp) values.put(WHOLE_OUTPUT_DSP_CONSENT, true);
+        values.putIfAbsent(GLOBAL_DSP_USER_SET, false);
         values.put(PREF_SCHEMA_VERSION, SCHEMA_VERSION);
         return values;
     }

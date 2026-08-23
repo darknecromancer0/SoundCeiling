@@ -14,7 +14,7 @@ public final class V071DspPolicyPureTest {
 
     public static void main(String[] args) {
         exactEightRowPolicyMatrixPreservesHardPeakSafety();
-        offMediaAndDspDisabledNeverRideGlobalMix();
+        globalDspModeOverridesSelectiveRulesOnlyWhenExplicitlyEnabled();
         scopedDspRequiresCompleteTrustedCoverage();
         handlesRequireTrustedProvenanceAndCurrentAllowedPolicy();
         publicPlaybackEvidenceCannotCreateTrustedHandle();
@@ -30,49 +30,36 @@ public final class V071DspPolicyPureTest {
         System.out.println("V071DspPolicyPureTest: PASS");
     }
 
-    private static void offMediaAndDspDisabledNeverRideGlobalMix() {
+    private static void globalDspModeOverridesSelectiveRulesOnlyWhenExplicitlyEnabled() {
         PlaybackEndpoint allowed = PlaybackEndpoint.resolved(MEDIA, "com.example.allowed",
-                PlaybackEndpoint.PackageEvidence.TARGETED_PCM_CONFIRMED,
-                "allowed", AppPolicy.on());
+                PlaybackEndpoint.PackageEvidence.TARGETED_PCM_CONFIRMED, "allowed", AppPolicy.on());
         PlaybackEndpoint packageOff = PlaybackEndpoint.resolved(MEDIA, "com.example.private",
-                PlaybackEndpoint.PackageEvidence.TARGETED_PCM_CONFIRMED,
-                "private", AppPolicy.off());
-
-        DspPolicyArbiter.Decision oemCannotWaivePackageOff = DspPolicyArbiter.decide(
-                input(Arrays.asList(allowed, packageOff))
-                        .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX,
-                                DspScope.GLOBAL_MIX)
-                        .documentedOemProtectedUsageExclusion(true).build());
-        assertEquals(DspPolicyArbiter.Result.FALLBACK_ONLY, oemCannotWaivePackageOff.result,
-                "OEM protected-usage proof cannot waive an OFF MEDIA package in the mix");
-
-        DspPolicyArbiter.Decision consentCannotWaivePackageOff = DspPolicyArbiter.decide(
-                input(Arrays.asList(allowed, packageOff))
-                        .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX,
-                                DspScope.GLOBAL_MIX)
-                        .wholeOutputScopeConsent(true).build());
-        assertEquals(DspPolicyArbiter.Result.FALLBACK_ONLY, consentCannotWaivePackageOff.result,
-                "whole-output consent cannot silently override explicit package OFF");
-
+                PlaybackEndpoint.PackageEvidence.TARGETED_PCM_CONFIRMED, "private", AppPolicy.off());
         AppPolicy dspDisabledPolicy = AppPolicy.custom(-18f, 70, 1f, false,
                 -2f, 6f, 10f, 50, AppPolicy.DspPreference.DISABLE, "");
         PlaybackEndpoint dspDisabled = PlaybackEndpoint.resolved(MEDIA, "com.example.no_dsp",
-                PlaybackEndpoint.PackageEvidence.TARGETED_PCM_CONFIRMED,
-                "no_dsp", dspDisabledPolicy);
-        DspPolicyArbiter.Decision singleDisabled = DspPolicyArbiter.decide(input(dspDisabled)
-                .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX, DspScope.GLOBAL_MIX)
-                .wholeOutputScopeConsent(true).build());
-        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, singleDisabled.result,
-                "DSP DISABLE keeps an otherwise allowed endpoint on Media fallback");
+                PlaybackEndpoint.PackageEvidence.TARGETED_PCM_CONFIRMED, "no_dsp", dspDisabledPolicy);
 
-        DspPolicyArbiter.Decision mixedDisabled = DspPolicyArbiter.decide(
-                input(Arrays.asList(allowed, dspDisabled))
-                        .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX,
-                                DspScope.GLOBAL_MIX)
-                        .documentedOemProtectedUsageExclusion(true)
+        DspPolicyArbiter.Decision globalWithOff = DspPolicyArbiter.decide(
+                input(Arrays.asList(allowed, packageOff))
+                        .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX, DspScope.GLOBAL_MIX)
                         .wholeOutputScopeConsent(true).build());
-        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, mixedDisabled.result,
-                "one DSP-disabled allowed endpoint blocks global DSP for the shared mix");
+        assertEquals(DspPolicyArbiter.Result.GLOBAL_MIX_DSP, globalWithOff.result,
+                "Global DSP mode processes the indivisible mix and supersedes per-app OFF");
+
+        DspPolicyArbiter.Decision globalWithDspDisabled = DspPolicyArbiter.decide(
+                input(Arrays.asList(allowed, dspDisabled))
+                        .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX, DspScope.GLOBAL_MIX)
+                        .wholeOutputScopeConsent(true).build());
+        assertEquals(DspPolicyArbiter.Result.GLOBAL_MIX_DSP, globalWithDspDisabled.result,
+                "per-app DSP disable is not falsely promised while Global DSP is active");
+
+        DspPolicyArbiter.Decision preferenceOff = DspPolicyArbiter.decide(
+                input(Arrays.asList(allowed, packageOff))
+                        .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX, DspScope.GLOBAL_MIX)
+                        .wholeOutputScopeConsent(false).build());
+        assertEquals(DspPolicyArbiter.Result.FALLBACK_ONLY, preferenceOff.result,
+                "Global DSP OFF restores selective fail-closed policy");
     }
 
     private static void scopedDspRequiresCompleteTrustedCoverage() {
@@ -193,13 +180,13 @@ public final class V071DspPolicyPureTest {
                         input(youtube).global(DspTransport.Capability.VERIFIED_GLOBAL_MIX,
                                 DspScope.GLOBAL_MIX).wholeOutputScopeConsent(true).build(),
                         DspPolicyArbiter.Result.GLOBAL_MIX_DSP),
-                new Case("unresolved usage or policy",
+                new Case("unresolved usage or policy under Global DSP",
                         input(unresolved).handles(Collections.singletonList(documentedHandle))
                                 .policyScopedCapability(
                                         DspTransport.Capability.VERIFIED_POLICY_SCOPED)
                                 .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX,
                                         DspScope.GLOBAL_MIX).wholeOutputScopeConsent(true).build(),
-                        DspPolicyArbiter.Result.ATTENUATION_ONLY),
+                        DspPolicyArbiter.Result.GLOBAL_MIX_DSP),
                 new Case("no DSP transport",
                         input(youtube).global(DspTransport.Capability.UNAVAILABLE,
                                 DspScope.NONE).build(),
@@ -224,8 +211,8 @@ public final class V071DspPolicyPureTest {
         DspPolicyArbiter.Decision documentedScope = DspPolicyArbiter.decide(input(youtube)
                 .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX, DspScope.GLOBAL_MIX)
                 .documentedOemProtectedUsageExclusion(true).build());
-        assertEquals(DspPolicyArbiter.Result.GLOBAL_MIX_DSP, documentedScope.result,
-                "documented OEM scope proof may substitute for whole-output consent");
+        assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, documentedScope.result,
+                "documented scope proof does not turn Global DSP on when the user mode is OFF");
     }
 
     private static void handlesRequireTrustedProvenanceAndCurrentAllowedPolicy() {
@@ -362,9 +349,9 @@ public final class V071DspPolicyPureTest {
                 "MEDIA usage defaults ON");
 
         Map<String, Object> migrated = V071SettingsMigration.migrate(Collections.emptyMap());
-        assertEquals(Boolean.FALSE,
+        assertEquals(Boolean.TRUE,
                 migrated.get(V071SettingsMigration.WHOLE_OUTPUT_DSP_CONSENT),
-                "whole-output-scope consent defaults OFF");
+                "Global DSP defaults ON");
 
         DspPolicyArbiter.Decision implicitConsent = DspPolicyArbiter.decide(input(
                 PlaybackEndpoint.resolved(MEDIA, "com.example.player",
@@ -372,7 +359,7 @@ public final class V071DspPolicyPureTest {
                         "player", AppPolicy.on()))
                 .global(DspTransport.Capability.VERIFIED_GLOBAL_MIX, DspScope.GLOBAL_MIX).build());
         assertEquals(DspPolicyArbiter.Result.MEDIA_FALLBACK, implicitConsent.result,
-                "default arbiter input must not infer whole-output consent");
+                "arbiter still requires the explicit preference bit passed by runtime");
     }
 
     private static void unsupportedTransportReportsTruthfulImmutableFailure() {

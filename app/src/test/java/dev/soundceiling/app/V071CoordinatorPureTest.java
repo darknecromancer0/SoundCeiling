@@ -15,6 +15,7 @@ public final class V071CoordinatorPureTest {
         uncertainPolicyBlocksPositiveGainButNotHardPeak();
         snapshotReportsTheActualCommandActuator();
         hardMediaCapIsTheSingleCoordinatorSafetyCommand();
+        globalMixDspOwnsOrdinaryCorrectionButHardCapStaysMediaSafety();
         oneCoordinatorResultPreventsOpposingLegacyWrites();
         System.out.println("V071CoordinatorPureTest: PASS");
     }
@@ -290,6 +291,51 @@ public final class V071CoordinatorPureTest {
                 "telemetry capability must reflect selected verified DSP transport");
         assertNear(command.requestedGainDb(), coordinator.snapshot().appliedGainDb(), 0f,
                 "coordinator snapshot must report the requested DSP gain command");
+    }
+
+
+    private static void globalMixDspOwnsOrdinaryCorrectionButHardCapStaysMediaSafety() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+
+        NormalizerControlCoordinator quiet = new NormalizerControlCoordinator();
+        quiet.setCeilingState(OutputCeilingState.of(true, -20f, -20f));
+        quiet.onFrame(frame(0L, 8, 8, curve).rawProgramActive(true).build());
+        quiet.onFrame(frame(30L, 8, 8, curve).rawProgramActive(true).build());
+        quiet.onFrame(frame(400L, 8, 8, curve)
+                .rawProgramActive(true).controlLoudnessDb(-30f).rawPeakDbfs(-40f)
+                .verifiedDsp(true).globalMixDsp(true)
+                .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.UNKNOWN)
+                .effectivePolicy("global_mix", false, false).build());
+        ControlCommand raise = quiet.onFrame(frame(800L, 8, 8, curve)
+                .rawProgramActive(true).controlLoudnessDb(-30f).rawPeakDbfs(-40f)
+                .verifiedDsp(true).globalMixDsp(true)
+                .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.UNKNOWN)
+                .effectivePolicy("global_mix", false, false).build());
+        assertEquals(ControlCommand.Kind.DSP_GAIN, raise.kind(),
+                "verified Global DSP must raise quiet program through DSP, not Media");
+        assertTrue(raise.requestedGainDb() > 0f,
+                "quiet program needs positive DSP correction");
+
+        NormalizerControlCoordinator loud = new NormalizerControlCoordinator();
+        loud.setCeilingState(OutputCeilingState.of(true, -20f, -20f));
+        loud.onFrame(frame(0L, 8, 8, curve).rawProgramActive(true).build());
+        loud.onFrame(frame(30L, 8, 8, curve).rawProgramActive(true).build());
+        ControlCommand lower = loud.onFrame(frame(400L, 8, 8, curve)
+                .rawProgramActive(true).controlLoudnessDb(-10f).rawPeakDbfs(-12f)
+                .verifiedDsp(true).globalMixDsp(true).build());
+        assertEquals(ControlCommand.Kind.DSP_GAIN, lower.kind(),
+                "verified Global DSP must attenuate loud program through DSP, not Media");
+        assertTrue(lower.requestedGainDb() < 0f,
+                "loud program needs negative DSP correction");
+
+        ControlCommand hardCap = loud.onFrame(frame(500L, 8, 8, curve)
+                .rawProgramActive(true).controlLoudnessDb(-20f).rawPeakDbfs(-40f)
+                .verifiedDsp(true).globalMixDsp(true).hardMediaCeilingIndex(6).build());
+        assertEquals(ControlCommand.Kind.MEDIA_INDEX, hardCap.kind(),
+                "hard Media safety must remain available even while Global DSP is active");
+        assertEquals(ControlCommand.Provenance.HARD_CAP, hardCap.provenance(),
+                "Global DSP must not swallow hard-cap provenance");
+        assertEquals(6, hardCap.mediaIndex(), "hard cap index remains authoritative");
     }
 
     private static void hardMediaCapIsTheSingleCoordinatorSafetyCommand() {

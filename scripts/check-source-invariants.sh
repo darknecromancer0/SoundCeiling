@@ -106,10 +106,12 @@ for file in "${per_app_claims[@]}"; do
     echo "PER_APP_VERIFIED claim outside CapabilityResolver: $file" >&2; exit 1;
   }
 done
+# v0.7.1 Global DSP UI may consume RuntimeState's typed VERIFIED_* value, but only
+# CapabilityResolver/NormalizerService may derive it from the transport boundary.
 mapfile -t dsp_claims < <(grep -RIl 'DspTransportCapability.VERIFIED_' "$PKG" || true)
 for file in "${dsp_claims[@]}"; do
   case "$(basename "$file")" in
-    CapabilityResolver.java|StatusText.java) ;;
+    CapabilityResolver.java|StatusText.java|NormalizerService.java|SimpleModeView.java|AdvancedModeView.java|AppsSystemView.java) ;;
     *) echo "Verified DSP claim outside capability/status boundary: $file" >&2; exit 1 ;;
   esac
 done

@@ -14,11 +14,12 @@ public final class V071LinkedLockPureTest {
     private static final String LOWER_OUTPUT_CEILING_DB = "lower_output_ceiling_db";
     private static final String UPPER_OUTPUT_CEILING_DB = "upper_output_ceiling_db";
     private static final String WHOLE_OUTPUT_DSP_CONSENT = "whole_output_dsp_consent";
+    private static final String GLOBAL_DSP_USER_SET = "global_dsp_user_set";
     public static void main(String[] args) {
         linkedDefaultIgnoresOwnedWritesAndTracksUserRouteDeltas();
         unlockedEditsKeepAnOrderedRangeAndSamsungDeltasKeepItsWidth();
         freshDefaultsUseTheApprovedValuesAndRealRouteStep();
-        migrationKeepsLegacyIntentWithoutInventingOutputConsent();
+        migrationKeepsLegacyIntentAndUsesNewGlobalDspDefault();
         migrationIsIdempotent();
         System.out.println("V071LinkedLockPureTest: PASS");
     }
@@ -78,7 +79,7 @@ public final class V071LinkedLockPureTest {
                 "display reports calibrated Samsung route dB");
     }
 
-    private static void migrationKeepsLegacyIntentWithoutInventingOutputConsent() {
+    private static void migrationKeepsLegacyIntentAndUsesNewGlobalDspDefault() {
         Map<String, Object> targetOnly = new LinkedHashMap<>();
         targetOnly.put(TARGET_LOUDNESS, -18f);
         Map<String, Object> targetMigrated = V071SettingsMigration.migrate(targetOnly);
@@ -104,7 +105,14 @@ public final class V071LinkedLockPureTest {
         assertNear(-20f, number(migrated, LOWER_OUTPUT_CEILING_DB), .001f, "Minimum does not become lower output ceiling");
         assertEquals(Boolean.TRUE, migrated.get("system_app_off"), "system app OFF remains");
         assertEquals(Boolean.TRUE, migrated.get("system_stream_alarm"), "system stream flags remain");
-        assertEquals(Boolean.FALSE, migrated.get(WHOLE_OUTPUT_DSP_CONSENT), "migration never infers DSP consent");
+        assertEquals(Boolean.TRUE, migrated.get(WHOLE_OUTPUT_DSP_CONSENT), "Global DSP defaults ON in the new scheme");
+
+        Map<String, Object> explicitOff = new LinkedHashMap<>();
+        explicitOff.put(WHOLE_OUTPUT_DSP_CONSENT, Boolean.FALSE);
+        explicitOff.put(GLOBAL_DSP_USER_SET, Boolean.TRUE);
+        Map<String, Object> explicitMigrated = V071SettingsMigration.migrate(explicitOff);
+        assertEquals(Boolean.FALSE, explicitMigrated.get(WHOLE_OUTPUT_DSP_CONSENT),
+                "explicit new-scheme OFF survives migration");
     }
 
     private static void migrationIsIdempotent() {

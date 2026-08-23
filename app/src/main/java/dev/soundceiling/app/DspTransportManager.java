@@ -178,6 +178,8 @@ final class DspTransportManager implements AutoCloseable {
         return globalProof;
     }
 
+    boolean globalProbeActive() { return scopeProbe.active(); }
+
     Set<DspEndpointHandle> trustedHandles() {
         return Collections.unmodifiableSet(new HashSet<>(scoped.keySet()));
     }

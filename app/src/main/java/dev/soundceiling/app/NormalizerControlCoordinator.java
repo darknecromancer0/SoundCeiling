@@ -29,6 +29,7 @@ public final class NormalizerControlCoordinator {
         private final boolean playbackEndpointActive;
         private final int observedPlaybackEndpoints;
         private final boolean verifiedDsp;
+        private final boolean globalMixDsp;
         private final int hardMediaCeilingIndex;
         private final VolumeObservation observation;
         private final VolumeWriteOrigin writeOrigin;
@@ -60,6 +61,7 @@ public final class NormalizerControlCoordinator {
             playbackEndpointActive = b.playbackEndpointActive;
             observedPlaybackEndpoints = Math.max(0, b.observedPlaybackEndpoints);
             verifiedDsp = b.verifiedDsp;
+            globalMixDsp = b.globalMixDsp;
             hardMediaCeilingIndex = DbMath.clamp(b.hardMediaCeilingIndex,
                     routeCurve.minIndex(), routeCurve.maxIndex());
             observation = b.observation == null ? VolumeObservation.UNCHANGED : b.observation;
@@ -91,6 +93,7 @@ public final class NormalizerControlCoordinator {
             private boolean playbackEndpointActive = true;
             private int observedPlaybackEndpoints = 1;
             private boolean verifiedDsp;
+            private boolean globalMixDsp;
             private int hardMediaCeilingIndex = Integer.MAX_VALUE;
             private VolumeObservation observation = VolumeObservation.UNCHANGED;
             private VolumeWriteOrigin writeOrigin = VolumeWriteOrigin.NORMALIZATION;
@@ -128,6 +131,7 @@ public final class NormalizerControlCoordinator {
                 playbackEndpointActive = active; observedPlaybackEndpoints = observedPlayers; return this;
             }
             public Builder verifiedDsp(boolean value) { verifiedDsp = value; return this; }
+            public Builder globalMixDsp(boolean value) { globalMixDsp = value; return this; }
             public Builder hardMediaCeilingIndex(int value) { hardMediaCeilingIndex = value; return this; }
             public Builder observation(VolumeObservation value, VolumeWriteOrigin origin) {
                 observation = value; writeOrigin = origin; return this;
@@ -233,7 +237,7 @@ public final class NormalizerControlCoordinator {
         OutputGainPlanner.Plan plan = OutputGainPlanner.plan(new OutputGainPlanner.Input(
                 frame.controlLoudnessDb, frame.rawPeakDbfs, frame.currentDspGainDb,
                 frame.captureReference, ceilingState, frame.hardPeakCeilingDbfs, programActive,
-                allowsPositiveControl(frame)));
+                allowsPositiveControl(frame) || frame.globalMixDsp));
 
         // The service supplies false only for SPL mode without a real route profile. This is a
         // coordinator-owned fail-closed decision, not a second service-side actuator branch.
@@ -245,7 +249,7 @@ public final class NormalizerControlCoordinator {
 
         // Capability loss has a mandatory neutralization tick. A Media command follows only after
         // the service has had a separate chance to apply neutral DSP state.
-        boolean verifiedDsp = frame.verifiedDsp && allowsPositiveControl(frame);
+        boolean verifiedDsp = frame.verifiedDsp && (frame.globalMixDsp || allowsPositiveControl(frame));
         ControlCommand command = outputController.decide(frame.atMs, plan, verifiedDsp,
                 frame.currentDspGainDb, frame.currentMediaIndex, frame.routeCurve);
         return record(withSafetyProvenance(command, plan), plan.desiredCorrectionDb(), frame,
@@ -253,6 +257,9 @@ public final class NormalizerControlCoordinator {
     }
 
     public OutputCeilingState ceilingState() { return ceilingState; }
+    public void setCeilingState(OutputCeilingState state) {
+        if (state != null) ceilingState = state;
+    }
     public Snapshot snapshot() { return snapshot; }
 
     public void onRouteChanged() {

@@ -77,17 +77,15 @@ reject "$PKG/NormalizerService.java" 'int extraSteps = Math.max(2,'
 require "$PKG/NormalizerService.java" 'long reactionLatency = applied != current'
 require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
 
-# Main/Advanced remain two surfaces of one engine. v0.7 may restore bounded recovery controls and copy.
-require "$PKG/DrawerLayoutController.java" 'addNav("Основное", AppDestination.SIMPLE)'
-require "$PKG/DrawerLayoutController.java" 'addNav("Расширенные", AppDestination.ADVANCED)'
-reject "$PKG/DrawerLayoutController.java" 'Простой режим'
-reject "$PKG/DrawerLayoutController.java" 'Расширенный режим'
-require "$PKG/SimpleModeView.java" 'text("Основное", 28, true)'
+# v0.7.1 Task 9 supersedes the historical navigation copy and removes Quiet Now from Simple only.
+require "$PKG/DrawerLayoutController.java" 'addNav("Простой режим", AppDestination.SIMPLE)'
+require "$PKG/DrawerLayoutController.java" 'addNav("Расширенный режим", AppDestination.ADVANCED)'
+require "$PKG/SimpleModeView.java" 'text("Простой режим", 28, true)'
 require "$PKG/SimpleModeView.java" 'StatusCardView'
-require "$PKG/SimpleModeView.java" 'HelpText.QUIET_NOW'
+reject "$PKG/SimpleModeView.java" 'HelpText.QUIET_NOW'
 reject "$PKG/SimpleModeView.java" 'engineStatus'
 reject "$PKG/SimpleModeView.java" 'safetyBadge'
-require "$PKG/AdvancedModeView.java" 'text("Расширенные", 28, true)'
+require "$PKG/AdvancedModeView.java" 'text("Расширенный режим", 28, true)'
 require "$PKG/AdvancedModeView.java" 'HelpText.QUIET_NOW'
 require_before "$PKG/AdvancedModeView.java" 'section("Профили")' 'section("Главное")'
 

@@ -28,6 +28,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TargetScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/OutputCeilingState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/OutputCeilingScale.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/SimpleModeModel.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/V071SettingsMigration.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/MediaLevelScale.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlScale.java" \
@@ -107,6 +108,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071CoordinatorPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071DspPolicyPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V071CaptureCoordinatorPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V071SimpleModePureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -178,3 +180,4 @@ java -cp "$OUT" dev.soundceiling.app.V071NormalizationCorePureTest
 java -cp "$OUT" dev.soundceiling.app.V071CoordinatorPureTest
 java -cp "$OUT" dev.soundceiling.app.V071DspPolicyPureTest
 java -cp "$OUT" dev.soundceiling.app.V071CaptureCoordinatorPureTest
+java -cp "$OUT" dev.soundceiling.app.V071SimpleModePureTest

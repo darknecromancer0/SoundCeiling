@@ -27,16 +27,17 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private final AudioManager audio;
     private final int streamMin, streamMax;
     private final LinearLayout root;
-    private final TextView modeInfo, profileInfo, liveDetails, decisionDetails;
+    private final TextView modeInfo, profileInfo, liveDetails, decisionDetails, globalDspStatus, linkedLockHint;
     private final Button startStop;
     private final StatusCardView statusCard;
     private final FrequencyMeterView frequencyMeter;
-    private final SeekBar minMedia, maxMedia, safetyPercent, quietIndex, peakThreshold,
+    private final SeekBar lowerOutput, upperOutput, minMedia, maxMedia, safetyPercent, quietIndex, peakThreshold,
             transientWarning, transientEmergency, targetLoudness, tolerance, strength,
             downAttack, maxDownSteps, holdAfterLoud, upwardRelease, maxUpSteps, targetSpl, splCeiling;
-    private final Switch safetyLock, autoMute;
+    private final Switch globalDsp, linkedLock, safetyLock, autoMute;
     private final RadioGroup normalizationGroup, speedGroup, ceilingBasisGroup;
     private boolean loading;
+    private RuntimeState runtime = RuntimeState.stopped("Остановлено");
 
     AdvancedModeView(Context context, Listener listener) {
         super(context);
@@ -52,10 +53,28 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         root.setBackgroundColor(UiTheme.background(context));
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("Расширенные", 28, true); root.addView(title);
+        TextView title = text("Расширенный режим", 28, true); root.addView(title);
         modeInfo = secondary("", 14); modeInfo.setPadding(0, dp(6), 0, dp(10)); root.addView(modeInfo);
         statusCard = new StatusCardView(context); root.addView(statusCard,
                 new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
+        section("Основной actuator");
+        globalDsp = addSwitch("Global DSP", HelpText.GLOBAL_DSP, Prefs.globalDspEnabled(context),
+                v -> Prefs.setGlobalDspEnabled(getContext(), v));
+        globalDspStatus = secondary("", 13); globalDspStatus.setPadding(0, 0, 0, dp(6)); root.addView(globalDspStatus);
+        linkedLock = addSwitch("Default Linked Lock", HelpText.DEFAULT_LINKED_LOCK,
+                Prefs.defaultLinkedLock(context), value -> {
+                    Prefs.saveOutputCeilings(getContext(), Prefs.outputCeilings(getContext()).withLinked(value));
+                    refreshSharedOutputControls();
+                });
+        linkedLockHint = secondary("Default Linked Lock действует одинаково в Простом и Расширенном режиме.", 13);
+        linkedLockHint.setPadding(0, 0, 0, dp(8)); root.addView(linkedLockHint);
+        lowerOutput = addSlider("Минимальный потолок выхода", HelpText.OUTPUT_CEILINGS, 0, 100,
+                OutputCeilingScale.percentForDb(Prefs.lowerOutputCeilingDb(context)),
+                p -> outputModel().withLowerProgress(p).lowerValueText(), p -> saveOutputCeiling(true, p));
+        upperOutput = addSlider("Максимальный потолок выхода", HelpText.OUTPUT_CEILINGS, 0, 100,
+                OutputCeilingScale.percentForDb(Prefs.upperOutputCeilingDb(context)),
+                p -> outputModel().withUpperProgress(p).upperValueText(), p -> saveOutputCeiling(false, p));
 
         section("Профили");
         profileInfo = secondary("", 14); root.addView(profileInfo); addPresetButtons();
@@ -89,12 +108,12 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                 Math.round(Prefs.loudnessTolerance(context) * 10f), p -> String.format(Locale.US, "%.1f LU", p / 10f),
                 p -> editNormalization(Prefs.LOUDNESS_TOLERANCE, p / 10f));
 
-        section("Границы Media");
-        minMedia = addSlider("Minimum", HelpText.MIN_MEDIA, 0, 100,
+        section("Media fallback и hard safety");
+        minMedia = addSlider("Fallback Media Minimum", HelpText.MIN_MEDIA, 0, 100,
                 MediaLevelScale.percentForIndex(Prefs.minMediaIndex(context), streamMin, streamMax),
                 p -> p + "% · фактически " + MediaLevelScale.indexForPercent(p, streamMin, streamMax) + "/" + streamMax,
                 p -> editBound(Prefs.MIN_MEDIA_INDEX, MediaLevelScale.indexForPercent(p, streamMin, streamMax)));
-        maxMedia = addSlider("Maximum", HelpText.MAX_MEDIA, 1, 100, Prefs.maxVolumePercent(context),
+        maxMedia = addSlider("Safety Maximum", HelpText.MAX_MEDIA, 1, 100, Prefs.maxVolumePercent(context),
                 p -> p + "%", p -> editBound(Prefs.MAX_VOLUME_PERCENT, p));
         safetyLock = addSwitch("Safety Lock", HelpText.SAFETY_LOCK, Prefs.safetyLockEnabled(context),
                 v -> edit(Prefs.SAFETY_LOCK_ENABLED, v));
@@ -128,8 +147,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                 Prefs.upwardReleaseMs(context), p -> p + " ms", p -> editBehavior(Prefs.UPWARD_RELEASE_MS, p));
         maxUpSteps = addSlider("Max up steps", HelpText.RECOVERY, 0, 3,
                 Prefs.maxUpSteps(context), Integer::toString, p -> editBehavior(Prefs.MAX_UP_STEPS, p));
-        autoMute = addSwitch("Разрешать автоматический mute (0)", HelpText.AUTO_MUTE,
-                Prefs.allowAutoMute(context), v -> edit(Prefs.ALLOW_AUTO_MUTE, v));
+        autoMute = addAutoMuteSwitch();
 
         section("Что означают показатели");
         LinearLayout terms1 = horizontal(); addHelpButton(terms1, "PCM", HelpText.PCM); addHelpButton(terms1, "LUFS-like", HelpText.LUFS_LIKE); addHelpButton(terms1, "dBFS", HelpText.DBFS); root.addView(terms1);
@@ -137,9 +155,12 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
 
         section("Шкала управления");
         LinearLayout basisInfoRow = horizontal();
-        TextView basisInfo = secondary("Media % показывает системную шкалу. Digital dB делает главными цифровые Target/Peak значения. Calibrated dB SPL доступен только для калиброванного текущего выхода. Это три представления одного Adaptive Envelope engine.", 13);
+        LinearLayout basisInfoColumn = new LinearLayout(getContext()); basisInfoColumn.setOrientation(LinearLayout.VERTICAL);
+        TextView basisInfo = secondary("Media % показывает системную шкалу. Digital dB показывает цифровой target. Calibrated dB SPL доступен только после калибровки текущего выхода.", 13);
+        TextView basisSub = secondary("Все варианты используют один coordinator и одни output ceilings.", 12);
+        basisInfoColumn.addView(basisInfo); basisInfoColumn.addView(basisSub);
         Button basisHelp = button("?"); basisHelp.setOnClickListener(v -> showHelp(HelpText.CEILING_BASIS));
-        basisInfoRow.addView(basisInfo, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+        basisInfoRow.addView(basisInfoColumn, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
         basisInfoRow.addView(basisHelp, new LinearLayout.LayoutParams(dp(46), dp(42))); root.addView(basisInfoRow);
         ceilingBasisGroup = new RadioGroup(context); ceilingBasisGroup.setOrientation(RadioGroup.VERTICAL);
         addControlScale("Media %", ControlScale.MEDIA_PERCENT);
@@ -181,7 +202,10 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     }
 
     @Override public void render(RuntimeState state) {
-        startStop.setText(state.running ? "Остановить" : "Запустить"); statusCard.render(state); frequencyMeter.renderBands(state.bandLevels());
+        if (state != null) runtime = state;
+        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderBands(runtime.bandLevels());
+        refreshSharedOutputControls();
+        state = runtime;
         String source = state.sourcePackage.isEmpty() ? "не определён" : state.sourcePackage;
         String globalTrust = state.pcmState == PcmAvailabilityState.ACTIVE
                 && (state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_MIXED
@@ -257,10 +281,57 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         maxDownSteps.setProgress(Prefs.maxDownSteps(getContext())); holdAfterLoud.setProgress(Prefs.holdAfterLoudMs(getContext()));
         upwardRelease.setProgress(Prefs.upwardReleaseMs(getContext())); maxUpSteps.setProgress(Prefs.maxUpSteps(getContext()));
         autoMute.setChecked(Prefs.allowAutoMute(getContext())); targetSpl.setProgress(Math.round(Prefs.targetSpl(getContext()))); splCeiling.setProgress(Math.round(Prefs.splCeiling(getContext())));
+        globalDsp.setChecked(Prefs.globalDspEnabled(getContext())); linkedLock.setChecked(Prefs.defaultLinkedLock(getContext()));
+        lowerOutput.setProgress(OutputCeilingScale.percentForDb(Prefs.lowerOutputCeilingDb(getContext())));
+        upperOutput.setProgress(OutputCeilingScale.percentForDb(Prefs.upperOutputCeilingDb(getContext())));
+        refreshSharedOutputControls();
         checkTag(normalizationGroup, Prefs.normalizationPreset(getContext())); checkTag(speedGroup, Prefs.speedPreset(getContext()));
         checkTag(ceilingBasisGroup, Prefs.controlScale(getContext())); updateSplControlState();
         profileInfo.setText("Профиль: " + (Prefs.activeProfile(getContext()).isEmpty() ? "Custom" : Prefs.activeProfile(getContext())));
         loading = old;
+    }
+
+    private SimpleModeModel outputModel() {
+        boolean active = runtime.dspTransportCapability
+                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
+        return new SimpleModeModel(Prefs.outputCeilings(getContext()),
+                new ControlVolumeCurve(streamMin, streamMax), active,
+                Prefs.globalDspEnabled(getContext()), active);
+    }
+
+    private void saveOutputCeiling(boolean lower, int progress) {
+        SimpleModeModel model = outputModel();
+        model = lower ? model.withLowerProgress(progress) : model.withUpperProgress(progress);
+        Prefs.saveOutputCeilings(getContext(), model.ceilings());
+        refreshSharedOutputControls();
+    }
+
+    private void refreshSharedOutputControls() {
+        SimpleModeModel model = outputModel();
+        boolean old = loading; loading = true;
+        globalDsp.setChecked(Prefs.globalDspEnabled(getContext()));
+        linkedLock.setChecked(model.linkedChecked());
+        lowerOutput.setProgress(model.lowerProgress()); upperOutput.setProgress(model.upperProgress());
+        lowerOutput.setEnabled(model.ceilingControlsEnabled()); upperOutput.setEnabled(model.ceilingControlsEnabled());
+        lowerOutput.setAlpha(model.ceilingControlsEnabled() ? 1f : 0.45f);
+        upperOutput.setAlpha(model.ceilingControlsEnabled() ? 1f : 0.45f);
+        globalDspStatus.setText(model.globalDspStatusText());
+        loading = old;
+    }
+
+    private Switch addAutoMuteSwitch() {
+        LinearLayout row = horizontal(); row.setPadding(0, dp(8), 0, dp(8));
+        LinearLayout autoMuteTextColumn = new LinearLayout(getContext()); autoMuteTextColumn.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text("Разрешить автоматический mute", 15, true);
+        TextView subtitle = secondary("Нулевая ступень Media (0) используется только когда разрешена аварийная команда.", 12);
+        autoMuteTextColumn.addView(title); autoMuteTextColumn.addView(subtitle);
+        Switch value = new Switch(getContext()); value.setChecked(Prefs.allowAutoMute(getContext()));
+        Button help = button("?"); help.setOnClickListener(v -> showHelp(HelpText.AUTO_MUTE));
+        row.addView(autoMuteTextColumn, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(value, new LinearLayout.LayoutParams(dp(52), LayoutParams.WRAP_CONTENT));
+        row.addView(help, new LinearLayout.LayoutParams(dp(46), dp(42))); root.addView(row);
+        value.setOnCheckedChangeListener((button, checked) -> { if (!loading) edit(Prefs.ALLOW_AUTO_MUTE, checked); });
+        return value;
     }
 
     private void addPresetButtons() {
