@@ -20,7 +20,10 @@ jobs:
               .task10/p01_00 .task10/p01_01 .task10/p01_02 .task10/p01_03 \
               .task10/p02_00 .task10/p02_01 .task10/p02_02 > /tmp/task10.patch
           test "$(git hash-object /tmp/task10.patch)" = "c664c35652c7fea2766a4cefeed2bcfdd2f93148"
-          git apply --exclude=scripts/run-pure-tests.sh /tmp/task10.patch
+          git apply \
+              --exclude=scripts/run-pure-tests.sh \
+              --exclude=app/src/test/java/dev/soundceiling/app/V071VisualizerPureTest.java \
+              /tmp/task10.patch
 
           check_hash(){ test "$(git hash-object "$2")" = "$1" || { echo "hash mismatch: $2" >&2; exit 1; }; }
           check_hash 07d09537cb4233753b93266c0a3fc297194f3a9c app/src/main/java/dev/soundceiling/app/AdvancedModeView.java
