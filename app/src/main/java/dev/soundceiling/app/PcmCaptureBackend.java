@@ -20,9 +20,13 @@ final class PcmCaptureBackend implements AutoCloseable {
     private final AudioRecord record;
     private final PcmCaptureRequest request;
     private final long openedElapsedMs;
+    private final Object readLock = new Object();
     private volatile long lastSampleElapsedMs;
     private volatile boolean closed;
     private volatile boolean stopRequested;
+    private boolean readInFlight;
+    private boolean releaseRequested;
+    private boolean released;
     private volatile int consecutiveTargetSignalBlocks;
     private volatile boolean targetConfirmed;
 
@@ -72,10 +76,24 @@ final class PcmCaptureBackend implements AutoCloseable {
     }
 
     int read(short[] buffer) {
-        if (closed || stopRequested || buffer == null || buffer.length == 0) {
-            return AudioRecord.ERROR_INVALID_OPERATION;
+        if (buffer == null || buffer.length == 0) return AudioRecord.ERROR_BAD_VALUE;
+        synchronized (readLock) {
+            if (closed || stopRequested || releaseRequested) return AudioRecord.ERROR_INVALID_OPERATION;
+            readInFlight = true;
         }
-        int read = record.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
+
+        int read;
+        try {
+            read = record.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
+        } finally {
+            boolean releaseNow;
+            synchronized (readLock) {
+                readInFlight = false;
+                releaseNow = releaseRequested && !released;
+            }
+            if (releaseNow) releaseRecordOnce();
+        }
+
         if (closed || stopRequested) return AudioRecord.ERROR_INVALID_OPERATION;
         if (read > 0) {
             long now = SystemClock.elapsedRealtime();
@@ -142,9 +160,24 @@ final class PcmCaptureBackend implements AutoCloseable {
     }
 
     @Override public void close() {
-        if (closed) return;
+        synchronized (readLock) {
+            if (closed) return;
+            closed = true;
+            releaseRequested = true;
+        }
         requestStop();
-        closed = true;
+        boolean releaseNow;
+        synchronized (readLock) {
+            releaseNow = !readInFlight && !released;
+        }
+        if (releaseNow) releaseRecordOnce();
+    }
+
+    private void releaseRecordOnce() {
+        synchronized (readLock) {
+            if (released || readInFlight) return;
+            released = true;
+        }
         try { record.release(); } catch (RuntimeException ignored) {}
     }
 }
