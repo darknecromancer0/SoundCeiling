@@ -1,0 +1,51 @@
+diff --git a/app/src/main/java/dev/soundceiling/app/NormalizerService.java b/app/src/main/java/dev/soundceiling/app/NormalizerService.java
+index ef4b4da..35b62a2 100644
+--- a/app/src/main/java/dev/soundceiling/app/NormalizerService.java
++++ b/app/src/main/java/dev/soundceiling/app/NormalizerService.java
+@@ -416,8 +416,26 @@ public class NormalizerService extends Service {
+         loudnessState.lastUpAtMs = 0L;
+         loudnessState.lastDownAtMs = 0L;
+         loudnessState.loudHoldUntilMs = 0L;
+-        lastBands = new float[5];
++        lastBands = GlobalVisualizerReading.unavailableBands();
+         lastBandUpdate = 0L;
++        lastBandMeasuredAtMs = 0L;
++        publishCaptureRebindUnavailable();
++    }
++
++    private void publishCaptureRebindUnavailable() {
++        int current = safetySettings == null ? 0 : safetySettings.minIndex;
++        try { current = audio.getStreamVolume(AudioManager.STREAM_MUSIC); }
++        catch (RuntimeException ignored) {}
++        RuntimeState state = baseState(new RuntimeState.Builder(), current)
++                .running(true)
++                .captureStatus(RuntimeState.CaptureStatus.STARTING)
++                .controlActivity(RuntimeState.ControlActivity.IDLE)
++                .signalPresent(false)
++                .meterAgeMs(0L)
++                .bandLevels(lastBands)
++                .message("Переподключение аудио…")
++                .build();
++        RuntimeStateStore.publish(state);
+     }
+ 
+     private void loopFastGuard() {
+diff --git a/scripts/check-v071-release-contract.sh b/scripts/check-v071-release-contract.sh
+index e0f87c9..ce7ea61 100755
+--- a/scripts/check-v071-release-contract.sh
++++ b/scripts/check-v071-release-contract.sh
+@@ -58,6 +58,14 @@ require "$FORMAT" 'captureRef='
+ require "$FORMAT" 'reason='
+ require "$SERVICE" 'DiagnosticLog.controlSummary('
+ reject "$SERVICE" 'DiagnosticLog.event("control_summary"'
++# Task 12 review finding: capture rebind must invalidate the published spectrum immediately.
++# A newly opened capture may be silent for a while, so retaining the previous RuntimeState bands
++# would present stale evidence as live; zeros are also not a valid unavailable reading.
++require "$SERVICE" 'publishCaptureRebindUnavailable()'
++require "$SERVICE" 'lastBands = GlobalVisualizerReading.unavailableBands();'
++require "$SERVICE" '.captureStatus(RuntimeState.CaptureStatus.STARTING)'
++require "$SERVICE" '.bandLevels(lastBands)'
++reject "$SERVICE" 'lastBands = new float[5];'
+ require "$CHECKLIST" 'awaiting device test'
+ require "$CHECKLIST" 'APK SHA-256'
+ require "$CHECKLIST" 'YouTube'
