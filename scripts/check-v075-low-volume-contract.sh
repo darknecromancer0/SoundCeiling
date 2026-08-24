@@ -23,9 +23,14 @@ require "$TEST" 'unknownPlaybackCaptureMayAttenuateAsConservativePreVolumeFallba
 require "$TEST" 'fallbackRepaysOnlyAppOwnedAttenuationToUserAnchor()'
 require "$RUNNER" 'V075LowVolumeLinkedFallbackPureTest.java'
 require "$RUNNER" 'dev.soundceiling.app.V075LowVolumeLinkedFallbackPureTest'
-require "$BUILD" 'versionCode=17'
-require "$BUILD" 'versionName="0.7.5"'
+python - "$BUILD" <<'PY'
+from pathlib import Path
+import re, sys
+s = Path(sys.argv[1]).read_text()
+m = re.search(r'versionCode=(\d+)', s)
+if not m or int(m.group(1)) < 17:
+    raise SystemExit('v0.7.5 low-volume contract: expected versionCode >= 17')
+PY
 require "$WF" 'run: bash ./scripts/check-v075-low-volume-contract.sh'
-require "$WF" 'name: SoundCeiling-v0.7.5-debug-apk'
 
-echo "v0.7.5 low-volume contract: PASS"
+echo "v0.7.5 historical low-volume behavior: PASS"
