@@ -1,10 +1,15 @@
 package dev.soundceiling.app;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+
 public final class V071LoggingPureTest {
     public static void main(String[] args) {
         stableTenMinuteLoopIsBounded();
         stateChangeLogsImmediately();
         controlSummaryContainsRequiredEvidence();
+        recentSessionsAreProtectedFromBudgetCleanup();
         System.out.println("V071LoggingPureTest: PASS");
     }
 
@@ -39,6 +44,31 @@ public final class V071LoggingPureTest {
                 "captureRef=POST_VOLUME", "reason=normalize_up"}) {
             assertTrue(line.contains(token), "missing summary evidence: " + token + " line=" + line);
         }
+    }
+
+    private static void recentSessionsAreProtectedFromBudgetCleanup() {
+        long hour = 60L * 60L * 1000L;
+        long now = 10L * 24L * hour;
+        assertTrue(LogFilePolicy.RETAINED_BUDGET_BYTES >= 64L * 1024L * 1024L,
+                "field-test logs need at least a 64 MiB retained budget");
+        assertTrue(LogFilePolicy.MIN_RETENTION_AGE_MS >= 24L * hour,
+                "fresh field-test sessions must be protected for at least 24 hours");
+
+        List<LogFilePolicy.Entry> entries = Arrays.asList(
+                new LogFilePolicy.Entry("SoundCeiling-20260824-120000.log",
+                        40L * 1024L * 1024L, now - hour),
+                new LogFilePolicy.Entry("SoundCeiling-20260824-130000.log",
+                        40L * 1024L * 1024L, now - 2L * hour),
+                new LogFilePolicy.Entry("SoundCeiling-20260820-120000.log",
+                        20L * 1024L * 1024L, now - 4L * 24L * hour));
+        Set<String> kept = LogFilePolicy.retainedNamesWithinBudget(entries,
+                LogFilePolicy.RETAINED_BUDGET_BYTES, now, LogFilePolicy.MIN_RETENTION_AGE_MS);
+        assertTrue(kept.contains("SoundCeiling-20260824-120000.log"),
+                "recent session 1 must survive even when recent logs exceed the normal budget");
+        assertTrue(kept.contains("SoundCeiling-20260824-130000.log"),
+                "recent session 2 must survive even when recent logs exceed the normal budget");
+        assertFalse(kept.contains("SoundCeiling-20260820-120000.log"),
+                "old session may be trimmed after protected recent sessions consume the budget");
     }
 
     private static void assertTrue(boolean value, String message) {
