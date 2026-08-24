@@ -15,8 +15,8 @@ public final class V076CoarseMediaFallbackPureTest {
         ControlProfile profile = BuiltInProfiles.balanced();
         OutputLevelModel.Snapshot loud = OutputLevelModel.evaluate(
                 new OutputLevelModel.Input(-1f, -8f, -48f, 0f,
-                        CaptureReferenceEstimator.Mode.UNKNOWN,
-                        -49f, -56f, true));
+                        CaptureReferenceEstimator.Mode.PRE_VOLUME,
+                        Float.NaN, Float.NaN, false));
         OutputCeilingState target = OutputCeilingState.of(true, -60f, -60f);
         require(!c.update(0, 2, 3, loud, target, curve, profile, true).shouldWrite,
                 "first loud frame is evidence, not a Media write");
@@ -25,7 +25,7 @@ public final class V076CoarseMediaFallbackPureTest {
         CoarseMediaFallbackController.Decision down =
                 c.update(1100, 2, 3, loud, target, curve, profile, true);
         require(down.shouldWrite && down.requestedIndex == 1,
-                "sustained loudness may trim exactly one step");
+                "proven sustained loudness may trim exactly one step");
     }
 
     private static void rawPeakAloneDoesNotStartFallback() {
