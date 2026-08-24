@@ -8,13 +8,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: feature/v0.7-adaptive-envelope
-      - name: Bootstrap v0.7.6 tasks 1-7
-        run: bash ./scripts/bootstrap-v076-tasks1-7.sh
       - name: Upload source snapshot for v0.7 development
         uses: actions/upload-artifact@v4
         with:
