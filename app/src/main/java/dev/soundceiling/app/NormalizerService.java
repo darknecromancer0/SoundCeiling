@@ -313,7 +313,7 @@ public class NormalizerService extends Service {
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
-                    effectiveProfile.autoMute && emergency, now);
+                    effectiveProfile.autoMute, now);
             logControlSummary(now, command, applied, blockPeak);
             String reason = command.reason();
             long reactionLatency = applied != current
@@ -484,7 +484,7 @@ public class NormalizerService extends Service {
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
-                    effectiveProfile.autoMute && emergency, detectedAt);
+                    effectiveProfile.autoMute, detectedAt);
             logControlSummary(detectedAt, command, applied, fallbackPeak);
             long latency = applied < current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
@@ -628,7 +628,7 @@ public class NormalizerService extends Service {
 
     /** The service is the only Android actuator bridge; the coordinator has already chosen it. */
     private int applyCoordinatorCommand(ControlCommand command, int current, SafetySettings settings,
-                                        int effectiveMax, boolean allowBelowMinimum, long now) {
+                                        int effectiveMax, boolean autoMuteEnabled, long now) {
         if (command == null || command.kind() == ControlCommand.Kind.NONE) return current;
         if (command.kind() == ControlCommand.Kind.DSP_GAIN) {
             boolean applied = optionalDsp != null && optionalDsp.applyGain(
@@ -648,9 +648,11 @@ public class NormalizerService extends Service {
         }
         VolumeWriteTracker.WriteOrigin origin = writeOriginFor(command);
         boolean safetyCommand = isSafetyCommand(command);
+        boolean allowBelowMinimum = FallbackFloorPolicy.allowBelowConfiguredMinimum(
+                autoMuteEnabled, safetyCommand);
         SafetySettings writeSettings = safetyCommand ? settings : ordinaryFallbackSettings(settings);
         return safeVolume.applyRequested(target, current, writeSettings, effectiveMax,
-                safetyCommand || allowBelowMinimum, now, origin);
+                allowBelowMinimum, now, origin);
     }
 
 
