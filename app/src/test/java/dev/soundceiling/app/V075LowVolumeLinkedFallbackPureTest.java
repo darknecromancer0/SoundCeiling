@@ -7,6 +7,7 @@ public final class V075LowVolumeLinkedFallbackPureTest {
         unknownPlaybackCaptureMayAttenuateAsConservativePreVolumeFallback();
         manualSamsungMoveDoesNotMoveSourceRelativeLinkedTarget();
         fallbackRepaysOnlyAppOwnedAttenuationToUserAnchor();
+        hardPeakCannotBypassConfiguredMinimumUnlessAutoMuteIsEnabled();
         System.out.println("V075LowVolumeLinkedFallbackPureTest: PASS");
     }
 
@@ -68,6 +69,15 @@ public final class V075LowVolumeLinkedFallbackPureTest {
                 NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
         eq(ControlCommand.Kind.MEDIA_INDEX, recover.kind(), "quiet program may repay owned attenuation");
         eq(2, recover.mediaIndex(), "recovery stops exactly at the user's Media anchor");
+    }
+
+    private static void hardPeakCannotBypassConfiguredMinimumUnlessAutoMuteIsEnabled() {
+        eq(false, FallbackFloorPolicy.allowBelowConfiguredMinimum(false, true),
+                "hard peak must respect Media minimum when Auto mute is disabled");
+        eq(true, FallbackFloorPolicy.allowBelowConfiguredMinimum(true, true),
+                "explicit Auto mute may let a hard-peak command go below the configured minimum");
+        eq(false, FallbackFloorPolicy.allowBelowConfiguredMinimum(true, false),
+                "ordinary normalization must never inherit Auto mute's below-minimum permission");
     }
 
     private static NormalizerControlCoordinator.Frame frame(long at, int prev, int cur,
