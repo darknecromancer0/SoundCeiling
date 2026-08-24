@@ -8,6 +8,7 @@ public final class V076DspDifferentialVerifierPureTest {
         weakResidualShiftIsNoEffect();
         neutralAttachWithoutResidualShiftIsSafe();
         neutralAttachResidualShiftIsUnsafe();
+        neutralAttachShortValidWindowRemainsRetryable();
         mediaMoveCancelsEvidence();
         System.out.println("V076DspDifferentialVerifierPureTest: PASS");
     }
@@ -75,7 +76,6 @@ public final class V076DspDifferentialVerifierPureTest {
                 "tiny residual shift must classify as no effect");
     }
 
-
     private static void neutralAttachWithoutResidualShiftIsSafe() {
         DspDifferentialVerifier v = new DspDifferentialVerifier();
         v.begin("speaker", 2, 0);
@@ -87,6 +87,7 @@ public final class V076DspDifferentialVerifierPureTest {
         }
         DspDifferentialVerifier.AttachResult r = v.evaluateNeutralAttach(600);
         require(r.safe, "0 dB attach must remain acoustically neutral");
+        require(!r.retryable(), "conclusive neutral attach must not be retryable");
         near(0f, r.deltaDb, .15f, "neutral attach residual delta");
     }
 
@@ -101,7 +102,25 @@ public final class V076DspDifferentialVerifierPureTest {
         }
         DspDifferentialVerifier.AttachResult r = v.evaluateNeutralAttach(600);
         require(!r.safe, "neutral attach that changes output must be unsafe");
+        require(!r.retryable(), "proven non-neutral attach must be final, not retried");
         require(r.reason.contains("attach_non_neutral"), "attach failure must be diagnostic");
+    }
+
+    /** Samsung v0.7.6.2 field regression: many attach pairs can exist while the first valid
+     * attach pair arrived late, so pair count + phase wall time do not prove 250 ms valid coverage. */
+    private static void neutralAttachShortValidWindowRemainsRetryable() {
+        DspDifferentialVerifier v = new DspDifferentialVerifier();
+        v.begin("speaker", 3, 0);
+        for (int i = 0; i < 12; i++) v.addBaseline(-25f, -68f, i * 30L);
+        v.beginNeutralAttach(400);
+        for (int i = 0; i < 20; i++) v.addNeutralAttach(-20f, -63f, 500 + i * 10L);
+        DspDifferentialVerifier.AttachResult r = v.evaluateNeutralAttach(720);
+        require(!r.safe, "short valid attach span is not yet proven safe");
+        require(r.retryable(), "insufficient valid coverage must keep collecting instead of suppressing DSP");
+        require(r.reason.contains("attach_insufficient_coverage"),
+                "field regression must retain explicit insufficient-coverage reason");
+        require(r.attachPairs >= 20, "pair count alone must not make evidence conclusive");
+        require(r.coveredMs < 250, "test fixture must reproduce sub-250ms valid coverage");
     }
 
     private static void mediaMoveCancelsEvidence() {
