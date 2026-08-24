@@ -36,15 +36,31 @@ final class DiagnosticLog {
                                float desiredGainDb, float appliedGainDb,
                                float rawPeakDbfs, float projectedPeakDbfs,
                                String policy, String captureReference, String reason) {
+        controlSummary(atMs, actuator, "LEGACY", "UNKNOWN", "UNKNOWN", desiredGainDb, appliedGainDb,
+                rawPeakDbfs, Float.NaN, 0f, projectedPeakDbfs, Float.NaN, policy,
+                captureReference, -1, 0, 0L, reason);
+    }
+
+    static void controlSummary(long atMs, ControlCommand.Kind actuator,
+                               String actuatorTier, String meterDomain, String dspState,
+                               float requestedGainDb, float appliedGainDb,
+                               float sourcePeakDbfs, float sourceLoudnessDb,
+                               float mediaRouteGainDb, float projectedPeakDbfs,
+                               float projectedLoudnessDb, String policy,
+                               String captureReference, int mediaAnchor,
+                               int mediaDebt, long mediaDwellRemainingMs, String reason) {
         String state = (actuator == null ? ControlCommand.Kind.NONE : actuator).name()
-                + '|' + safe(policy) + '|' + safe(captureReference) + '|' + safe(reason);
+                + '|' + safe(actuatorTier) + '|' + safe(meterDomain) + '|' + safe(dspState) + '|'
+                + safe(policy) + '|' + safe(captureReference) + '|' + safe(reason);
         if (!transitions.shouldLogPeriodic("control_summary", state, atMs,
                 CONTROL_SUMMARY_INTERVAL_MS)) return;
         SessionLogger current = logger;
         if (current != null) {
             current.summary(LogFormatter.formatControlSummary(atMs, actuator,
-                    desiredGainDb, appliedGainDb, rawPeakDbfs, projectedPeakDbfs,
-                    policy, captureReference, reason));
+                    actuatorTier, meterDomain, dspState, requestedGainDb, appliedGainDb,
+                    sourcePeakDbfs, sourceLoudnessDb, mediaRouteGainDb,
+                    projectedPeakDbfs, projectedLoudnessDb, policy, captureReference,
+                    mediaAnchor, mediaDebt, mediaDwellRemainingMs, reason));
         }
     }
 

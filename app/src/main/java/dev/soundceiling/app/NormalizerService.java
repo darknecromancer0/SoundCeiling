@@ -653,16 +653,28 @@ public class NormalizerService extends Service {
             int debtCeiling = anchor == null ? current : anchor.maxDebtRecoveryIndex();
             target = Math.min(target, debtCeiling);
             if (target <= current) return current;
-            return safeVolume.applyRecovery(target, current, settings, effectiveMax,
+            int applied = safeVolume.applyRecovery(target, current, settings, effectiveMax,
                     Math.min(Math.min(effectiveMax, settings.hardMax()), debtCeiling), now);
+            if (applied != current && command.provenance() == ControlCommand.Provenance.DEBT_RECOVERY) {
+                DiagnosticLog.transition("coarse_media_write", "up:" + current + ':' + applied,
+                        "direction=UP from=" + current + " to=" + applied
+                                + " anchor=" + debtCeiling + " reason=" + command.reason());
+            }
+            return applied;
         }
         VolumeWriteTracker.WriteOrigin origin = writeOriginFor(command);
         boolean safetyCommand = isSafetyCommand(command);
         boolean allowBelowMinimum = FallbackFloorPolicy.allowBelowConfiguredMinimum(
                 autoMuteEnabled, safetyCommand);
         SafetySettings writeSettings = safetyCommand ? settings : ordinaryFallbackSettings(settings);
-        return safeVolume.applyRequested(target, current, writeSettings, effectiveMax,
+        int applied = safeVolume.applyRequested(target, current, writeSettings, effectiveMax,
                 allowBelowMinimum, now, origin);
+        if (applied != current && command.provenance() == ControlCommand.Provenance.COARSE_MEDIA) {
+            DiagnosticLog.transition("coarse_media_write", "down:" + current + ':' + applied,
+                    "direction=DOWN from=" + current + " to=" + applied
+                            + " reason=" + command.reason());
+        }
+        return applied;
     }
 
 
@@ -771,14 +783,76 @@ public class NormalizerService extends Service {
     private void logControlSummary(long nowMs, ControlCommand command, int appliedMediaIndex,
                                    OutputLevelModel.Snapshot levels) {
         NormalizerControlCoordinator.Snapshot snapshot = controlCoordinator.snapshot();
-        float appliedGainDb = snapshot.appliedGainDb();
-        float rawPeakDbfs = levels == null ? Float.NaN : levels.sourcePeakDbfs;
+        float appliedGainDb = optionalDsp == null ? 0f : optionalDsp.appliedGainDb();
+        float sourcePeakDbfs = levels == null ? Float.NaN : levels.sourcePeakDbfs;
+        float sourceLoudnessDb = levels == null ? Float.NaN : levels.sourceLoudnessDb;
+        float mediaRouteGainDb = levels == null ? Float.NaN : levels.mediaRouteGainDb;
         float projectedPeakDbfs = levels == null ? Float.NaN : levels.projectedOutputPeakDbfs;
+        float projectedLoudnessDb = levels == null ? Float.NaN : levels.projectedOutputLoudnessDb;
         String policy = hybridSnapshot == null ? "unknown" : hybridSnapshot.policy.resolutionReason;
         String captureReference = snapshot.measurementMode().name();
-        DiagnosticLog.controlSummary(nowMs, command == null ? snapshot.actuator() : command.kind(),
-                snapshot.desiredGainDb(), appliedGainDb, rawPeakDbfs, projectedPeakDbfs,
-                policy, captureReference, command == null ? snapshot.decisionReason() : command.reason());
+        String reason = command == null ? snapshot.decisionReason() : command.reason();
+        ControlCommand.Kind actuator = command == null ? snapshot.actuator() : command.kind();
+        float requestedGainDb = command != null && command.kind() == ControlCommand.Kind.DSP_GAIN
+                ? command.requestedGainDb() : snapshot.desiredGainDb();
+        MediaAnchorState anchor = controlCoordinator.mediaAnchorState();
+        int mediaAnchor = anchor == null ? appliedMediaIndex : anchor.userAnchorIndex();
+        int mediaDebt = controlCoordinator.coarseDebtSteps();
+        long mediaDwell = controlCoordinator.coarseDwellRemainingMs(nowMs, controlProfile);
+        String actuatorTier = actuatorTier(command, reason);
+        String meterDomain = levels == null ? OutputLevelModel.MeterDomain.UNKNOWN.name()
+                : levels.meterDomain.name();
+
+        if (reason != null && reason.startsWith("coarse_")
+                && (command == null || command.kind() == ControlCommand.Kind.NONE)) {
+            DiagnosticLog.transition("coarse_media_hold", reason,
+                    "media=" + appliedMediaIndex + " anchor=" + mediaAnchor
+                            + " debt=" + mediaDebt + " dwellRemainingMs=" + mediaDwell);
+        }
+        if (levels != null && Float.isFinite(levels.sourcePeakDbfs)
+                && controlProfile != null
+                && levels.sourcePeakDbfs > controlProfile.sourcePeakThresholdDbfs
+                && !levels.outputPeakViolates(controlProfile.sourcePeakThresholdDbfs)
+                && (command == null || command.provenance() != ControlCommand.Provenance.HARD_CAP)) {
+            DiagnosticLog.transition("raw_peak_not_output_emergency",
+                    meterDomain + ':' + appliedMediaIndex,
+                    String.format(Locale.US,
+                            "meterDomain=%s sourcePeak=%.2f projectedOutputPeak=%.2f media=%d decisionReason=%s",
+                            meterDomain, levels.sourcePeakDbfs, levels.projectedOutputPeakDbfs,
+                            appliedMediaIndex, reason));
+        }
+
+        DiagnosticLog.controlSummary(nowMs, actuator, actuatorTier, meterDomain, dspRuntimeState(),
+                requestedGainDb, appliedGainDb, sourcePeakDbfs, sourceLoudnessDb,
+                mediaRouteGainDb, projectedPeakDbfs, projectedLoudnessDb, policy,
+                captureReference, mediaAnchor, mediaDebt, mediaDwell, reason);
+    }
+
+    private String actuatorTier(ControlCommand command, String reason) {
+        if (command != null) {
+            if (command.kind() == ControlCommand.Kind.DSP_GAIN) return "DSP";
+            if (command.provenance() == ControlCommand.Provenance.COARSE_MEDIA
+                    || command.provenance() == ControlCommand.Provenance.DEBT_RECOVERY) {
+                return "COARSE_MEDIA";
+            }
+            if (command.provenance() == ControlCommand.Provenance.HARD_CAP
+                    || command.provenance() == ControlCommand.Provenance.HARD_PEAK_SAFETY
+                    || command.provenance() == ControlCommand.Provenance.QUIET_NOW) {
+                return "SAFETY_ONLY";
+            }
+        }
+        if (reason != null && reason.startsWith("coarse_")) return "COARSE_MEDIA";
+        return optionalDsp != null && isVerifiedDspCapability(optionalDsp.capability())
+                ? "DSP" : "SAFETY_ONLY";
+    }
+
+    private String dspRuntimeState() {
+        if (optionalDsp == null || optionalDsp.capability() == DspTransport.Capability.UNAVAILABLE) {
+            return "UNAVAILABLE";
+        }
+        DspTransport.Capability capability = optionalDsp.capability();
+        if (!isVerifiedDspCapability(capability)) return "AVAILABLE_UNVERIFIED";
+        return Math.abs(optionalDsp.appliedGainDb()) > .05f ? "ACTIVE" : "VERIFIED";
     }
 
     private long updateFallbackBands(GlobalVisualizerBackend.Reading reading, long nowMs) {
