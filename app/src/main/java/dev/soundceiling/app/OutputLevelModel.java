@@ -63,10 +63,10 @@ final class OutputLevelModel {
 
     static Snapshot evaluate(Input in) {
         if (in == null) throw new IllegalArgumentException("input == null");
-        if (in.directOutputValid) {
-            return new Snapshot(MeterDomain.OUTPUT, in,
-                    in.directOutputPeakDbfs, in.directOutputLoudnessDb, true);
-        }
+
+        // A proven playback-capture reference is stronger control-domain evidence than a fresh
+        // Visualizer frame. On Samsung/OEM routes Visualizer freshness does not prove that its
+        // amplitude is post-Media-volume, so it must not override PRE_VOLUME route projection.
         if (in.captureReference == CaptureReferenceEstimator.Mode.PRE_VOLUME) {
             float gain = in.mediaRouteGainDb + in.verifiedDspGainDb;
             return new Snapshot(MeterDomain.PROJECTED, in,
@@ -78,6 +78,10 @@ final class OutputLevelModel {
                     in.sourcePeakDbfs, in.sourceLoudnessDb,
                     Float.isFinite(in.sourcePeakDbfs));
         }
+
+        // Visualizer remains available to the separate paired Global-DSP verification path, but
+        // directOutputValid only proves a readable frame, not post-volume semantics. Until such a
+        // reference is proven, ordinary normalization must fail closed instead of moving Media.
         return new Snapshot(MeterDomain.UNKNOWN, in, Float.NaN, Float.NaN, false);
     }
 
