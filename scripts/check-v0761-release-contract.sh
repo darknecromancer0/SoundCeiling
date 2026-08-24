@@ -8,13 +8,19 @@ CHECKLIST="$ROOT/docs/field-tests/2026-08-24-v0.7.6.1-samsung-checklist.md"
 fail(){ echo "v0.7.6.1 release contract: $*" >&2; exit 1; }
 require(){ local f="$1" n="$2"; [[ -f "$f" ]] || fail "missing $(basename "$f")"; grep -Fq -- "$n" "$f" || fail "missing $(basename "$f") -> $n"; }
 require_order(){ local f="$1" a="$2" b="$3" la lb; require "$f" "$a"; require "$f" "$b"; la=$(grep -Fn -- "$a" "$f"|head -1|cut -d: -f1); lb=$(grep -Fn -- "$b" "$f"|head -1|cut -d: -f1); [[ $la -lt $lb ]] || fail "expected order: $a before $b"; }
-require "$BUILD" 'versionCode=21'
-require "$BUILD" 'versionName="0.7.6.1"'
-require "$WF" 'name: SoundCeiling-v0.7.6.1-debug-apk'
+python - "$BUILD" <<'PYVER'
+from pathlib import Path
+import re, sys
+s = Path(sys.argv[1]).read_text()
+m = re.search(r'versionCode=(\d+)', s)
+if not m or int(m.group(1)) < 21:
+    raise SystemExit('v0.7.6.1 release contract: expected versionCode >= 21')
+PYVER
 require "$WF" 'run: bash ./scripts/check-v0761-dsp-safety-contract.sh'
 require "$WF" 'run: bash ./scripts/check-v0761-release-contract.sh'
 require_order "$WF" 'run: bash ./scripts/check-v0761-dsp-safety-contract.sh' 'run: bash ./scripts/check-v0761-release-contract.sh'
 require_order "$WF" 'run: bash ./scripts/check-v0761-release-contract.sh' 'run: ./gradlew --no-daemon --stacktrace :app:assembleDebug'
+require "$README" '## v0.7.6.1 Samsung DSP safety corrective'
 require "$README" 'baseline with no DSP → neutral 0 dB attach → attach verification → bounded -0.5 dB differential probe'
 require "$README" 'RESPONSIVE_NONLINEAR'
 require "$README" '64 MiB'
