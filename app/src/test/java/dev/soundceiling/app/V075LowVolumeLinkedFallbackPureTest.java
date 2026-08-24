@@ -80,9 +80,9 @@ public final class V075LowVolumeLinkedFallbackPureTest {
         c.onFrame(frame(0, 3, 3, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
                 NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
         c.onFrame(frame(40, 3, 2, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.APP_ACK, VolumeWriteOrigin.PEAK_EMERGENCY));
+                NormalizerControlCoordinator.VolumeObservation.APP_ACK, VolumeWriteOrigin.HARD_PEAK_SAFETY));
         c.onFrame(frame(80, 2, 1, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.APP_ACK, VolumeWriteOrigin.PEAK_EMERGENCY));
+                NormalizerControlCoordinator.VolumeObservation.APP_ACK, VolumeWriteOrigin.HARD_PEAK_SAFETY));
         eq(2, c.mediaAnchorState().debtSteps(), "peak attenuation creates two repayable owned steps");
 
         c.onFrame(frameWithPeak(1200, 1, 1, curve, -22f, -16f,
@@ -105,7 +105,7 @@ public final class V075LowVolumeLinkedFallbackPureTest {
         c.onFrame(frame(0, 2, 2, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
                 NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
         c.onFrame(frame(40, 2, 1, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.APP_ACK, VolumeWriteOrigin.PEAK_EMERGENCY));
+                NormalizerControlCoordinator.VolumeObservation.APP_ACK, VolumeWriteOrigin.HARD_PEAK_SAFETY));
 
         c.onFrame(frameWithPeak(1200, 1, 1, curve, -22f, -5f,
                 CaptureReferenceEstimator.Mode.UNKNOWN,
