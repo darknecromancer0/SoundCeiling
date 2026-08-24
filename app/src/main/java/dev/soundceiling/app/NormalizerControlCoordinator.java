@@ -8,7 +8,7 @@ import java.util.Objects;
  * fallback is a separate slow one-step state machine.
  */
 public final class NormalizerControlCoordinator {
-    private static final float BOUNDED_GLOBAL_DSP_PROBE_GAIN_DB = -2f;
+    private static final float BOUNDED_GLOBAL_DSP_PROBE_GAIN_DB = DspDifferentialVerifier.REQUESTED_PROBE_DB;
 
     public enum VolumeObservation { UNCHANGED, USER, APP_ACK, APP_STALE, APP_MISMATCH }
 
@@ -256,7 +256,7 @@ public final class NormalizerControlCoordinator {
                     transientEvent.severity);
         }
 
-        // The bounded -2 dB candidate is measurement state, not normal normalization gain.
+        // The bounded low-level candidate is measurement state, not normal normalization gain.
         boolean boundedGlobalProbe = !frame.verifiedDsp
                 && Math.abs(frame.currentDspGainDb - BOUNDED_GLOBAL_DSP_PROBE_GAIN_DB) <= .001f;
         if (boundedGlobalProbe) {

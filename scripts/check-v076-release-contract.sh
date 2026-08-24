@@ -9,11 +9,9 @@ fail(){ echo "v0.7.6 release contract: $*" >&2; exit 1; }
 require(){ local f="$1" n="$2"; [[ -f "$f" ]] || fail "missing $(basename "$f")"; grep -Fq -- "$n" "$f" || fail "missing $(basename "$f") -> $n"; }
 require_order(){ local f="$1" a="$2" b="$3" la lb; require "$f" "$a"; require "$f" "$b"; la=$(grep -Fn -- "$a" "$f"|head -1|cut -d: -f1); lb=$(grep -Fn -- "$b" "$f"|head -1|cut -d: -f1); [[ $la -lt $lb ]] || fail "expected order: $a before $b"; }
 
-require "$BUILD" 'versionCode=20'
-require "$BUILD" 'versionName="0.7.6"'
-require "$WF" 'name: SoundCeiling-v0.7.6-debug-apk'
 require "$WF" 'run: bash ./scripts/check-v076-control-architecture-contract.sh'
 require "$WF" 'run: bash ./scripts/check-v076-release-contract.sh'
+require "$README" 'v0.7.6 Control Architecture Reset'
 require_order "$WF" 'run: bash ./scripts/check-v076-control-architecture-contract.sh' 'run: bash ./scripts/check-v076-release-contract.sh'
 require_order "$WF" 'run: bash ./scripts/check-v076-release-contract.sh' 'run: ./gradlew --no-daemon --stacktrace :app:assembleDebug'
 

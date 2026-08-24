@@ -6,6 +6,8 @@ public final class V076DspDifferentialVerifierPureTest {
         requestedProbeResidualShiftVerifies();
         oversizedResidualShiftIsResponsiveNonlinear();
         weakResidualShiftIsNoEffect();
+        neutralAttachWithoutResidualShiftIsSafe();
+        neutralAttachResidualShiftIsUnsafe();
         mediaMoveCancelsEvidence();
         System.out.println("V076DspDifferentialVerifierPureTest: PASS");
     }
@@ -71,6 +73,35 @@ public final class V076DspDifferentialVerifierPureTest {
         require(!r.verified, "tiny residual shift must not verify");
         require(r.classification == DspDifferentialVerifier.Classification.NO_EFFECT,
                 "tiny residual shift must classify as no effect");
+    }
+
+
+    private static void neutralAttachWithoutResidualShiftIsSafe() {
+        DspDifferentialVerifier v = new DspDifferentialVerifier();
+        v.begin("speaker", 2, 0);
+        for (int i = 0; i < 10; i++) v.addBaseline(-30 + i, -55 + i, i * 30L);
+        v.beginNeutralAttach(300);
+        for (int i = 0; i < 10; i++) {
+            float source = -22f + i;
+            v.addNeutralAttach(source, source - 25f, 300 + i * 30L);
+        }
+        DspDifferentialVerifier.AttachResult r = v.evaluateNeutralAttach(600);
+        require(r.safe, "0 dB attach must remain acoustically neutral");
+        near(0f, r.deltaDb, .15f, "neutral attach residual delta");
+    }
+
+    private static void neutralAttachResidualShiftIsUnsafe() {
+        DspDifferentialVerifier v = new DspDifferentialVerifier();
+        v.begin("speaker", 2, 0);
+        for (int i = 0; i < 10; i++) v.addBaseline(-30 + i, -55 + i, i * 30L);
+        v.beginNeutralAttach(300);
+        for (int i = 0; i < 10; i++) {
+            float source = -22f + i;
+            v.addNeutralAttach(source, source - 33f, 300 + i * 30L);
+        }
+        DspDifferentialVerifier.AttachResult r = v.evaluateNeutralAttach(600);
+        require(!r.safe, "neutral attach that changes output must be unsafe");
+        require(r.reason.contains("attach_non_neutral"), "attach failure must be diagnostic");
     }
 
     private static void mediaMoveCancelsEvidence() {

@@ -39,7 +39,7 @@ public class NormalizerService extends Service {
     private static final int GLOBAL_DSP_DIFFERENTIAL_MIN_PAIRS = 8;
     private static final long GLOBAL_DSP_DIFFERENTIAL_WINDOW_MS = 250L;
     private static final long GLOBAL_DSP_PROBE_COOLDOWN_MS = 5000L;
-    private static final long GLOBAL_DSP_PROBE_MAX_ACTIVE_MS = 1000L;
+    private static final long GLOBAL_DSP_PROBE_MAX_ACTIVE_MS = 1500L;
     private static final long SPECTRUM_HOLD_MS = 700L;
 
     private final AtomicBoolean workerRunning = new AtomicBoolean();
@@ -88,14 +88,19 @@ public class NormalizerService extends Service {
     private CaptureReferenceEstimator.Mode lastLoggedCaptureReference = CaptureReferenceEstimator.Mode.UNKNOWN;
     private boolean globalDspPreference = true;
     private boolean globalDifferentialCollecting;
+    private boolean globalDifferentialTransportAttached;
     private boolean globalDifferentialProbeApplied;
     private int globalDifferentialBaselinePairs;
+    private int globalDifferentialAttachPairs;
     private int globalDifferentialProbePairs;
     private long globalDifferentialBaselineFirstMs;
+    private long globalDifferentialAttachFirstMs;
     private long globalDifferentialProbeFirstMs;
     private long globalProbeStartedAtMs;
     private int globalDifferentialMediaIndex = -1;
     private long lastGlobalProbeAttemptMs = -GLOBAL_DSP_PROBE_COOLDOWN_MS;
+    private boolean globalProbeSuppressedForRoute;
+    private String globalProbeSuppressedReason = "";
 
     @Override public void onCreate() {
         super.onCreate();
@@ -965,7 +970,11 @@ public class NormalizerService extends Service {
             resetGlobalDifferentialState();
         }
         globalDspPreference = nextGlobalDsp;
-        if (globalChanged) resetGlobalDifferentialState();
+        if (globalChanged) {
+            resetGlobalDifferentialState();
+            globalProbeSuppressedForRoute = false;
+            globalProbeSuppressedReason = "";
+        }
         controlCoordinator.setCeilingState(nextCeilings);
         controlProfile = next;
         controlProfileFingerprint = fingerprint;
@@ -999,6 +1008,11 @@ public class NormalizerService extends Service {
             resetGlobalDifferentialState();
             return;
         }
+        if (globalProbeSuppressedForRoute) {
+            DiagnosticLog.transition("dsp_global_probe_suppressed", globalProbeSuppressedReason,
+                    "route=" + DeviceDetector.key(currentDevice) + " retry=route_change_or_toggle");
+            return;
+        }
 
         boolean pairedMeters = GlobalDspProbeDecision.choose(globalDspPreference, allowedMediaActive,
                 outputValid && Float.isFinite(outputRmsDb),
@@ -1008,27 +1022,39 @@ public class NormalizerService extends Service {
         if (globalDifferentialCollecting && mediaIndex != globalDifferentialMediaIndex) {
             optionalDsp.cancelGlobalDifferentialProbe("media_index_changed");
             DiagnosticLog.transition("dsp_verification_invalidated", "media_index_changed",
-                    "from=" + globalDifferentialMediaIndex + " to=" + mediaIndex);
+                    "from=" + globalDifferentialMediaIndex + " to=" + mediaIndex
+                            + " detached=" + globalDifferentialTransportAttached);
             resetGlobalDifferentialState();
             lastGlobalProbeAttemptMs = nowMs;
             return;
         }
-        if (globalDifferentialProbeApplied
+        if (globalDifferentialTransportAttached
                 && nowMs - globalProbeStartedAtMs > GLOBAL_DSP_PROBE_MAX_ACTIVE_MS) {
             optionalDsp.cancelGlobalDifferentialProbe("probe_timeout");
+            suppressGlobalProbeForRoute("probe_timeout", nowMs);
             DiagnosticLog.transition("dsp_differential_probe_result", "timeout",
-                    "verified=false neutralized=true");
+                    "verified=false neutralized=true detached=true");
             resetGlobalDifferentialState();
-            lastGlobalProbeAttemptMs = nowMs;
             return;
         }
         if (!pairedMeters) {
             if (globalDifferentialCollecting) {
-                optionalDsp.cancelGlobalDifferentialProbe("paired_meter_unavailable");
+                boolean attachUnsafe = globalDifferentialTransportAttached && sourceValid
+                        && allowedMediaActive && !outputValid;
+                optionalDsp.cancelGlobalDifferentialProbe(attachUnsafe
+                        ? "output_lost_after_attach" : "paired_meter_unavailable");
+                if (attachUnsafe) {
+                    suppressGlobalProbeForRoute("output_lost_after_attach", nowMs);
+                    DiagnosticLog.transition("dsp_global_attach_unsafe", "output_lost_after_attach",
+                            "sourceValid=true outputValid=false detached=true route="
+                                    + DeviceDetector.key(currentDevice));
+                } else {
+                    lastGlobalProbeAttemptMs = nowMs;
+                }
                 DiagnosticLog.transition("dsp_verification_invalidated",
-                        "paired_meter_unavailable", "neutralized=true");
+                        attachUnsafe ? "output_lost_after_attach" : "paired_meter_unavailable",
+                        "neutralized=true detached=" + globalDifferentialTransportAttached);
                 resetGlobalDifferentialState();
-                lastGlobalProbeAttemptMs = nowMs;
             }
             return;
         }
@@ -1044,30 +1070,71 @@ public class NormalizerService extends Service {
             globalDifferentialMediaIndex = mediaIndex;
             globalDifferentialBaselineFirstMs = nowMs;
             DiagnosticLog.transition("dsp_differential_probe_begin", "baseline",
-                    "route=" + DeviceDetector.key(currentDevice) + " media=" + mediaIndex);
+                    "route=" + DeviceDetector.key(currentDevice) + " media=" + mediaIndex
+                            + " transportAttached=false");
         }
 
-        if (!globalDifferentialProbeApplied) {
+        if (!globalDifferentialTransportAttached) {
             optionalDsp.addGlobalProbeBaseline(sourceRmsDb, outputRmsDb, nowMs);
             globalDifferentialBaselinePairs++;
             if (globalDifferentialBaselinePairs < GLOBAL_DSP_DIFFERENTIAL_MIN_PAIRS
                     || nowMs - globalDifferentialBaselineFirstMs < GLOBAL_DSP_DIFFERENTIAL_WINDOW_MS) {
                 return;
             }
+            if (!optionalDsp.attachGlobalDifferentialProbe(nowMs)) {
+                optionalDsp.cancelGlobalDifferentialProbe("neutral_attach_failed");
+                suppressGlobalProbeForRoute("neutral_attach_failed", nowMs);
+                DiagnosticLog.transition("dsp_global_attach_result", "neutral_attach_failed",
+                        "safe=false detached=true");
+                resetGlobalDifferentialState();
+                return;
+            }
+            globalDifferentialTransportAttached = true;
+            globalDifferentialAttachFirstMs = nowMs;
+            globalProbeStartedAtMs = nowMs;
+            DiagnosticLog.transition("dsp_global_attach_begin", "neutral_0db",
+                    "route=" + DeviceDetector.key(currentDevice)
+                            + " media=" + mediaIndex
+                            + " baselinePairs=" + globalDifferentialBaselinePairs);
+            return;
+        }
+
+        if (!globalDifferentialProbeApplied) {
+            optionalDsp.addGlobalProbeNeutralAttach(sourceRmsDb, outputRmsDb, nowMs);
+            globalDifferentialAttachPairs++;
+            if (globalDifferentialAttachPairs < GLOBAL_DSP_DIFFERENTIAL_MIN_PAIRS
+                    || nowMs - globalDifferentialAttachFirstMs < GLOBAL_DSP_DIFFERENTIAL_WINDOW_MS) {
+                return;
+            }
+            DspDifferentialVerifier.AttachResult attach =
+                    optionalDsp.evaluateGlobalNeutralAttach(nowMs);
+            DiagnosticLog.transition("dsp_global_attach_result", attach.reason,
+                    "safe=" + attach.safe + " deltaDb=" + attach.deltaDb
+                            + " samples=" + attach.attachPairs);
+            if (!attach.safe) {
+                optionalDsp.cancelGlobalDifferentialProbe("neutral_attach_non_neutral");
+                suppressGlobalProbeForRoute("neutral_attach_non_neutral:" + attach.deltaDb, nowMs);
+                DiagnosticLog.transition("dsp_global_attach_unsafe", "neutral_attach_non_neutral",
+                        "deltaDb=" + attach.deltaDb + " detached=true route="
+                                + DeviceDetector.key(currentDevice));
+                resetGlobalDifferentialState();
+                return;
+            }
             if (!optionalDsp.activateGlobalDifferentialProbe(nowMs)) {
                 optionalDsp.cancelGlobalDifferentialProbe("probe_gain_apply_failed");
+                suppressGlobalProbeForRoute("probe_gain_apply_failed", nowMs);
                 DiagnosticLog.transition("dsp_differential_probe_result",
-                        "probe_gain_apply_failed", "verified=false neutralized=true");
+                        "probe_gain_apply_failed", "verified=false neutralized=true detached=true");
                 resetGlobalDifferentialState();
-                lastGlobalProbeAttemptMs = nowMs;
                 return;
             }
             globalDifferentialProbeApplied = true;
             globalDifferentialProbeFirstMs = nowMs;
-            globalProbeStartedAtMs = nowMs;
             DiagnosticLog.transition("dsp_differential_probe_begin", "active",
                     "requestedGainDb=" + DspScopeProbe.PROBE_GAIN_DB
-                            + " baselinePairs=" + globalDifferentialBaselinePairs);
+                            + " attachDeltaDb=" + attach.deltaDb
+                            + " baselinePairs=" + globalDifferentialBaselinePairs
+                            + " attachPairs=" + globalDifferentialAttachPairs);
             return;
         }
 
@@ -1079,20 +1146,45 @@ public class NormalizerService extends Service {
         }
         DspScopeProbe.Evidence evidence = optionalDsp.finishGlobalDifferentialProbe(
                 false, true, nowMs);
+        boolean verified = evidence.allowedMediaEffectVerified();
+        if (!verified) {
+            suppressGlobalProbeForRoute(evidence.classification.name().toLowerCase()
+                    + ":" + evidence.reason, nowMs);
+            if (evidence.classification
+                    == DspDifferentialVerifier.Classification.RESPONSIVE_NONLINEAR) {
+                DiagnosticLog.transition("dsp_global_attach_unsafe", "responsive_nonlinear",
+                        "deltaDb=" + evidence.affectedDeltaDb + " detached=true route="
+                                + DeviceDetector.key(currentDevice));
+            }
+        } else {
+            lastGlobalProbeAttemptMs = nowMs;
+        }
         DiagnosticLog.transition("dsp_differential_probe_result", evidence.reason,
-                "verified=" + evidence.allowedMediaEffectVerified()
+                "verified=" + verified
+                        + " classification=" + evidence.classification
                         + " deltaDb=" + evidence.affectedDeltaDb
-                        + " samples=" + evidence.sampleCount + " neutralized=true");
+                        + " samples=" + evidence.sampleCount
+                        + " neutralized=true detached=" + !verified);
         resetGlobalDifferentialState();
+    }
+
+    private void suppressGlobalProbeForRoute(String reason, long nowMs) {
+        globalProbeSuppressedForRoute = true;
+        globalProbeSuppressedReason = reason == null || reason.isEmpty() ? "unsafe_probe" : reason;
         lastGlobalProbeAttemptMs = nowMs;
+        DiagnosticLog.transition("dsp_global_probe_suppressed", globalProbeSuppressedReason,
+                "route=" + DeviceDetector.key(currentDevice) + " until=route_change_or_toggle");
     }
 
     private void resetGlobalDifferentialState() {
         globalDifferentialCollecting = false;
+        globalDifferentialTransportAttached = false;
         globalDifferentialProbeApplied = false;
         globalDifferentialBaselinePairs = 0;
+        globalDifferentialAttachPairs = 0;
         globalDifferentialProbePairs = 0;
         globalDifferentialBaselineFirstMs = 0L;
+        globalDifferentialAttachFirstMs = 0L;
         globalDifferentialProbeFirstMs = 0L;
         globalProbeStartedAtMs = 0L;
         globalDifferentialMediaIndex = -1;
@@ -1141,9 +1233,9 @@ public class NormalizerService extends Service {
 
     private void logGlobalDspTransport() {
         if (optionalDsp == null || !globalDspPreference) return;
-        DspTransport.Capability rawGlobal = optionalDsp.prepareGlobalProbeTransport();
+        DspTransport.Capability rawGlobal = optionalDsp.capability();
         DiagnosticLog.transition("global_dsp_transport", rawGlobal.name(),
-                "detail=" + optionalDsp.detail());
+                "detail=" + optionalDsp.detail() + " prepared=false sideEffectFree=true");
     }
 
     private void tryOpenLogger() {
@@ -1186,6 +1278,8 @@ public class NormalizerService extends Service {
         if (force || !oldKey.equals(newKey)) {
             if (optionalDsp != null && !oldKey.isEmpty()) optionalDsp.onRouteChanged();
             resetGlobalDifferentialState();
+            globalProbeSuppressedForRoute = false;
+            globalProbeSuppressedReason = "";
             currentDevice = detected;
             currentDeviceType = DeviceDetector.type(detected);
             MeasurementVolumeCurve.Snapshot routeCurve = measurementCurve.snapshot(currentDeviceType);

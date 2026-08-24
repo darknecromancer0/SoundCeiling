@@ -56,7 +56,7 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
         items.setOrientation(LinearLayout.VERTICAL);
         root.addView(items);
 
-        TextView logInfo = text("Логи: до 16 MiB суммарно. Старые сессии удаляются первыми; аудио PCM в лог не записывается.",
+        TextView logInfo = text("Логи: до 64 MiB суммарно. Старые сессии удаляются первыми; аудио PCM в лог не записывается.",
                 13, UiTheme.secondaryText(activity));
         logInfo.setPadding(0, dp(16), 0, dp(8));
         root.addView(logInfo);

@@ -2,7 +2,7 @@ package dev.soundceiling.app;
 
 /** Lifecycle-safe orchestration for the bounded session-zero digital scope probe. */
 final class DspScopeProbe {
-    static final float PROBE_GAIN_DB = -2f;
+    static final float PROBE_GAIN_DB = DspDifferentialVerifier.REQUESTED_PROBE_DB;
 
     enum ScopeAuthority {
         NONE,
@@ -19,12 +19,14 @@ final class DspScopeProbe {
         final float affectedDeltaDb;
         final ScopeAuthority authority;
         final DspProbeMath.Status result;
+        final DspDifferentialVerifier.Classification classification;
         final String reason;
         final boolean protectedUsagesExcluded = false;
 
         private Evidence(String routeIdentity, int audioSessionId, String trustedPolicyKey,
                          long timestampMs, int sampleCount, float affectedDeltaDb,
-                         ScopeAuthority authority, DspProbeMath.Status result, String reason) {
+                         ScopeAuthority authority, DspProbeMath.Status result,
+                         DspDifferentialVerifier.Classification classification, String reason) {
             this.routeIdentity = routeIdentity == null ? "" : routeIdentity;
             this.audioSessionId = audioSessionId;
             this.trustedPolicyKey = trustedPolicyKey == null ? "" : trustedPolicyKey;
@@ -33,6 +35,9 @@ final class DspScopeProbe {
             this.affectedDeltaDb = affectedDeltaDb;
             this.authority = authority == null ? ScopeAuthority.NONE : authority;
             this.result = result == null ? DspProbeMath.Status.UNVERIFIED : result;
+            this.classification = classification == null
+                    ? DspDifferentialVerifier.Classification.INSUFFICIENT_EVIDENCE
+                    : classification;
             this.reason = reason == null ? "" : reason;
         }
 
@@ -74,6 +79,7 @@ final class DspScopeProbe {
             activeTransport = null;
             return new Evidence(routeIdentity, sessionId, policyKey, timestampMs, 0,
                     Float.NaN, actualAuthority, DspProbeMath.Status.UNVERIFIED,
+                    DspDifferentialVerifier.Classification.INSUFFICIENT_EVIDENCE,
                     "probe_not_active");
         }
         if (target != null) target.applyProbeAttenuationDb(0f);
@@ -81,14 +87,15 @@ final class DspScopeProbe {
         activeTransport = null;
 
         DspDifferentialVerifier.Result r = differential == null
-                ? new DspDifferentialVerifier.Result(false, Float.NaN, 0, 0, 0L,
-                        "differential_missing") : differential;
+                ? new DspDifferentialVerifier.Result(false,
+                        DspDifferentialVerifier.Classification.INSUFFICIENT_EVIDENCE,
+                        Float.NaN, 0, 0, 0L, "differential_missing") : differential;
         DspProbeMath.Status status = r.verified
                 ? DspProbeMath.Status.ALLOWED_MEDIA_EFFECT_VERIFIED
                 : DspProbeMath.Status.UNVERIFIED;
         int samples = Math.min(r.baselinePairs, r.probePairs);
         return new Evidence(routeIdentity, sessionId, policyKey, timestampMs, samples,
-                r.deltaDb, actualAuthority, status, r.reason);
+                r.deltaDb, actualAuthority, status, r.classification, r.reason);
     }
 
     Evidence finish(String routeIdentity, DspEndpointHandle trustedHandle,
@@ -106,6 +113,7 @@ final class DspScopeProbe {
             activeTransport = null;
             return new Evidence(routeIdentity, sessionId, policyKey, timestampMs, 0,
                     Float.NaN, actualAuthority, DspProbeMath.Status.UNVERIFIED,
+                    DspDifferentialVerifier.Classification.INSUFFICIENT_EVIDENCE,
                     "probe_not_active");
         }
 
@@ -118,8 +126,12 @@ final class DspScopeProbe {
 
         DspProbeMath.Result result = DspProbeMath.evaluateAttenuation(beforeDb, afterDb);
         int samples = beforeDb == null || afterDb == null ? 0 : Math.min(beforeDb.length, afterDb.length);
+        DspDifferentialVerifier.Classification classification = result.status
+                == DspProbeMath.Status.ALLOWED_MEDIA_EFFECT_VERIFIED
+                ? DspDifferentialVerifier.Classification.LINEAR_SAFE
+                : DspDifferentialVerifier.Classification.NO_EFFECT;
         return new Evidence(routeIdentity, sessionId, policyKey, timestampMs, samples,
-                result.meanDeltaDb, actualAuthority, result.status, result.reason);
+                result.meanDeltaDb, actualAuthority, result.status, classification, result.reason);
     }
 
     void cancel() {

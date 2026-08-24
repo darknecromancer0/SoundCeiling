@@ -71,7 +71,7 @@ public final class DiagnosticsPureTest {
 
     private static void testRetentionBudget() {
         long mib = 1024L * 1024L;
-        assertEquals(16L * mib, LogFilePolicy.RETAINED_BUDGET_BYTES, "v0.4 retained budget");
+        assertEquals(64L * mib, LogFilePolicy.RETAINED_BUDGET_BYTES, "current retained budget");
         List<LogFilePolicy.Entry> entries = Arrays.asList(
                 new LogFilePolicy.Entry("SoundCeiling-20260821-010000.log", 7L * mib),
                 new LogFilePolicy.Entry("SoundCeiling-20260821-020000.log", 7L * mib),

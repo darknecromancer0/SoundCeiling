@@ -138,6 +138,22 @@ final class OptionalDspController implements AutoCloseable {
         transports.addGlobalProbeBaseline(sourceRmsDb, outputRmsDb, atMs);
     }
 
+    boolean attachGlobalDifferentialProbe(long atMs) {
+        boolean attached = transports.attachGlobalDifferentialProbe(atMs);
+        detail = transports.reason();
+        return attached;
+    }
+
+    void addGlobalProbeNeutralAttach(float sourceRmsDb, float outputRmsDb, long atMs) {
+        transports.addGlobalProbeNeutralAttach(sourceRmsDb, outputRmsDb, atMs);
+    }
+
+    DspDifferentialVerifier.AttachResult evaluateGlobalNeutralAttach(long atMs) {
+        DspDifferentialVerifier.AttachResult result = transports.evaluateGlobalNeutralAttach(atMs);
+        detail = transports.reason();
+        return result;
+    }
+
     boolean activateGlobalDifferentialProbe(long atMs) {
         boolean started = transports.activateGlobalDifferentialProbe(atMs);
         detail = transports.reason();

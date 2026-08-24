@@ -75,8 +75,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
 
     private static DynamicsProcessing initializeCandidate(DynamicsProcessing candidate) {
         try {
-            candidate.setEnabled(true);
             candidate.setInputGainAllChannelsTo(0f);
+            candidate.setEnabled(false);
             return candidate;
         } catch (RuntimeException error) {
             try { candidate.release(); }
@@ -123,6 +123,25 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
 
     float appliedGainDb() {
         return appliedGainDb;
+    }
+
+    /** Enable the global candidate at exactly 0 dB so attach behavior can be measured separately. */
+    DspApplyResult enableNeutralForProbe() {
+        if (!globalSession || effect == null) {
+            return DspApplyResult.rejected(appliedGainDb, capability,
+                    "global_probe_transport_unavailable");
+        }
+        try {
+            effect.setInputGainAllChannelsTo(0f);
+            effect.setEnabled(true);
+            appliedGainDb = 0f;
+            lastApplyAtMs = 0L;
+            return DspApplyResult.applied(0f, capability, "global_probe_neutral_attach");
+        } catch (RuntimeException error) {
+            downgrade(DspTransport.Capability.AVAILABLE_UNVERIFIED,
+                    "global_probe_attach_failed:" + error.getClass().getSimpleName());
+            return DspApplyResult.rejected(0f, capability, reason);
+        }
     }
 
     /** Probe-only path. It can only apply the bounded negative test gain or restore neutral. */
@@ -216,6 +235,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         }
         try {
             float clamped = clampGain(gainDb);
+            effect.setEnabled(true);
             effect.setInputGainAllChannelsTo(clamped);
             appliedGainDb = clamped;
             return DspApplyResult.applied(appliedGainDb, capability, successReason);
@@ -261,6 +281,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         DynamicsProcessing old = effect;
         if (old != null) {
             neutralize();
+            try { old.setEnabled(false); }
+            catch (RuntimeException ignored) {}
             try { old.release(); }
             catch (RuntimeException ignored) {}
         }
@@ -278,6 +300,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         if (old == null) return;
         neutralize();
         effect = null;
+        try { old.setEnabled(false); }
+        catch (RuntimeException ignored) {}
         try { old.release(); }
         catch (RuntimeException ignored) {}
         globalGainAuthorized = false;

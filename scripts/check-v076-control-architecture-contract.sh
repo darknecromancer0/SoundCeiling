@@ -30,9 +30,13 @@ BEGIN_METHOD="$(method_body "$PKG/DspTransportManager.java" 'boolean beginGlobal
 if grep -Fq 'prepareGlobalProbeTransport' <<<"$BEGIN_METHOD"; then
   echo 'forbidden: beginGlobalDifferentialProbe attaches DSP before stable baseline' >&2; exit 1
 fi
+ATTACH_METHOD="$(method_body "$PKG/DspTransportManager.java" 'boolean attachGlobalDifferentialProbe')"
+grep -Fq 'prepareGlobalProbeTransport' <<<"$ATTACH_METHOD" || {
+  echo 'missing: attachGlobalDifferentialProbe must create the candidate only after baseline' >&2; exit 1; }
 ACTIVE_METHOD="$(method_body "$PKG/DspTransportManager.java" 'boolean activateGlobalDifferentialProbe')"
-grep -Fq 'prepareGlobalProbeTransport' <<<"$ACTIVE_METHOD" || {
-  echo 'missing: activateGlobalDifferentialProbe must attach only after baseline' >&2; exit 1; }
+if grep -Fq 'prepareGlobalProbeTransport' <<<"$ACTIVE_METHOD"; then
+  echo 'forbidden: gain probe must reuse already neutral-verified attached transport' >&2; exit 1
+fi
 
 require "$PKG/AndroidDynamicsProcessingTransport.java" 'candidate.setEnabled(false);'
 require "$PKG/DspDifferentialVerifier.java" 'RESPONSIVE_NONLINEAR'

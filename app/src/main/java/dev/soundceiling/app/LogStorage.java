@@ -140,8 +140,12 @@ final class LogStorage {
     static void cleanupOldLogs(Context context) {
         List<Item> items = listItems(context);
         ArrayList<LogFilePolicy.Entry> policyEntries = new ArrayList<>();
-        for (Item i : items) policyEntries.add(new LogFilePolicy.Entry(i.name, i.bytes));
-        Set<String> keep = LogFilePolicy.retainedNamesWithinBudget(policyEntries, LogFilePolicy.RETAINED_BUDGET_BYTES);
+        for (Item i : items) {
+            policyEntries.add(new LogFilePolicy.Entry(i.name, i.bytes, i.modified));
+        }
+        Set<String> keep = LogFilePolicy.retainedNamesWithinBudget(policyEntries,
+                LogFilePolicy.RETAINED_BUDGET_BYTES, System.currentTimeMillis(),
+                LogFilePolicy.MIN_RETENTION_AGE_MS);
         for (Item item : items) if (!keep.contains(item.name)) delete(context, item.uri);
     }
 

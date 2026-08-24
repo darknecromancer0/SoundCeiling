@@ -66,7 +66,7 @@ require "$MANAGER" 'onServiceStopped()'
 require "$MANAGER" 'invalidateGlobalProof('
 
 # The built-in probe is deliberately attenuation-only and does not claim protected-usage scope.
-require "$PROBE" 'PROBE_GAIN_DB = -2f'
+require "$PROBE" 'PROBE_GAIN_DB = DspDifferentialVerifier.REQUESTED_PROBE_DB'
 require "$PROBE" 'DspProbeMath.evaluateAttenuation('
 require "$PROBE" 'DOCUMENTED_OEM'
 require "$PROBE" 'EXPLICIT_WHOLE_OUTPUT_CONSENT'

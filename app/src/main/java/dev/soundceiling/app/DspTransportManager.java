@@ -157,10 +157,10 @@ final class DspTransportManager implements AutoCloseable {
     boolean beginGlobalDifferentialProbe(String currentRouteIdentity, int mediaIndex,
                                          boolean allowedMediaActive, long atMs) {
         if (!allowedMediaActive) return false;
-        if (prepareGlobalProbeTransport() == DspTransport.Capability.UNAVAILABLE) return false;
         routeIdentity = currentRouteIdentity == null ? "" : currentRouteIdentity;
         differentialVerifier.begin(routeIdentity, mediaIndex, atMs);
-        reason = "differential_probe_baseline";
+        // Baseline must be captured before session-zero DynamicsProcessing is constructed/enabled.
+        reason = "differential_probe_baseline_no_transport";
         return true;
     }
 
@@ -168,11 +168,45 @@ final class DspTransportManager implements AutoCloseable {
         differentialVerifier.addBaseline(sourceRmsDb, outputRmsDb, atMs);
     }
 
-    boolean activateGlobalDifferentialProbe(long atMs) {
+    boolean attachGlobalDifferentialProbe(long atMs) {
         if (!differentialVerifier.active() || differentialVerifier.probePhase()) return false;
+        if (prepareGlobalProbeTransport() == DspTransport.Capability.UNAVAILABLE) {
+            differentialVerifier.cancel("probe_transport_unavailable");
+            reason = "global_probe_rejected:probe_transport_unavailable";
+            return false;
+        }
+        DspApplyResult attached = global.enableNeutralForProbe();
+        if (!attached.applied) {
+            differentialVerifier.cancel("neutral_attach_failed");
+            rejectUnverifiedGlobal("neutral_attach_failed");
+            return false;
+        }
+        differentialVerifier.beginNeutralAttach(atMs);
+        reason = "differential_probe_neutral_attach";
+        return true;
+    }
+
+    void addGlobalProbeNeutralAttach(float sourceRmsDb, float outputRmsDb, long atMs) {
+        differentialVerifier.addNeutralAttach(sourceRmsDb, outputRmsDb, atMs);
+    }
+
+    DspDifferentialVerifier.AttachResult evaluateGlobalNeutralAttach(long atMs) {
+        DspDifferentialVerifier.AttachResult result = differentialVerifier.evaluateNeutralAttach(atMs);
+        reason = result.reason;
+        return result;
+    }
+
+    boolean activateGlobalDifferentialProbe(long atMs) {
+        if (!differentialVerifier.active() || differentialVerifier.probePhase()
+                || !differentialVerifier.neutralAttachVerified()) return false;
+        if (global == null || global.capability() == DspTransport.Capability.UNAVAILABLE) {
+            differentialVerifier.cancel("probe_transport_unavailable");
+            reason = "global_probe_rejected:probe_transport_unavailable";
+            return false;
+        }
         if (!scopeProbe.begin(global, true)) {
             differentialVerifier.cancel("probe_gain_apply_failed");
-            reason = "probe_gain_apply_failed";
+            rejectUnverifiedGlobal("probe_gain_apply_failed");
             return false;
         }
         differentialVerifier.beginProbe(atMs);
@@ -195,19 +229,25 @@ final class DspTransportManager implements AutoCloseable {
         DspDifferentialVerifier.Result result = differentialVerifier.finish(timestampMs);
         DspScopeProbe.Evidence evidence = scopeProbe.finish(routeIdentity, null, global, result,
                 authority, timestampMs);
-        globalProof = evidence;
-        if (global != null) {
-            global.authorizeVerifiedGlobal(evidence.allowedMediaEffectVerified(),
-                    documentedOemScopeProof, wholeOutputConsent);
+        boolean authorized = global != null && global.authorizeVerifiedGlobal(
+                evidence.allowedMediaEffectVerified(), documentedOemScopeProof, wholeOutputConsent);
+        if (authorized) {
+            globalProof = evidence;
+            reason = evidence.reason;
+        } else {
+            globalProof = null;
+            rejectUnverifiedGlobal(evidence.classification.name().toLowerCase()
+                    + ":" + evidence.reason);
         }
-        reason = evidence.reason;
         return evidence;
     }
 
     void cancelGlobalDifferentialProbe(String cancelReason) {
-        differentialVerifier.cancel(cancelReason);
+        String actualReason = cancelReason == null || cancelReason.isEmpty()
+                ? "differential_probe_cancelled" : cancelReason;
+        differentialVerifier.cancel(actualReason);
         scopeProbe.cancel();
-        reason = cancelReason == null ? "differential_probe_cancelled" : cancelReason;
+        rejectUnverifiedGlobal(actualReason);
     }
 
     boolean beginGlobalProbe(String currentRouteIdentity, boolean allowedMediaActive) {
@@ -228,12 +268,15 @@ final class DspTransportManager implements AutoCloseable {
                 : DspScopeProbe.ScopeAuthority.NONE;
         DspScopeProbe.Evidence evidence = scopeProbe.finish(routeIdentity, null, global,
                 beforeDb, afterDb, authority, timestampMs);
-        globalProof = evidence;
-        if (global != null) {
-            global.authorizeVerifiedGlobal(evidence.allowedMediaEffectVerified(),
-                    documentedOemScopeProof, wholeOutputConsent);
+        boolean authorized = global != null && global.authorizeVerifiedGlobal(
+                evidence.allowedMediaEffectVerified(), documentedOemScopeProof, wholeOutputConsent);
+        if (authorized) {
+            globalProof = evidence;
+            reason = evidence.reason;
+        } else {
+            globalProof = null;
+            rejectUnverifiedGlobal("legacy:" + evidence.reason);
         }
-        reason = evidence.reason;
         return evidence;
     }
 
@@ -241,7 +284,9 @@ final class DspTransportManager implements AutoCloseable {
         return globalProof;
     }
 
-    boolean globalProbeActive() { return scopeProbe.active(); }
+    boolean globalProbeActive() {
+        return scopeProbe.active() || differentialVerifier.active();
+    }
 
     Set<DspEndpointHandle> trustedHandles() {
         return Collections.unmodifiableSet(new HashSet<>(scoped.keySet()));
@@ -255,13 +300,14 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     void onCaptureReplaced() {
-        // Capture source/meter replacement is not an output-route change. Preserve the route-scoped
-        // session-zero transport and any completed proof. Only a live attenuation probe must be
-        // restored to 0 dB before its measurement source disappears.
+        // Preserve a completed verified route proof, but never leave an unverified session-zero
+        // effect attached when the measurement source disappears mid-probe.
         boolean probeWasActive = scopeProbe.active() || differentialVerifier.active();
         differentialVerifier.cancel("capture_replaced");
         scopeProbe.cancel();
-        if (probeWasActive && globalProof == null) reason = "capture_replaced_probe_cancelled";
+        if (probeWasActive && globalProof == null) {
+            rejectUnverifiedGlobal("capture_replaced_probe_cancelled");
+        }
     }
 
     void onPolicyChanged() {
@@ -287,9 +333,22 @@ final class DspTransportManager implements AutoCloseable {
         reason = invalidationReason == null ? "global_proof_invalidated" : invalidationReason;
     }
 
+    private void rejectUnverifiedGlobal(String rejectionReason) {
+        if (global != null && global.capability() != DspTransport.Capability.VERIFIED_GLOBAL_MIX) {
+            neutralizeAndClose(global);
+            global = null;
+        }
+        reason = "global_probe_rejected:" + (rejectionReason == null
+                ? "unknown" : rejectionReason);
+    }
+
     void neutralizeForFallback() {
         cancelProbeAndNeutralize();
-        reason = "dsp_neutralized_before_fallback";
+        if (global != null && global.capability() != DspTransport.Capability.VERIFIED_GLOBAL_MIX) {
+            rejectUnverifiedGlobal("fallback");
+        } else {
+            reason = "dsp_neutralized_before_fallback";
+        }
     }
 
     private void cancelProbeAndNeutralize() {

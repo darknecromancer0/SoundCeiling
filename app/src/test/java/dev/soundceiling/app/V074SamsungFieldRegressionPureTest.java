@@ -14,7 +14,7 @@ public final class V074SamsungFieldRegressionPureTest {
         NormalizerControlCoordinator coordinator = new NormalizerControlCoordinator();
         ControlCommand command = coordinator.onFrame(frame(100L, 3, 3, curve, 5));
         eq(ControlCommand.Kind.NONE, command.kind(),
-                "bounded -2 dB Global DSP probe must not be mistaken for stale DSP");
+                "bounded Global DSP probe must not be mistaken for stale DSP");
         eq("global_dsp_probe_measurement_hold", command.reason(),
                 "probe tick must be held without ordinary normalization");
     }
@@ -62,7 +62,7 @@ public final class V074SamsungFieldRegressionPureTest {
             ControlVolumeCurve curve, int hardCap) {
         return new NormalizerControlCoordinator.Frame.Builder(at, prev, cur, curve)
                 .rawPeakDbfs(-20f).controlLoudnessDb(-20f)
-                .currentDspGainDb(-2f)
+                .currentDspGainDb(DspDifferentialVerifier.REQUESTED_PROBE_DB)
                 .mediaGainDb(curve.gainDbForIndex(cur))
                 .captureReference(CaptureReferenceEstimator.Mode.UNKNOWN)
                 .hardPeakCeilingDbfs(-2f).hardMediaCeilingIndex(hardCap)
