@@ -2,9 +2,10 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLANNER="$ROOT/app/src/main/java/dev/soundceiling/app/OutputGainPlanner.java"
-CONTROLLER="$ROOT/app/src/main/java/dev/soundceiling/app/StableOutputController.java"
+COARSE="$ROOT/app/src/main/java/dev/soundceiling/app/CoarseMediaFallbackController.java"
 COORD="$ROOT/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java"
 TEST="$ROOT/app/src/test/java/dev/soundceiling/app/V075LowVolumeLinkedFallbackPureTest.java"
+V076TEST="$ROOT/app/src/test/java/dev/soundceiling/app/V076CoarseMediaFallbackPureTest.java"
 BUILD="$ROOT/app/build.gradle.kts"
 WF="$ROOT/.github/workflows/build-apk.yml"
 fail(){ echo "v0.7.5.2 coarse-recovery contract: $*" >&2; exit 1; }
@@ -12,13 +13,14 @@ require(){ local f="$1" n="$2"; [[ -f "$f" ]] || fail "missing $(basename "$f")"
 
 require "$PLANNER" 'positivePeakHeadroomDb'
 require "$PLANNER" 'Math.max(0f, input.hardPeakCeilingDbfs() - projectedPeakDbfs)'
-require "$CONTROLLER" 'correctionDb > nextStepDb * .5f'
-require "$CONTROLLER" 'nextStepDb <= plan.positivePeakHeadroomDb() + ROUTE_STEP_EPSILON_DB'
-require "$COORD" 'command = constrainDebtRecovery(command, frame);'
-require "$COORD" 'mediaAnchorState.maxDebtRecoveryIndex()'
-require "$TEST" 'coarseSamsungDebtRecoveryChoosesNearestSafeStep()'
-require "$TEST" 'coarseSamsungDebtRecoveryStillRespectsPeakHeadroom()'
-require "$TEST" 'ControlCommand.Provenance.DEBT_RECOVERY'
+require "$COARSE" 'debtSteps <= 0 || currentIndex >= userAnchorIndex'
+require "$COARSE" 'requested = direction < 0 ? currentIndex - 1 : currentIndex + 1;'
+require "$COARSE" 'requested = Math.min(userAnchorIndex, requested);'
+require "$COARSE" 'coarse_debt_recovery_up'
+require "$COORD" 'ControlCommand.Provenance.DEBT_RECOVERY'
+require "$TEST" 'hardSafetyDoesNotCreateNormalizerRecoveryDebt()'
+require "$V076TEST" 'ownedAttenuationCanRecoverButUserMoveCancelsIt()'
+! grep -Fq 'StableOutputController.decideMedia(' "$COORD" || fail 'fast StableOutputController fallback must stay detached'
 require "$BUILD" 'versionCode=19'
 require "$BUILD" 'versionName="0.7.5.2"'
 require "$WF" 'run: bash ./scripts/check-v0752-coarse-recovery-contract.sh'

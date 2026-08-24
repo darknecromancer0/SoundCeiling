@@ -3,7 +3,7 @@ package dev.soundceiling.app;
 public final class V074SamsungFieldRegressionPureTest {
     public static void main(String[] args) {
         globalProbeAttenuationMustSurviveCoordinatorTick();
-        hardMediaCapInterruptsProbeBeforeFallbackWrite();
+        hardMediaCapPreemptsProbeImmediately();
         captureRebindResetsReferenceEvidence();
         silentMediaMoveDoesNotBecomeReferenceEvidence();
         System.out.println("V074SamsungFieldRegressionPureTest: PASS");
@@ -19,29 +19,16 @@ public final class V074SamsungFieldRegressionPureTest {
                 "probe tick must be held without ordinary normalization");
     }
 
-    private static void hardMediaCapInterruptsProbeBeforeFallbackWrite() {
+    private static void hardMediaCapPreemptsProbeImmediately() {
         ControlVolumeCurve curve = curve();
         NormalizerControlCoordinator coordinator = new NormalizerControlCoordinator();
         ControlCommand command = coordinator.onFrame(frame(100L, 5, 5, curve, 4));
-        eq(ControlCommand.Kind.DSP_GAIN, command.kind(),
-                "hard cap must first neutralize an in-flight unverified probe");
-        eq(0, Math.round(command.requestedGainDb()), "probe neutralization target");
-        eq("dsp_probe_interrupted_for_hard_cap", command.reason(), "interrupt reason");
-
-        ControlCommand next = coordinator.onFrame(new NormalizerControlCoordinator.Frame.Builder(
-                        120L, 5, 5, curve)
-                .rawPeakDbfs(-20f).controlLoudnessDb(-20f)
-                .currentDspGainDb(0f).mediaGainDb(curve.gainDbForIndex(5))
-                .captureReference(CaptureReferenceEstimator.Mode.UNKNOWN)
-                .hardPeakCeilingDbfs(-2f).hardMediaCeilingIndex(4)
-                .rawProgramActive(true).effectivePolicy("exact", true, true)
-                .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.EXACT)
-                .playbackEndpoints(true, 1)
-                .observation(NormalizerControlCoordinator.VolumeObservation.UNCHANGED,
-                        VolumeWriteOrigin.NORMALIZATION)
-                .build());
-        eq(ControlCommand.Kind.MEDIA_INDEX, next.kind(), "hard cap follows neutralization");
-        eq(4, next.mediaIndex(), "hard cap target");
+        eq(ControlCommand.Kind.MEDIA_INDEX, command.kind(),
+                "v0.7.6 hard Media cap must preempt probe bookkeeping immediately");
+        eq(4, command.mediaIndex(), "hard cap target");
+        eq(ControlCommand.Provenance.HARD_CAP, command.provenance(),
+                "hard cap provenance remains authoritative while probe attenuation is in flight");
+        eq("hard_media_cap", command.reason(), "hard cap reason");
     }
 
     private static void captureRebindResetsReferenceEvidence() {

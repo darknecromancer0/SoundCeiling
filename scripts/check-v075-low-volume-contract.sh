@@ -10,19 +10,19 @@ WF="$ROOT/.github/workflows/build-apk.yml"
 fail(){ echo "v0.7.5 low-volume contract: $*" >&2; exit 1; }
 require(){ local f="$1" n="$2"; [[ -f "$f" ]] || fail "missing $(basename "$f")"; grep -Fq -- "$n" "$f" || fail "missing $(basename "$f") -> $n"; }
 
-require "$COORD" 'assumedPreVolumeFallbackAllowed'
-require "$COORD" 'controlCaptureReference = CaptureReferenceEstimator.Mode.PRE_VOLUME;'
-require "$COORD" 'float planningMediaGainDb = assumedPreVolumeFallback && ceilingState.linked()'
-require "$COORD" '? 0f : frame.mediaGainDb;'
-require "$COORD" 'ControlCommand.none("capture_reference_unverified")'
-require "$COORD" 'sourceRelativeLinked'
-require "$SERVICE" 'backendStatus.tier == AudioBackendStatus.Tier.PLAYBACK_CAPTURE'
-require "$SERVICE" 'DiagnosticLog.transition("capture_reference_fallback"'
-require "$SERVICE" '.assumedPreVolumeFallbackAllowed(playbackCapturePreFallback)'
-require "$TEST" 'unknownPlaybackCaptureMayAttenuateAsConservativePreVolumeFallback()'
-require "$TEST" 'fallbackRepaysOnlyAppOwnedAttenuationToUserAnchor()'
+require "$ROOT/app/src/main/java/dev/soundceiling/app/OutputLevelModel.java" 'MeterDomain { SOURCE, OUTPUT, PROJECTED, UNKNOWN }'
+require "$SERVICE" 'controlCurve.gainDbForIndex(current), verifiedGainDb'
+require "$SERVICE" 'liveCaptureReference.mode(), outputMix.peakDbfs'
+require "$COORD" 'CoarseMediaFallbackController coarseFallback'
+require "$COORD" 'user_master_anchor_hold'
+require "$TEST" 'preVolumeProjectionIncludesSamsungMasterGain()'
+require "$TEST" 'unknownWithoutOutputEvidenceFailsClosed()'
+require "$TEST" 'manualSamsungMoveRebasesAnchorAndLinkedTarget()'
+require "$TEST" 'hardSafetyDoesNotCreateNormalizerRecoveryDebt()'
 require "$RUNNER" 'V075LowVolumeLinkedFallbackPureTest.java'
 require "$RUNNER" 'dev.soundceiling.app.V075LowVolumeLinkedFallbackPureTest'
+! grep -Fq 'assumedPreVolumeFallbackAllowed' "$COORD" || fail 'legacy assumed PRE fallback must stay removed'
+! grep -Fq 'PRE_VOLUME_ASSUMED' "$SERVICE" || fail 'service must not fabricate PRE_VOLUME_ASSUMED'
 python - "$BUILD" <<'PY'
 from pathlib import Path
 import re, sys

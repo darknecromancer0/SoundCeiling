@@ -14,21 +14,25 @@ SIMPLE="$PKG/SimpleModeView.java"
 DIAG="$PKG/DiagnosticsView.java"
 PREFS="$PKG/Prefs.java"
 DSP="$PKG/DspTransportManager.java"
+COARSE="$PKG/CoarseMediaFallbackController.java"
+LEVELS="$PKG/OutputLevelModel.java"
 
 # Samsung field regression: capture reference is measured live and real Media dB participates in PRE projection.
 require "$SERVICE" 'LiveCaptureReference liveCaptureReference'
 require "$SERVICE" 'observeLiveCaptureReference(current, blockRms)'
-require "$SERVICE" '.captureReference(liveCaptureReference.mode())'
-require "$SERVICE" '.mediaGainDb(controlCurve.gainDbForIndex(current))'
+require "$SERVICE" 'liveCaptureReference.mode(), outputMix.peakDbfs'
+require "$SERVICE" 'controlCurve.gainDbForIndex(current), verifiedGainDb'
 reject "$SERVICE" '.captureReference(CaptureReferenceEstimator.Mode.POST_VOLUME)'
-require "$COORD" 'capture_reference_unverified'
-require "$PKG/OutputGainPlanner.java" 'mediaGainDb'
+require "$SERVICE" '.captureReference(actualLevels.captureReference)'
+require "$SERVICE" '.outputLevels(actualLevels)'
+require "$LEVELS" 'projectedOutputLoudnessDb'
+require "$PKG/OutputGainPlanner.java" 'levels.outputProjectionValid'
 
 # Samsung master anchor/debt: app-owned writes cannot redefine USER authority; UNKNOWN may only repay debt.
 require "$COORD" 'MediaAnchorState mediaAnchorState'
 require "$COORD" 'user_master_anchor_hold'
 require "$COORD" 'DEBT_RECOVERY'
-require "$COORD" 'positive_gain_blocked_above_user_anchor'
+require "$COARSE" 'coarse_no_owned_debt'
 require "$COORD" 'consumeCeilingPersistenceRequest()'
 require "$SERVICE" 'persistCoordinatorCeilingsIfRequested()'
 reject "$SERVICE" 'persistCoordinatorCeilings()'

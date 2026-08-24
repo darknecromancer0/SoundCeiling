@@ -11,11 +11,13 @@ MANAGER="$PKG/DspTransportManager.java"
 TRANSPORT="$PKG/AndroidDynamicsProcessingTransport.java"
 SERVICE="$PKG/NormalizerService.java"
 SIMPLE="$PKG/SimpleModeView.java"
+COARSE="$PKG/CoarseMediaFallbackController.java"
 require "$TRACKER" 'kind == ObservationKind.APP_WRITE_STALE'
 require "$TRACKER" 'kind == ObservationKind.APP_WRITE_MISMATCH) return VolumeWriteOrigin.USER;'
 require "$COORD" 'frame.observation == VolumeObservation.APP_STALE'
 require "$COORD" 'frame.observation == VolumeObservation.APP_MISMATCH'
-require "$COORD" 'mediaAnchorState.maxDebtRecoveryIndex()'
+require "$COARSE" 'Math.min(userAnchorIndex, requested)'
+require "$COARSE" 'debtSteps <= 0 || currentIndex >= userAnchorIndex'
 reject "$COORD" '|| allowsPositiveControl(frame) || frame.globalMixDsp) return command;'
 require "$COORD" 'public void onCaptureReplaced()'
 require "$SERVICE" 'controlCoordinator.onCaptureReplaced();'
