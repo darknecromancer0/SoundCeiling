@@ -4,6 +4,10 @@ package dev.soundceiling.app;
 final class FallbackFloorPolicy {
     static final float DEFAULT_MAX_ATTENUATION_DB = 18f;
 
+    static boolean allowBelowConfiguredMinimum(boolean autoMuteEnabled, boolean safetyCommand) {
+        return autoMuteEnabled && safetyCommand;
+    }
+
     static int ordinaryFloor(ControlVolumeCurve curve, int userAnchorIndex,
                              boolean explicitMinimum, int configuredMinimum) {
         if (curve == null) return Math.max(0, configuredMinimum);
