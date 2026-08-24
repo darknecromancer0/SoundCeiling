@@ -1,6 +1,18 @@
-# Sound Ceiling for Android - v0.7.6.2
+# Sound Ceiling for Android - v0.7.6.3
 
-SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.6.2 is a Samsung output-domain corrective release built on the **Control Architecture Reset** from v0.7.6 and the DSP attach safety work from v0.7.6.1.
+SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.6.3 is a Samsung DSP attach-evidence corrective built on the **Control Architecture Reset** from v0.7.6, the DSP attach safety work from v0.7.6.1, and the output-domain correction from v0.7.6.2.
+
+## v0.7.6.3 Samsung DSP attach evidence corrective
+
+- **Retryable neutral-attach evidence.** `attach_insufficient_pairs` and `attach_insufficient_coverage` no longer masquerade as a proven non-neutral session-zero attach. SoundCeiling keeps the transport neutral at 0 dB and continues collecting bounded evidence instead of suppressing Global DSP immediately.
+- **The 250 ms proof floor is retained.** This corrective does not lower or bypass the minimum valid paired-evidence coverage required before a neutral attach is accepted.
+- **Attach timing uses a post-attach clock.** The 250 ms service-side wait now starts after `DynamicsProcessing` has actually been enabled, so effect-construction latency is not incorrectly counted as acoustic evidence.
+- **True non-neutral attach remains fail-closed.** A conclusive finite residual shift outside the neutral tolerance still detaches the transport immediately and suppresses it for the route.
+- **Probe lifetime remains bounded.** Retryable evidence cannot leave an unverified transport hanging indefinitely; the existing 1.5 s differential-probe timeout remains authoritative.
+- Diagnostics now expose `retryable`, `coveredMs`, and `dsp_global_attach_wait`, making an inconclusive attach distinguishable from an unsafe attach in Samsung field logs.
+- v0.7.6.2 output-domain behavior is preserved: proven `PRE_VOLUME` PCM owns normalizer projection and Visualizer-only UNKNOWN evidence cannot drive ordinary Media normalization.
+
+Samsung physical acceptance: `docs/field-tests/2026-08-25-v0.7.6.3-samsung-checklist.md`.
 
 ## v0.7.6.2 Samsung output-domain corrective
 
@@ -10,7 +22,7 @@ SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.6.2 is a S
 - Visualizer remains available to the separate paired Global DSP differential-verification path. This corrective does not weaken the v0.7.6.1 neutral-attach and bounded-probe safety sequence.
 - The user master anchor, hard Media cap, Quiet Now, source-policy gates, stop/restart lifecycle protection, and all historical contracts remain unchanged.
 
-Samsung physical acceptance: `docs/field-tests/2026-08-25-v0.7.6.2-samsung-checklist.md`.
+Historical Samsung acceptance: `docs/field-tests/2026-08-25-v0.7.6.2-samsung-checklist.md`.
 
 ## v0.7.6.1 Samsung DSP safety corrective
 
@@ -62,6 +74,6 @@ Playback-capture/log persistence continues to use the existing **MediaStore**/SA
 
 ## Build and verification
 
-Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, the v0.7.6 architecture contract, the v0.7.6.1 DSP safety contract, the v0.7.6.2 output-domain and release contracts, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
+Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, the v0.7.6 architecture contract, the v0.7.6.1 DSP safety contract, the v0.7.6.2 output-domain contract, the v0.7.6.3 DSP attach-evidence and release contracts, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
 
-Release artifact: **`SoundCeiling-v0.7.6.2-debug-apk`**, containing `app-debug.apk`.
+Release artifact: **`SoundCeiling-v0.7.6.3-debug-apk`**, containing `app-debug.apk`.
