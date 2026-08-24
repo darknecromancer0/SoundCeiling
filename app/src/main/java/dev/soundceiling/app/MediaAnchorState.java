@@ -27,7 +27,7 @@ final class MediaAnchorState {
 
     MediaAnchorState recordAppWrite(int previousIndex, int currentIndex, VolumeWriteOrigin origin) {
         VolumeWriteOrigin actual = origin == null ? VolumeWriteOrigin.NORMALIZATION : origin;
-        if (actual == VolumeWriteOrigin.QUIET_NOW) {
+        if (actual != VolumeWriteOrigin.NORMALIZATION) {
             return new MediaAnchorState(userAnchorIndex, currentIndex, debtSteps, lastUserChangeAtMs);
         }
         int debt = debtSteps;

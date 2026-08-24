@@ -63,6 +63,36 @@ final class DspScopeProbe {
 
     Evidence finish(String routeIdentity, DspEndpointHandle trustedHandle,
                     AndroidDynamicsProcessingTransport transport,
+                    DspDifferentialVerifier.Result differential,
+                    ScopeAuthority authority, long timestampMs) {
+        AndroidDynamicsProcessingTransport target = transport != null ? transport : activeTransport;
+        int sessionId = trustedHandle == null ? 0 : trustedHandle.audioSessionId;
+        String policyKey = trustedHandle == null ? "" : trustedHandle.allowedPolicyKey;
+        ScopeAuthority actualAuthority = authority == null ? ScopeAuthority.NONE : authority;
+
+        if (!probeActive) {
+            activeTransport = null;
+            return new Evidence(routeIdentity, sessionId, policyKey, timestampMs, 0,
+                    Float.NaN, actualAuthority, DspProbeMath.Status.UNVERIFIED,
+                    "probe_not_active");
+        }
+        if (target != null) target.applyProbeAttenuationDb(0f);
+        probeActive = false;
+        activeTransport = null;
+
+        DspDifferentialVerifier.Result r = differential == null
+                ? new DspDifferentialVerifier.Result(false, Float.NaN, 0, 0, 0L,
+                        "differential_missing") : differential;
+        DspProbeMath.Status status = r.verified
+                ? DspProbeMath.Status.ALLOWED_MEDIA_EFFECT_VERIFIED
+                : DspProbeMath.Status.UNVERIFIED;
+        int samples = Math.min(r.baselinePairs, r.probePairs);
+        return new Evidence(routeIdentity, sessionId, policyKey, timestampMs, samples,
+                r.deltaDb, actualAuthority, status, r.reason);
+    }
+
+    Evidence finish(String routeIdentity, DspEndpointHandle trustedHandle,
+                    AndroidDynamicsProcessingTransport transport,
                     float[] beforeDb, float[] afterDb,
                     ScopeAuthority authority, long timestampMs) {
         AndroidDynamicsProcessingTransport target = transport != null ? transport : activeTransport;

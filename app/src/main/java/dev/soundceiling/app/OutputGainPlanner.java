@@ -2,7 +2,7 @@ package dev.soundceiling.app;
 
 import java.util.Objects;
 
-/** Computes one continuous dB correction before any actuator is selected. */
+/** Computes one continuous dB correction from an explicit output-domain snapshot. */
 public final class OutputGainPlanner {
     public static final float MAX_POSITIVE_GAIN_DB = 30f;
 
@@ -18,36 +18,48 @@ public final class OutputGainPlanner {
     }
 
     public static final class Input {
-        private final float programDbfs;
-        private final float rawPeakDbfs;
-        private final float alreadyAppliedGainDb;
-        private final float mediaGainDb;
-        private final CaptureReferenceEstimator.Mode captureReference;
+        private final OutputLevelModel.Snapshot levels;
         private final OutputCeilingState ceilings;
         private final float hardPeakCeilingDbfs;
         private final boolean programActive;
         private final boolean policyAllowsPositiveGain;
 
-        public Input(float programDbfs, float rawPeakDbfs, float alreadyAppliedGainDb,
-                     float mediaGainDb, CaptureReferenceEstimator.Mode captureReference,
-                     OutputCeilingState ceilings, float hardPeakCeilingDbfs,
-                     boolean programActive, boolean policyAllowsPositiveGain) {
-            this.programDbfs = programDbfs;
-            this.rawPeakDbfs = rawPeakDbfs;
-            this.alreadyAppliedGainDb = alreadyAppliedGainDb;
-            this.mediaGainDb = mediaGainDb;
-            this.captureReference = Objects.requireNonNull(captureReference, "captureReference");
+        public Input(OutputLevelModel.Snapshot levels, OutputCeilingState ceilings,
+                     float hardPeakCeilingDbfs, boolean programActive,
+                     boolean policyAllowsPositiveGain) {
+            this.levels = Objects.requireNonNull(levels, "levels");
             this.ceilings = Objects.requireNonNull(ceilings, "ceilings");
             this.hardPeakCeilingDbfs = hardPeakCeilingDbfs;
             this.programActive = programActive;
             this.policyAllowsPositiveGain = policyAllowsPositiveGain;
         }
 
-        public float programDbfs() { return programDbfs; }
-        public float rawPeakDbfs() { return rawPeakDbfs; }
-        public float alreadyAppliedGainDb() { return alreadyAppliedGainDb; }
-        public float mediaGainDb() { return mediaGainDb; }
-        public CaptureReferenceEstimator.Mode captureReference() { return captureReference; }
+        /** Compatibility constructor for historical pure tests and callers migrated in later tasks. */
+        public Input(float programDbfs, float rawPeakDbfs, float alreadyAppliedGainDb,
+                     float mediaGainDb, CaptureReferenceEstimator.Mode captureReference,
+                     OutputCeilingState ceilings, float hardPeakCeilingDbfs,
+                     boolean programActive, boolean policyAllowsPositiveGain) {
+            this(legacyLevels(programDbfs, rawPeakDbfs, alreadyAppliedGainDb, mediaGainDb,
+                            captureReference),
+                    ceilings, hardPeakCeilingDbfs, programActive, policyAllowsPositiveGain);
+        }
+
+
+        private static OutputLevelModel.Snapshot legacyLevels(float programDbfs, float rawPeakDbfs,
+                                                               float alreadyAppliedGainDb, float mediaGainDb,
+                                                               CaptureReferenceEstimator.Mode captureReference) {
+            OutputLevelModel.Input in = new OutputLevelModel.Input(rawPeakDbfs, programDbfs, mediaGainDb,
+                    alreadyAppliedGainDb, captureReference, Float.NaN, Float.NaN, false);
+            if (captureReference != CaptureReferenceEstimator.Mode.UNKNOWN) {
+                return OutputLevelModel.evaluate(in);
+            }
+            float applied = Float.isFinite(alreadyAppliedGainDb) ? alreadyAppliedGainDb : 0f;
+            float peak = Float.isFinite(rawPeakDbfs) ? rawPeakDbfs + Math.max(0f, applied) : Float.NaN;
+            return new OutputLevelModel.Snapshot(OutputLevelModel.MeterDomain.SOURCE, in,
+                    peak, programDbfs, Float.isFinite(peak));
+        }
+
+        OutputLevelModel.Snapshot levels() { return levels; }
         public OutputCeilingState ceilings() { return ceilings; }
         public float hardPeakCeilingDbfs() { return hardPeakCeilingDbfs; }
         public boolean programActive() { return programActive; }
@@ -90,38 +102,28 @@ public final class OutputGainPlanner {
 
     public static Plan plan(Input input) {
         Objects.requireNonNull(input, "input");
-        float appliedGainDb = Float.isFinite(input.alreadyAppliedGainDb())
-                ? input.alreadyAppliedGainDb() : 0f;
-        float mediaGainDb = Float.isFinite(input.mediaGainDb()) ? input.mediaGainDb() : 0f;
-        float projectedProgramDbfs = input.programDbfs();
-        float projectedPeakDbfs = input.rawPeakDbfs();
-        if (input.captureReference() == CaptureReferenceEstimator.Mode.PRE_VOLUME) {
-            projectedProgramDbfs += mediaGainDb + appliedGainDb;
-            projectedPeakDbfs += mediaGainDb + appliedGainDb;
-        } else if (input.captureReference() == CaptureReferenceEstimator.Mode.POST_VOLUME) {
-            // The captured sample is already downstream of route/DSP gain. Do not double count.
-        } else {
-            // UNKNOWN must not pretend the capture is post-volume. Positive already-applied DSP
-            // remains part of worst-case peak safety, but Media attenuation is not guessed.
-            projectedPeakDbfs += Math.max(0f, appliedGainDb);
-        }
+        OutputLevelModel.Snapshot levels = input.levels();
+        float projectedProgramDbfs = levels.outputProjectionValid
+                ? levels.projectedOutputLoudnessDb : Float.NaN;
+        float projectedPeakDbfs = levels.outputProjectionValid
+                ? levels.projectedOutputPeakDbfs : Float.NaN;
 
-        boolean finitePeak = Float.isFinite(projectedPeakDbfs)
+        boolean finitePeak = levels.outputProjectionValid && Float.isFinite(projectedPeakDbfs)
                 && Float.isFinite(input.hardPeakCeilingDbfs());
         float positivePeakHeadroomDb = finitePeak
                 ? Math.max(0f, input.hardPeakCeilingDbfs() - projectedPeakDbfs)
                 : Float.POSITIVE_INFINITY;
-        boolean absolutePeakViolation = finitePeak
-                && projectedPeakDbfs > input.hardPeakCeilingDbfs();
+        boolean absolutePeakViolation = levels.outputPeakViolates(input.hardPeakCeilingDbfs());
         if (absolutePeakViolation) {
             return new Plan(input.hardPeakCeilingDbfs() - projectedPeakDbfs,
                     projectedProgramDbfs, projectedPeakDbfs, 0f, true, input.programActive(),
-                    input.captureReference(), Reason.HARD_PEAK_VIOLATION);
+                    levels.captureReference, Reason.HARD_PEAK_VIOLATION);
         }
 
-        if (!input.programActive() || !Float.isFinite(input.programDbfs())) {
+        if (!input.programActive() || !Float.isFinite(projectedProgramDbfs)) {
             return new Plan(0f, projectedProgramDbfs, projectedPeakDbfs,
-                    positivePeakHeadroomDb, false, false, input.captureReference(), Reason.NO_PROGRAM);
+                    positivePeakHeadroomDb, false, false, levels.captureReference,
+                    input.programActive() ? Reason.POSITIVE_GAIN_BLOCKED : Reason.NO_PROGRAM);
         }
 
         float correctionDb;
@@ -137,10 +139,12 @@ public final class OutputGainPlanner {
             reason = Reason.WITHIN_RANGE;
         }
 
-        if (correctionDb > 0f && (!input.policyAllowsPositiveGain()
-                || input.captureReference() == CaptureReferenceEstimator.Mode.UNKNOWN)) {
+        boolean positiveDomainKnown = levels.outputProjectionValid
+                && (levels.captureReference != CaptureReferenceEstimator.Mode.UNKNOWN
+                || levels.meterDomain == OutputLevelModel.MeterDomain.OUTPUT);
+        if (correctionDb > 0f && (!input.policyAllowsPositiveGain() || !positiveDomainKnown)) {
             return new Plan(0f, projectedProgramDbfs, projectedPeakDbfs,
-                    positivePeakHeadroomDb, false, true, input.captureReference(),
+                    positivePeakHeadroomDb, false, true, levels.captureReference,
                     Reason.POSITIVE_GAIN_BLOCKED);
         }
 
@@ -153,7 +157,7 @@ public final class OutputGainPlanner {
             reason = Reason.PEAK_LIMITED;
         }
         return new Plan(correctionDb, projectedProgramDbfs, projectedPeakDbfs,
-                positivePeakHeadroomDb, false, true, input.captureReference(), reason);
+                positivePeakHeadroomDb, false, true, levels.captureReference, reason);
     }
 
     private OutputGainPlanner() {}

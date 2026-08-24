@@ -5,7 +5,7 @@ import java.util.Objects;
 /** Actuator-independent normalization command. */
 public final class ControlCommand {
     public enum Kind { NONE, DSP_GAIN, MEDIA_INDEX }
-    public enum Provenance { NORMALIZATION, DEBT_RECOVERY, HARD_PEAK_SAFETY, HARD_CAP, QUIET_NOW, DSP_NEUTRALIZATION }
+    public enum Provenance { NORMALIZATION, COARSE_MEDIA, DEBT_RECOVERY, HARD_PEAK_SAFETY, HARD_CAP, QUIET_NOW, DSP_NEUTRALIZATION }
 
     private final Kind kind;
     private final float requestedGainDb;

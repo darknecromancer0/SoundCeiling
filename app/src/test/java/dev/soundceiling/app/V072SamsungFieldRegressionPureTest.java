@@ -39,7 +39,7 @@ public final class V072SamsungFieldRegressionPureTest {
                 .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.UNKNOWN)
                 .playbackEndpoints(true,1).build());
         assertEquals(ControlCommand.Kind.NONE,cmd.kind(),"UNKNOWN reference ordinary writes blocked");
-        if (!cmd.reason().contains("capture_reference")) throw new AssertionError(cmd.reason());
+        if (!cmd.reason().contains("safety_only")) throw new AssertionError(cmd.reason());
     }
     private static void assertFalse(boolean v,String m){if(v)throw new AssertionError(m);}
     private static void assertEquals(Object e,Object a,String m){if(e==null?a!=null:!e.equals(a))throw new AssertionError(m+" expected="+e+" actual="+a);}

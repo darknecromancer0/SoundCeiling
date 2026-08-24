@@ -118,27 +118,22 @@ public final class V071CoordinatorPureTest {
         coordinator.onFrame(frame(0L, 8, 8, curve).verifiedDsp(true).currentDspGainDb(4f)
                 .rawProgramActive(true).build());
 
-        ControlCommand first = coordinator.onFrame(frame(100L, 8, 8, curve)
+        ControlCommand cap = coordinator.onFrame(frame(100L, 8, 8, curve)
                 .verifiedDsp(false).currentDspGainDb(4f).hardMediaCeilingIndex(6)
                 .rawProgramActive(true).build());
-        assertEquals(ControlCommand.Kind.DSP_GAIN, first.kind(),
-                "DSP loss must neutralize before hard Media cap");
-        assertNear(0f, first.requestedGainDb(), 0f, "neutral command gain");
-        assertEquals(ControlCommand.Provenance.DSP_NEUTRALIZATION, first.provenance(),
-                "neutralization provenance");
-
-        ControlCommand pending = coordinator.onFrame(frame(120L, 8, 8, curve)
-                .verifiedDsp(false).currentDspGainDb(4f).hardMediaCeilingIndex(6)
-                .rawProgramActive(true).build());
-        assertEquals(ControlCommand.Kind.DSP_GAIN, pending.kind(),
-                "non-neutral DSP feedback must not fall through to Media");
-
-        ControlCommand cap = coordinator.onFrame(frame(140L, 8, 8, curve)
-                .verifiedDsp(false).currentDspGainDb(0f).hardMediaCeilingIndex(6)
-                .rawProgramActive(true).build());
-        assertEquals(ControlCommand.Kind.MEDIA_INDEX, cap.kind(), "neutral-proven tick may cap Media");
+        assertEquals(ControlCommand.Kind.MEDIA_INDEX, cap.kind(),
+                "hard Media maximum is immediate even while stale DSP feedback is non-neutral");
         assertEquals(6, cap.mediaIndex(), "hard cap index");
         assertEquals(ControlCommand.Provenance.HARD_CAP, cap.provenance(), "hard-cap provenance");
+
+        ControlCommand neutralize = coordinator.onFrame(frame(120L, 6, 6, curve)
+                .verifiedDsp(false).currentDspGainDb(4f).hardMediaCeilingIndex(6)
+                .rawProgramActive(true).build());
+        assertEquals(ControlCommand.Kind.DSP_GAIN, neutralize.kind(),
+                "once Media is within the hard ceiling, stale DSP must neutralize before lower tiers");
+        assertNear(0f, neutralize.requestedGainDb(), 0f, "neutral command gain");
+        assertEquals(ControlCommand.Provenance.DSP_NEUTRALIZATION, neutralize.provenance(),
+                "neutralization provenance");
     }
 
     private static void commandProvenanceIsStructuredNotReasonDerived() {
@@ -152,11 +147,15 @@ public final class V071CoordinatorPureTest {
 
         ControlCommand peak = coordinator.onFrame(frame(50L, 8, 8, curve)
                 .rawPeakDbfs(1f).build());
-        assertEquals(ControlCommand.Provenance.HARD_PEAK_SAFETY, peak.provenance(),
-                "hard peak provenance");
+        assertEquals(ControlCommand.Kind.NONE, peak.kind(),
+                "unverified DSP path must not turn one projected/source peak into an immediate Media step");
 
         NormalizerControlCoordinator dspCoordinator = new NormalizerControlCoordinator();
-        ControlCommand dspPeak = dspCoordinator.onFrame(frame(0L, 8, 8, curve)
+        dspCoordinator.onFrame(frame(0L, 8, 8, curve)
+                .verifiedDsp(true).currentDspGainDb(2f).rawPeakDbfs(-8f).build());
+        dspCoordinator.onFrame(frame(30L, 8, 8, curve)
+                .verifiedDsp(true).currentDspGainDb(2f).rawPeakDbfs(-8f).build());
+        ControlCommand dspPeak = dspCoordinator.onFrame(frame(100L, 8, 8, curve)
                 .verifiedDsp(true).currentDspGainDb(2f).rawPeakDbfs(1f).build());
         assertEquals(ControlCommand.Kind.DSP_GAIN, dspPeak.kind(),
                 "hard peak must retain the selected DSP actuator");
@@ -213,8 +212,8 @@ public final class V071CoordinatorPureTest {
         ControlCommand hardPeak = coordinator.onFrame(frame(450L, 8, 8, curve)
                 .rawProgramActive(true).verifiedDsp(true).calibrationProfileValid(false)
                 .rawPeakDbfs(1f).build());
-        assertEquals(ControlCommand.Kind.MEDIA_INDEX, hardPeak.kind(),
-                "missing SPL profile must not block hard-peak attenuation");
+        assertEquals(ControlCommand.Kind.DSP_GAIN, hardPeak.kind(),
+                "missing SPL profile must not block verified-DSP hard-peak attenuation");
         assertEquals(ControlCommand.Provenance.HARD_PEAK_SAFETY, hardPeak.provenance(),
                 "hard peak remains structured safety authority");
 
@@ -245,10 +244,8 @@ public final class V071CoordinatorPureTest {
 
         ControlCommand command = coordinator.onFrame(frame(100L, 8, 8, curve)
                 .rawProgramActive(true).controlLoudnessDb(-30f).rawPeakDbfs(1f).build());
-        assertEquals(ControlCommand.Kind.MEDIA_INDEX, command.kind(),
-                "hard peak must choose the one final actuator command");
-        assertTrue(command.mediaIndex() < 8,
-                "hard peak attenuation wins over ordinary upward normalization in the same tick");
+        assertEquals(ControlCommand.Kind.NONE, command.kind(),
+                "v0.7.6 must not arbitrate raw peak into an immediate Samsung Media write");
     }
 
     private static void uncertainPolicyBlocksPositiveGainButNotHardPeak() {
@@ -268,9 +265,8 @@ public final class V071CoordinatorPureTest {
         ControlCommand hardPeak = coordinator.onFrame(frame(820L, 8, 8, curve)
                 .rawProgramActive(true).rawPeakDbfs(1f).effectivePolicy("confidence_unknown", true, true)
                 .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.UNKNOWN).build());
-        assertEquals(ControlCommand.Kind.MEDIA_INDEX, hardPeak.kind(),
-                "policy uncertainty must not block hard-peak attenuation");
-        assertTrue(hardPeak.mediaIndex() < 8, "hard peak must still attenuate");
+        assertEquals(ControlCommand.Kind.NONE, hardPeak.kind(),
+                "policy uncertainty plus unverified DSP cannot make raw peak a fast Media actuator");
     }
 
     private static void snapshotReportsTheActualCommandActuator() {
@@ -304,13 +300,13 @@ public final class V071CoordinatorPureTest {
         quiet.onFrame(frame(400L, 8, 8, curve)
                 .rawProgramActive(true).controlLoudnessDb(-30f).rawPeakDbfs(-40f)
                 .verifiedDsp(true).globalMixDsp(true)
-                .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.UNKNOWN)
-                .effectivePolicy("global_mix", false, false).build());
+                .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.EXACT)
+                .effectivePolicy("global_mix", true, true).build());
         ControlCommand raise = quiet.onFrame(frame(800L, 8, 8, curve)
                 .rawProgramActive(true).controlLoudnessDb(-30f).rawPeakDbfs(-40f)
                 .verifiedDsp(true).globalMixDsp(true)
-                .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.UNKNOWN)
-                .effectivePolicy("global_mix", false, false).build());
+                .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.EXACT)
+                .effectivePolicy("global_mix", true, true).build());
         assertEquals(ControlCommand.Kind.DSP_GAIN, raise.kind(),
                 "verified Global DSP must raise quiet program through DSP, not Media");
         assertTrue(raise.requestedGainDb() > 0f,

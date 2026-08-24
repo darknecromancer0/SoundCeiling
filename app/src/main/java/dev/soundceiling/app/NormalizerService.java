@@ -36,9 +36,10 @@ public class NormalizerService extends Service {
     private static final int SAMPLE_RATE = PcmCaptureBackend.SAMPLE_RATE;
     private static final int CHANNELS = PcmCaptureBackend.CHANNELS;
     private static final int CAPTURE_BLOCK_SHORTS = 960;
-    private static final int GLOBAL_DSP_PROBE_SAMPLES = 3;
+    private static final int GLOBAL_DSP_DIFFERENTIAL_MIN_PAIRS = 8;
+    private static final long GLOBAL_DSP_DIFFERENTIAL_WINDOW_MS = 250L;
     private static final long GLOBAL_DSP_PROBE_COOLDOWN_MS = 5000L;
-    private static final long GLOBAL_DSP_PROBE_MAX_ACTIVE_MS = 750L;
+    private static final long GLOBAL_DSP_PROBE_MAX_ACTIVE_MS = 1000L;
     private static final long SPECTRUM_HOLD_MS = 700L;
 
     private final AtomicBoolean workerRunning = new AtomicBoolean();
@@ -86,14 +87,15 @@ public class NormalizerService extends Service {
     private int lastCaptureReferenceMediaIndex = -1;
     private CaptureReferenceEstimator.Mode lastLoggedCaptureReference = CaptureReferenceEstimator.Mode.UNKNOWN;
     private boolean globalDspPreference = true;
-    private final float[] globalProbeBefore = new float[GLOBAL_DSP_PROBE_SAMPLES];
-    private final float[] globalProbeAfter = new float[GLOBAL_DSP_PROBE_SAMPLES];
-    private int globalProbeBeforeCount;
-    private int globalProbeAfterCount;
-    private boolean globalProbeCollectingAfter;
+    private boolean globalDifferentialCollecting;
+    private boolean globalDifferentialProbeApplied;
+    private int globalDifferentialBaselinePairs;
+    private int globalDifferentialProbePairs;
+    private long globalDifferentialBaselineFirstMs;
+    private long globalDifferentialProbeFirstMs;
     private long globalProbeStartedAtMs;
+    private int globalDifferentialMediaIndex = -1;
     private long lastGlobalProbeAttemptMs = -GLOBAL_DSP_PROBE_COOLDOWN_MS;
-    private GlobalDspProbeDecision.Meter globalProbeMeter = GlobalDspProbeDecision.Meter.NONE;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -301,20 +303,28 @@ public class NormalizerService extends Service {
             hybridSnapshot = hybridRuntime.resolvePcm(pcmCapture, true, signal, outputMixEvidence,
                     controlProfile, deviceProfile, now);
             if (optionalDsp != null) {
-                updateGlobalDspVerification(outputMix.rmsDbfs, outputMixEvidence,
-                        blockRms, signal, signal && hybridSnapshot.playback.active, now);
+                updateGlobalDspVerification(blockRms, signal, outputMix.rmsDbfs, outputMixEvidence,
+                        signal && hybridSnapshot.playback.active, current, now);
                 optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, globalDspPreference);
             }
             ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
+            boolean verifiedDsp = optionalDsp != null
+                    && isVerifiedDspCapability(optionalDsp.capability());
+            float verifiedGainDb = verifiedDsp ? optionalDsp.appliedGainDb() : 0f;
+            OutputLevelModel.Snapshot levels = OutputLevelModel.evaluate(
+                    new OutputLevelModel.Input(blockPeak, loud.controlLoudnessDb,
+                            controlCurve.gainDbForIndex(current), verifiedGainDb,
+                            liveCaptureReference.mode(), outputMix.peakDbfs, outputMix.rmsDbfs,
+                            outputMixEvidence));
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.maxMediaPercent);
-            ControlCommand command = controlCoordinator.onFrame(controlFrame(now, current, blockPeak,
-                    loud.controlLoudnessDb, signal, hybridSnapshot.policy, effectiveProfile,
-                    hybridSnapshot.sources.confidence, hybridSnapshot.playback, blockRms, signal));
+            ControlCommand command = controlCoordinator.onFrame(controlFrame(now, current, levels,
+                    signal, hybridSnapshot.policy, effectiveProfile, hybridSnapshot.sources.confidence,
+                    hybridSnapshot.playback, blockRms, signal));
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
                     effectiveProfile.autoMute, now);
-            logControlSummary(now, command, applied, blockPeak);
+            logControlSummary(now, command, applied, levels);
             String reason = command.reason();
             long reactionLatency = applied != current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
@@ -329,14 +339,11 @@ public class NormalizerService extends Service {
             if (applied > controlCurve.minIndex()) lastAppliedNonzero = applied;
 
             if (applied != current) {
-                float projectedPeakDbfs = projectedOutputPeak(blockPeak, current,
-                        optionalDsp == null ? 0f : optionalDsp.appliedGainDb(),
-                        liveCaptureReference.mode());
                 DiagnosticLog.event("hybrid_control_write", String.format(Locale.US,
                         "reason=%s actuator=%s current=%d requested=%d applied=%d min=%d max=%d hardMax=%d rawPeak=%.2f projectedPeak=%.2f controlLoudness=%.2f latencyMs=%d source=%s pcm=%s confidence=%s",
                         reason, command.kind(), current, command.mediaIndex(), applied,
                         safetySettings.minIndex, safetySettings.maxIndex, safetySettings.hardMax(),
-                        blockPeak, projectedPeakDbfs, loud.controlLoudnessDb, reactionLatency,
+                        blockPeak, levels.projectedOutputPeakDbfs, loud.controlLoudnessDb, reactionLatency,
                         sourceSummary(hybridSnapshot), hybridSnapshot.pcmState,
                         hybridSnapshot.sources.confidence));
             }
@@ -423,6 +430,7 @@ public class NormalizerService extends Service {
     }
 
     private void resetAfterCaptureRebind() {
+        resetGlobalDifferentialState();
         liveCaptureReference.onCaptureReplaced();
         resetCaptureReferenceSamples();
         controlCoordinator.onCaptureReplaced();
@@ -471,21 +479,28 @@ public class NormalizerService extends Service {
             hybridSnapshot = hybridRuntime.resolveFallback(reading.levelAvailable, controlProfile,
                     deviceProfile, detectedAt);
             if (optionalDsp != null) {
-                updateGlobalDspVerification(fallbackRms, reading.levelAvailable,
-                        Float.NaN, false, signal && hybridSnapshot.playback.active, detectedAt);
+                updateGlobalDspVerification(Float.NaN, false, fallbackRms, reading.levelAvailable,
+                        signal && hybridSnapshot.playback.active, current, detectedAt);
                 optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, globalDspPreference);
             }
             ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
+            boolean verifiedDsp = optionalDsp != null
+                    && isVerifiedDspCapability(optionalDsp.capability());
+            float verifiedGainDb = verifiedDsp ? optionalDsp.appliedGainDb() : 0f;
+            OutputLevelModel.Snapshot levels = OutputLevelModel.evaluate(
+                    new OutputLevelModel.Input(Float.NaN, Float.NaN,
+                            controlCurve.gainDbForIndex(current), verifiedGainDb,
+                            CaptureReferenceEstimator.Mode.UNKNOWN, fallbackPeak, fallbackRms,
+                            reading.levelAvailable));
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.fallbackMaxPercent);
-            ControlCommand command = controlCoordinator.onFrame(controlFrame(detectedAt, current,
-                    fallbackPeak, fallbackRms, signal, hybridSnapshot.policy, effectiveProfile,
-                    hybridSnapshot.sources.confidence, hybridSnapshot.playback, fallbackRms,
-                    reading.levelAvailable));
+            ControlCommand command = controlCoordinator.onFrame(controlFrame(detectedAt, current, levels,
+                    signal, hybridSnapshot.policy, effectiveProfile, hybridSnapshot.sources.confidence,
+                    hybridSnapshot.playback, fallbackRms, reading.levelAvailable));
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
                     effectiveProfile.autoMute, detectedAt);
-            logControlSummary(detectedAt, command, applied, fallbackPeak);
+            logControlSummary(detectedAt, command, applied, levels);
             long latency = applied < current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
             RuntimeState.ControlActivity activity = applied < current ? RuntimeState.ControlActivity.DECREASING
@@ -561,8 +576,7 @@ public class NormalizerService extends Service {
     }
 
     private NormalizerControlCoordinator.Frame controlFrame(long now, int current,
-                                                              float rawPeakDbfs,
-                                                              float controlLoudnessDb,
+                                                              OutputLevelModel.Snapshot levels,
                                                               boolean rawProgramActive,
                                                               EffectivePolicy policy,
                                                               ControlProfile profile,
@@ -572,21 +586,19 @@ public class NormalizerService extends Service {
                                                               boolean transientEvidence) {
         VolumeWriteTracker.Observation observed = lastVolumeObservation;
         int previous = observed == null ? current : observed.previousIndex;
-        boolean playbackCapturePreFallback = !fastOnlyMode && pcmCapture != null
-                && backendStatus.tier == AudioBackendStatus.Tier.PLAYBACK_CAPTURE;
-        boolean usingAssumedPre = playbackCapturePreFallback
-                && liveCaptureReference.mode() == CaptureReferenceEstimator.Mode.UNKNOWN
-                && (optionalDsp == null || !isVerifiedDspCapability(optionalDsp.capability()));
-        DiagnosticLog.transition("capture_reference_fallback",
-                usingAssumedPre ? "PRE_VOLUME_ASSUMED" : "inactive",
-                "active=" + usingAssumedPre + " backend=" + backendStatus.tier
-                        + " measured=" + liveCaptureReference.mode());
+        OutputLevelModel.Snapshot actualLevels = levels == null
+                ? OutputLevelModel.evaluate(new OutputLevelModel.Input(Float.NaN, Float.NaN,
+                        controlCurve.gainDbForIndex(current), 0f,
+                        CaptureReferenceEstimator.Mode.UNKNOWN, Float.NaN, Float.NaN, false))
+                : levels;
         return new NormalizerControlCoordinator.Frame.Builder(now, previous, current, controlCurve)
-                .rawPeakDbfs(rawPeakDbfs).controlLoudnessDb(controlLoudnessDb)
+                .rawPeakDbfs(actualLevels.sourcePeakDbfs)
+                .controlLoudnessDb(actualLevels.sourceLoudnessDb)
                 .currentDspGainDb(optionalDsp == null ? 0f : optionalDsp.appliedGainDb())
-                .mediaGainDb(controlCurve.gainDbForIndex(current))
-                .captureReference(liveCaptureReference.mode())
-                .assumedPreVolumeFallbackAllowed(playbackCapturePreFallback)
+                .mediaGainDb(actualLevels.mediaRouteGainDb)
+                .captureReference(actualLevels.captureReference)
+                .outputLevels(actualLevels)
+                .controlProfile(profile)
                 .hardPeakCeilingDbfs(profile.sourcePeakThresholdDbfs)
                 .hardMediaCeilingIndex(safetySettings.hardMax())
                 .rawProgramActive(rawProgramActive)
@@ -597,8 +609,6 @@ public class NormalizerService extends Service {
                         playback == null ? 0 : playback.observedPlayers)
                 .transientConfig(profile.transientWarningDb, profile.transientEmergencyDb)
                 .transientSignal(transientSignalDb, transientEvidence)
-                // currentDeviceProfileV2() may synthesize a zero-offset device entry. It is not
-                // calibration proof: SPL positive control requires a genuinely saved profile.
                 .calibrationProfileValid(!Prefs.splMode(this) || currentProfile != null)
                 .verifiedDsp(optionalDsp != null
                         && isVerifiedDspCapability(optionalDsp.capability()))
@@ -759,11 +769,11 @@ public class NormalizerService extends Service {
     }
 
     private void logControlSummary(long nowMs, ControlCommand command, int appliedMediaIndex,
-                                   float rawPeakDbfs) {
+                                   OutputLevelModel.Snapshot levels) {
         NormalizerControlCoordinator.Snapshot snapshot = controlCoordinator.snapshot();
         float appliedGainDb = snapshot.appliedGainDb();
-        float projectedPeakDbfs = projectedOutputPeak(rawPeakDbfs, appliedMediaIndex,
-                appliedGainDb, liveCaptureReference.mode());
+        float rawPeakDbfs = levels == null ? Float.NaN : levels.sourcePeakDbfs;
+        float projectedPeakDbfs = levels == null ? Float.NaN : levels.projectedOutputPeakDbfs;
         String policy = hybridSnapshot == null ? "unknown" : hybridSnapshot.policy.resolutionReason;
         String captureReference = snapshot.measurementMode().name();
         DiagnosticLog.controlSummary(nowMs, command == null ? snapshot.actuator() : command.kind(),
@@ -814,18 +824,6 @@ public class NormalizerService extends Service {
         lastCaptureReferenceMediaIndex = -1;
         lastCaptureReferencePcmDb = Float.NaN;
         lastLoggedCaptureReference = CaptureReferenceEstimator.Mode.UNKNOWN;
-    }
-
-    private float projectedOutputPeak(float rawPeakDbfs, int mediaIndex, float dspGainDb,
-                                      CaptureReferenceEstimator.Mode mode) {
-        if (!Float.isFinite(rawPeakDbfs)) return Float.NaN;
-        CaptureReferenceEstimator.Mode actual = mode == null
-                ? CaptureReferenceEstimator.Mode.UNKNOWN : mode;
-        if (actual == CaptureReferenceEstimator.Mode.PRE_VOLUME) {
-            return rawPeakDbfs + controlCurve.gainDbForIndex(mediaIndex) + dspGainDb;
-        }
-        if (actual == CaptureReferenceEstimator.Mode.POST_VOLUME) return rawPeakDbfs;
-        return rawPeakDbfs + Math.max(0f, dspGainDb);
     }
 
     private RuntimeState.Builder baseState(RuntimeState.Builder builder, int volume) {
@@ -888,9 +886,12 @@ public class NormalizerService extends Service {
                 + ":" + nextCeilings.upperDb();
         if (!force && fingerprint.equals(controlProfileFingerprint)) return;
         boolean globalChanged = nextGlobalDsp != globalDspPreference;
-        if (optionalDsp != null && !controlProfileFingerprint.isEmpty()) optionalDsp.onPolicyChanged();
+        if (optionalDsp != null && !controlProfileFingerprint.isEmpty()) {
+            optionalDsp.onPolicyChanged();
+            resetGlobalDifferentialState();
+        }
         globalDspPreference = nextGlobalDsp;
-        if (globalChanged) resetGlobalProbeState();
+        if (globalChanged) resetGlobalDifferentialState();
         controlCoordinator.setCeilingState(nextCeilings);
         controlProfile = next;
         controlProfileFingerprint = fingerprint;
@@ -909,81 +910,118 @@ public class NormalizerService extends Service {
         if (!current.equals(saved)) Prefs.saveOutputCeilings(this, current);
     }
 
-    private void updateGlobalDspVerification(float outputMixDb, boolean outputMixValid,
-                                             float playbackPcmDb, boolean playbackPcmValid,
-                                             boolean allowedMediaActive, long nowMs) {
+    private void updateGlobalDspVerification(float sourceRmsDb, boolean sourceValid,
+                                             float outputRmsDb, boolean outputValid,
+                                             boolean allowedMediaActive, int mediaIndex, long nowMs) {
         if (optionalDsp == null) return;
         if (!globalDspPreference) {
-            if (optionalDsp.globalProbeActive()) optionalDsp.onPolicyChanged();
-            resetGlobalProbeState();
+            if (globalDifferentialCollecting) {
+                optionalDsp.cancelGlobalDifferentialProbe("global_dsp_disabled");
+            }
+            resetGlobalDifferentialState();
             return;
         }
         if (optionalDsp.capability() == DspTransport.Capability.VERIFIED_GLOBAL_MIX) {
-            resetGlobalProbeState();
+            resetGlobalDifferentialState();
             return;
         }
-        if (optionalDsp.globalProbeActive()
-                && nowMs - globalProbeStartedAtMs > GLOBAL_DSP_PROBE_MAX_ACTIVE_MS) {
-            optionalDsp.onPolicyChanged();
-            resetGlobalProbeState();
+
+        boolean pairedMeters = GlobalDspProbeDecision.choose(globalDspPreference, allowedMediaActive,
+                outputValid && Float.isFinite(outputRmsDb),
+                sourceValid && Float.isFinite(sourceRmsDb))
+                == GlobalDspProbeDecision.Meter.PAIRED_OUTPUT_AND_PCM;
+
+        if (globalDifferentialCollecting && mediaIndex != globalDifferentialMediaIndex) {
+            optionalDsp.cancelGlobalDifferentialProbe("media_index_changed");
+            DiagnosticLog.transition("dsp_verification_invalidated", "media_index_changed",
+                    "from=" + globalDifferentialMediaIndex + " to=" + mediaIndex);
+            resetGlobalDifferentialState();
             lastGlobalProbeAttemptMs = nowMs;
-            DiagnosticLog.transition("global_dsp_probe", "timeout", "neutralized=true");
             return;
         }
-        GlobalDspProbeDecision.Meter availableMeter = GlobalDspProbeDecision.choose(
-                globalDspPreference, allowedMediaActive,
-                outputMixValid && Float.isFinite(outputMixDb),
-                playbackPcmValid && Float.isFinite(playbackPcmDb));
-        if (globalProbeCollectingAfter) {
-            if (availableMeter != globalProbeMeter) return;
-            float observedDb = globalProbeMeter == GlobalDspProbeDecision.Meter.OUTPUT_MIX
-                    ? outputMixDb : playbackPcmDb;
-            if (!Float.isFinite(observedDb)) return;
-            if (globalProbeAfterCount < GLOBAL_DSP_PROBE_SAMPLES) {
-                globalProbeAfter[globalProbeAfterCount++] = observedDb;
-            }
-            if (globalProbeAfterCount >= GLOBAL_DSP_PROBE_SAMPLES) {
-                DspScopeProbe.Evidence evidence = optionalDsp.finishGlobalProbe(
-                        globalProbeBefore.clone(), globalProbeAfter.clone(), false, true, nowMs);
-                DiagnosticLog.transition("global_dsp_probe", evidence.reason,
-                        "verified=" + evidence.allowedMediaEffectVerified()
-                                + " deltaDb=" + evidence.affectedDeltaDb
-                                + " samples=" + evidence.sampleCount);
-                resetGlobalProbeState();
+        if (globalDifferentialProbeApplied
+                && nowMs - globalProbeStartedAtMs > GLOBAL_DSP_PROBE_MAX_ACTIVE_MS) {
+            optionalDsp.cancelGlobalDifferentialProbe("probe_timeout");
+            DiagnosticLog.transition("dsp_differential_probe_result", "timeout",
+                    "verified=false neutralized=true");
+            resetGlobalDifferentialState();
+            lastGlobalProbeAttemptMs = nowMs;
+            return;
+        }
+        if (!pairedMeters) {
+            if (globalDifferentialCollecting) {
+                optionalDsp.cancelGlobalDifferentialProbe("paired_meter_unavailable");
+                DiagnosticLog.transition("dsp_verification_invalidated",
+                        "paired_meter_unavailable", "neutralized=true");
+                resetGlobalDifferentialState();
                 lastGlobalProbeAttemptMs = nowMs;
             }
             return;
         }
 
-        if (nowMs - lastGlobalProbeAttemptMs < GLOBAL_DSP_PROBE_COOLDOWN_MS) return;
-        if (availableMeter == GlobalDspProbeDecision.Meter.NONE) return;
-        if (globalProbeMeter != GlobalDspProbeDecision.Meter.NONE
-                && availableMeter != globalProbeMeter) {
-            globalProbeBeforeCount = 0;
+        if (!globalDifferentialCollecting) {
+            if (nowMs - lastGlobalProbeAttemptMs < GLOBAL_DSP_PROBE_COOLDOWN_MS) return;
+            if (!optionalDsp.beginGlobalDifferentialProbe(DeviceDetector.key(currentDevice),
+                    mediaIndex, allowedMediaActive, nowMs)) {
+                lastGlobalProbeAttemptMs = nowMs;
+                return;
+            }
+            globalDifferentialCollecting = true;
+            globalDifferentialMediaIndex = mediaIndex;
+            globalDifferentialBaselineFirstMs = nowMs;
+            DiagnosticLog.transition("dsp_differential_probe_begin", "baseline",
+                    "route=" + DeviceDetector.key(currentDevice) + " media=" + mediaIndex);
         }
-        globalProbeMeter = availableMeter;
-        float observedDb = globalProbeMeter == GlobalDspProbeDecision.Meter.OUTPUT_MIX
-                ? outputMixDb : playbackPcmDb;
-        globalProbeBefore[globalProbeBeforeCount++] = observedDb;
-        if (globalProbeBeforeCount < GLOBAL_DSP_PROBE_SAMPLES) return;
-        if (optionalDsp.beginGlobalProbe(DeviceDetector.key(currentDevice), true)) {
-            globalProbeCollectingAfter = true;
-            globalProbeAfterCount = 0;
+
+        if (!globalDifferentialProbeApplied) {
+            optionalDsp.addGlobalProbeBaseline(sourceRmsDb, outputRmsDb, nowMs);
+            globalDifferentialBaselinePairs++;
+            if (globalDifferentialBaselinePairs < GLOBAL_DSP_DIFFERENTIAL_MIN_PAIRS
+                    || nowMs - globalDifferentialBaselineFirstMs < GLOBAL_DSP_DIFFERENTIAL_WINDOW_MS) {
+                return;
+            }
+            if (!optionalDsp.activateGlobalDifferentialProbe(nowMs)) {
+                optionalDsp.cancelGlobalDifferentialProbe("probe_gain_apply_failed");
+                DiagnosticLog.transition("dsp_differential_probe_result",
+                        "probe_gain_apply_failed", "verified=false neutralized=true");
+                resetGlobalDifferentialState();
+                lastGlobalProbeAttemptMs = nowMs;
+                return;
+            }
+            globalDifferentialProbeApplied = true;
+            globalDifferentialProbeFirstMs = nowMs;
             globalProbeStartedAtMs = nowMs;
-            DiagnosticLog.transition("global_dsp_probe", "started",
-                    "route=" + DeviceDetector.key(currentDevice) + " meter=" + globalProbeMeter);
-        } else {
-            resetGlobalProbeState();
-            lastGlobalProbeAttemptMs = nowMs;
+            DiagnosticLog.transition("dsp_differential_probe_begin", "active",
+                    "requestedGainDb=" + DspScopeProbe.PROBE_GAIN_DB
+                            + " baselinePairs=" + globalDifferentialBaselinePairs);
+            return;
         }
+
+        optionalDsp.addGlobalProbeActivePair(sourceRmsDb, outputRmsDb, nowMs);
+        globalDifferentialProbePairs++;
+        if (globalDifferentialProbePairs < GLOBAL_DSP_DIFFERENTIAL_MIN_PAIRS
+                || nowMs - globalDifferentialProbeFirstMs < GLOBAL_DSP_DIFFERENTIAL_WINDOW_MS) {
+            return;
+        }
+        DspScopeProbe.Evidence evidence = optionalDsp.finishGlobalDifferentialProbe(
+                false, true, nowMs);
+        DiagnosticLog.transition("dsp_differential_probe_result", evidence.reason,
+                "verified=" + evidence.allowedMediaEffectVerified()
+                        + " deltaDb=" + evidence.affectedDeltaDb
+                        + " samples=" + evidence.sampleCount + " neutralized=true");
+        resetGlobalDifferentialState();
+        lastGlobalProbeAttemptMs = nowMs;
     }
 
-    private void resetGlobalProbeState() {
-        globalProbeBeforeCount = 0;
-        globalProbeAfterCount = 0;
-        globalProbeCollectingAfter = false;
+    private void resetGlobalDifferentialState() {
+        globalDifferentialCollecting = false;
+        globalDifferentialProbeApplied = false;
+        globalDifferentialBaselinePairs = 0;
+        globalDifferentialProbePairs = 0;
+        globalDifferentialBaselineFirstMs = 0L;
+        globalDifferentialProbeFirstMs = 0L;
         globalProbeStartedAtMs = 0L;
-        globalProbeMeter = GlobalDspProbeDecision.Meter.NONE;
+        globalDifferentialMediaIndex = -1;
     }
 
     private EngineCapabilities.DspTransportCapability runtimeDspCapability() {
@@ -1073,6 +1111,7 @@ public class NormalizerService extends Service {
         String newKey = DeviceDetector.key(detected);
         if (force || !oldKey.equals(newKey)) {
             if (optionalDsp != null && !oldKey.isEmpty()) optionalDsp.onRouteChanged();
+            resetGlobalDifferentialState();
             currentDevice = detected;
             currentDeviceType = DeviceDetector.type(detected);
             MeasurementVolumeCurve.Snapshot routeCurve = measurementCurve.snapshot(currentDeviceType);
@@ -1189,6 +1228,7 @@ public class NormalizerService extends Service {
         if (!stopping.compareAndSet(false, true)) return;
         workerRunning.set(false);
         controlCoordinator.onStopped();
+        resetGlobalDifferentialState();
         if (optionalDsp != null) optionalDsp.onServiceStopped();
         DiagnosticLog.event("service_stop", "reason=" + clean(reason));
         if (worker != null && worker != Thread.currentThread()) worker.interrupt();
@@ -1221,6 +1261,7 @@ public class NormalizerService extends Service {
     @Override public void onDestroy() {
         workerRunning.set(false);
         controlCoordinator.onStopped();
+        resetGlobalDifferentialState();
         if (optionalDsp != null) optionalDsp.onServiceStopped();
         if (worker != null) worker.interrupt();
         if (pcmCapture != null) pcmCapture.close();

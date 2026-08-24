@@ -4,21 +4,25 @@ import java.util.Collections;
 
 public final class V072GlobalDspProbePureTest {
     public static void main(String[] args) {
-        outputMixMeterWinsWhenAvailable();
-        playbackPcmCanProveWhenVisualizerMeterIsUnavailable();
+        pairedMetersAreRequired();
+        outputOnlyCannotProveDifferentialEffect();
         noMeasurementCannotStartProof();
         verifiedWholeOutputMixSurvivesUnknownEndpointEvidence();
         System.out.println("V072GlobalDspProbePureTest: PASS");
     }
 
-    private static void outputMixMeterWinsWhenAvailable() {
-        assertEquals(GlobalDspProbeDecision.Meter.OUTPUT_MIX,
-                GlobalDspProbeDecision.choose(true, true, true, true), "output-mix first");
+    private static void pairedMetersAreRequired() {
+        assertEquals(GlobalDspProbeDecision.Meter.PAIRED_OUTPUT_AND_PCM,
+                GlobalDspProbeDecision.choose(true, true, true, true), "paired proof meter");
     }
 
-    private static void playbackPcmCanProveWhenVisualizerMeterIsUnavailable() {
-        assertEquals(GlobalDspProbeDecision.Meter.PLAYBACK_PCM,
-                GlobalDspProbeDecision.choose(true, true, false, true), "PCM fallback proof meter");
+    private static void outputOnlyCannotProveDifferentialEffect() {
+        assertEquals(GlobalDspProbeDecision.Meter.NONE,
+                GlobalDspProbeDecision.choose(true, true, true, false),
+                "output-only cannot source-compensate music changes");
+        assertEquals(GlobalDspProbeDecision.Meter.NONE,
+                GlobalDspProbeDecision.choose(true, true, false, true),
+                "PCM-only cannot prove output effect");
     }
 
     private static void noMeasurementCannotStartProof() {

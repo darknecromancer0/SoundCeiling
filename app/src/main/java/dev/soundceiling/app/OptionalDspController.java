@@ -126,6 +126,42 @@ final class OptionalDspController implements AutoCloseable {
         return capability;
     }
 
+    boolean beginGlobalDifferentialProbe(String routeIdentity, int mediaIndex,
+                                         boolean allowedMediaActive, long atMs) {
+        boolean started = transports.beginGlobalDifferentialProbe(routeIdentity, mediaIndex,
+                allowedMediaActive, atMs);
+        detail = transports.reason();
+        return started;
+    }
+
+    void addGlobalProbeBaseline(float sourceRmsDb, float outputRmsDb, long atMs) {
+        transports.addGlobalProbeBaseline(sourceRmsDb, outputRmsDb, atMs);
+    }
+
+    boolean activateGlobalDifferentialProbe(long atMs) {
+        boolean started = transports.activateGlobalDifferentialProbe(atMs);
+        detail = transports.reason();
+        return started;
+    }
+
+    void addGlobalProbeActivePair(float sourceRmsDb, float outputRmsDb, long atMs) {
+        transports.addGlobalProbeActivePair(sourceRmsDb, outputRmsDb, atMs);
+    }
+
+    DspScopeProbe.Evidence finishGlobalDifferentialProbe(boolean documentedOemScopeProof,
+                                                         boolean wholeOutputConsent,
+                                                         long timestampMs) {
+        DspScopeProbe.Evidence evidence = transports.finishGlobalDifferentialProbe(
+                documentedOemScopeProof, wholeOutputConsent, timestampMs);
+        detail = transports.reason();
+        return evidence;
+    }
+
+    void cancelGlobalDifferentialProbe(String reason) {
+        transports.cancelGlobalDifferentialProbe(reason);
+        detail = transports.reason();
+    }
+
     boolean beginGlobalProbe(String routeIdentity, boolean allowedMediaActive) {
         boolean started = transports.beginGlobalProbe(routeIdentity, allowedMediaActive);
         detail = transports.reason();

@@ -20,6 +20,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlVolumeCurve.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CaptureReferenceEstimator.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LiveCaptureReference.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/OutputLevelModel.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/OutputGainPlanner.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ControlCommand.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteOrigin.java" \
@@ -78,6 +79,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/UnsupportedDspTransport.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspPolicyArbiter.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspProbeMath.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/DspDifferentialVerifier.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/ContinuousDspController.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/CoarseMediaFallbackController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspGainSlew.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/GlobalDspProbeDecision.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackSnapshot.java" \
@@ -127,6 +131,11 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V072ResetDefaultsPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V073UserAuthorityPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V075LowVolumeLinkedFallbackPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V076OutputDomainPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V076DspDifferentialVerifierPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V076ContinuousDspPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V076CoarseMediaFallbackPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V076ArchitectureRegressionPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -208,5 +217,10 @@ java -cp "$OUT" dev.soundceiling.app.V072FallbackFloorPureTest
 java -cp "$OUT" dev.soundceiling.app.V072SourceEvidencePureTest
 java -cp "$OUT" dev.soundceiling.app.V073UserAuthorityPureTest
 java -cp "$OUT" dev.soundceiling.app.V075LowVolumeLinkedFallbackPureTest
+java -cp "$OUT" dev.soundceiling.app.V076OutputDomainPureTest
+java -cp "$OUT" dev.soundceiling.app.V076DspDifferentialVerifierPureTest
+java -cp "$OUT" dev.soundceiling.app.V076ContinuousDspPureTest
+java -cp "$OUT" dev.soundceiling.app.V076CoarseMediaFallbackPureTest
+java -cp "$OUT" dev.soundceiling.app.V076ArchitectureRegressionPureTest
 java -cp "$OUT" dev.soundceiling.app.V072GlobalDspProbePureTest
 java -cp "$OUT" dev.soundceiling.app.V072ResetDefaultsPureTest

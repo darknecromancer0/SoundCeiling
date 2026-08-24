@@ -1,120 +1,72 @@
 package dev.soundceiling.app;
 
-/** Samsung v0.7.4.2 field regression: linked normalization must still work at Media 2/15. */
+/** Historical v0.7.5 low-volume regressions migrated to the v0.7.6 actuator model. */
 public final class V075LowVolumeLinkedFallbackPureTest {
     public static void main(String[] args) {
-        linkedPreVolumeComparesSourceBeforeSamsungMaster();
-        unknownPlaybackCaptureMayAttenuateAsConservativePreVolumeFallback();
-        manualSamsungMoveDoesNotMoveSourceRelativeLinkedTarget();
-        fallbackRepaysOnlyAppOwnedAttenuationToUserAnchor();
-        coarseSamsungDebtRecoveryChoosesNearestSafeStep();
-        coarseSamsungDebtRecoveryStillRespectsPeakHeadroom();
+        preVolumeProjectionIncludesSamsungMasterGain();
+        unknownWithoutOutputEvidenceFailsClosed();
+        manualSamsungMoveRebasesAnchorAndLinkedTarget();
+        hardSafetyDoesNotCreateNormalizerRecoveryDebt();
         hardPeakCannotBypassConfiguredMinimumUnlessAutoMuteIsEnabled();
         System.out.println("V075LowVolumeLinkedFallbackPureTest: PASS");
     }
 
-    private static void linkedPreVolumeComparesSourceBeforeSamsungMaster() {
+    private static void preVolumeProjectionIncludesSamsungMasterGain() {
         ControlVolumeCurve curve = samsungLowCurve();
-        NormalizerControlCoordinator c = new NormalizerControlCoordinator();
-        c.setCeilingState(OutputCeilingState.of(true, -18f, -18f));
-        c.onFrame(frame(0, 2, 2, curve, -8f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        c.onFrame(frame(40, 2, 2, curve, -8f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        near(-10f, c.snapshot().desiredGainDb(), .01f,
-                "Media 2 attenuation must not make the source look 48 dB quieter to linked fallback");
+        OutputLevelModel.Snapshot levels = OutputLevelModel.evaluate(new OutputLevelModel.Input(
+                -2f, -18f, curve.gainDbForIndex(2), 0f,
+                CaptureReferenceEstimator.Mode.PRE_VOLUME,
+                Float.NaN, Float.NaN, false));
+        near(-18f + curve.gainDbForIndex(2), levels.projectedOutputLoudnessDb, .01f,
+                "PRE_VOLUME low-volume projection must include the Samsung master gain");
+        require(levels.meterDomain == OutputLevelModel.MeterDomain.PROJECTED,
+                "PRE_VOLUME must produce PROJECTED output-domain evidence");
     }
 
-    private static void unknownPlaybackCaptureMayAttenuateAsConservativePreVolumeFallback() {
+    private static void unknownWithoutOutputEvidenceFailsClosed() {
         ControlVolumeCurve curve = samsungLowCurve();
         NormalizerControlCoordinator c = new NormalizerControlCoordinator();
         c.setCeilingState(OutputCeilingState.of(true, -18f, -18f));
-        c.onFrame(frame(0, 2, 2, curve, -8f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        ControlCommand command = c.onFrame(frame(40, 2, 2, curve, -8f,
-                CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        eq(ControlCommand.Kind.MEDIA_INDEX, command.kind(),
-                "UNKNOWN playback capture must not disable safe downward normalization");
-        eq(1, command.mediaIndex(), "low-volume fallback gets one real Samsung attenuation step");
+        ControlCommand command = c.onFrame(new NormalizerControlCoordinator.Frame.Builder(
+                1200, 2, 2, curve)
+                .rawPeakDbfs(-.1f).controlLoudnessDb(-8f)
+                .mediaGainDb(curve.gainDbForIndex(2))
+                .captureReference(CaptureReferenceEstimator.Mode.UNKNOWN)
+                .hardPeakCeilingDbfs(-2f).hardMediaCeilingIndex(3)
+                .rawProgramActive(true).effectivePolicy("exact_source_policy", true, true)
+                .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.EXACT)
+                .playbackEndpoints(true, 1)
+                .observation(NormalizerControlCoordinator.VolumeObservation.UNCHANGED,
+                        VolumeWriteOrigin.NORMALIZATION)
+                .build());
+        eq(ControlCommand.Kind.NONE, command.kind(),
+                "UNKNOWN playback capture cannot invent a fast Media normalization decision");
+        require(command.reason().contains("safety_only"),
+                "UNKNOWN without output evidence must identify the safety-only hold");
     }
 
-    private static void manualSamsungMoveDoesNotMoveSourceRelativeLinkedTarget() {
+    private static void manualSamsungMoveRebasesAnchorAndLinkedTarget() {
         ControlVolumeCurve curve = samsungLowCurve();
         NormalizerControlCoordinator c = new NormalizerControlCoordinator();
         c.setCeilingState(OutputCeilingState.of(true, -18f, -18f));
-        c.onFrame(frame(0, 2, 2, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
+        c.onFrame(safeOutputFrame(0, 2, 2, curve,
                 NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        c.onFrame(frame(100, 2, 1, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
+        float delta = curve.deltaDb(2, 1);
+        c.onFrame(safeOutputFrame(100, 2, 1, curve,
                 NormalizerControlCoordinator.VolumeObservation.USER, VolumeWriteOrigin.USER));
-        near(-18f, c.ceilingState().lowerDb(), .001f,
-                "linked source target must not chase a PRE-volume Samsung master move");
         eq(1, c.mediaAnchorState().userAnchorIndex(), "manual down becomes the new master anchor");
+        near(-18f + delta, c.ceilingState().lowerDb(), .01f,
+                "Linked Lock target must follow a proven USER Samsung master move");
     }
 
-    private static void fallbackRepaysOnlyAppOwnedAttenuationToUserAnchor() {
-        ControlVolumeCurve curve = samsungLowCurve();
-        NormalizerControlCoordinator c = new NormalizerControlCoordinator();
-        c.setCeilingState(OutputCeilingState.of(true, -18f, -18f));
-        c.onFrame(frame(0, 2, 2, curve, -8f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        ControlCommand down = c.onFrame(frame(40, 2, 2, curve, -8f,
-                CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        eq(1, down.mediaIndex(), "loud program creates one step of app-owned attenuation");
-        c.onFrame(frame(80, 2, 1, curve, -30f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.APP_ACK, VolumeWriteOrigin.NORMALIZATION));
-        c.onFrame(frame(1200, 1, 1, curve, -30f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        ControlCommand recover = c.onFrame(frame(1550, 1, 1, curve, -30f,
-                CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        eq(ControlCommand.Kind.MEDIA_INDEX, recover.kind(), "quiet program may repay owned attenuation");
-        eq(2, recover.mediaIndex(), "recovery stops exactly at the user's Media anchor");
-    }
-
-    private static void coarseSamsungDebtRecoveryChoosesNearestSafeStep() {
-        ControlVolumeCurve curve = samsungLowCurve();
-        NormalizerControlCoordinator c = new NormalizerControlCoordinator();
-        c.setCeilingState(OutputCeilingState.of(true, -18f, -18f));
-        c.onFrame(frame(0, 3, 3, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        c.onFrame(frame(40, 3, 2, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.APP_ACK, VolumeWriteOrigin.HARD_PEAK_SAFETY));
-        c.onFrame(frame(80, 2, 1, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.APP_ACK, VolumeWriteOrigin.HARD_PEAK_SAFETY));
-        eq(2, c.mediaAnchorState().debtSteps(), "peak attenuation creates two repayable owned steps");
-
-        c.onFrame(frameWithPeak(1200, 1, 1, curve, -22f, -16f,
-                CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        ControlCommand recover = c.onFrame(frameWithPeak(1550, 1, 1, curve, -22f, -16f,
-                CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        eq(ControlCommand.Kind.MEDIA_INDEX, recover.kind(),
-                "a +4 dB need must choose Samsung's nearest +5 dB recovery step instead of stalling");
-        eq(2, recover.mediaIndex(), "coarse recovery advances one owned step toward the anchor");
-        eq(ControlCommand.Provenance.DEBT_RECOVERY, recover.provenance(),
-                "coarse upward step remains bounded app-owned debt recovery");
-    }
-
-    private static void coarseSamsungDebtRecoveryStillRespectsPeakHeadroom() {
-        ControlVolumeCurve curve = samsungLowCurve();
-        NormalizerControlCoordinator c = new NormalizerControlCoordinator();
-        c.setCeilingState(OutputCeilingState.of(true, -18f, -18f));
-        c.onFrame(frame(0, 2, 2, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        c.onFrame(frame(40, 2, 1, curve, -18f, CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.APP_ACK, VolumeWriteOrigin.HARD_PEAK_SAFETY));
-
-        c.onFrame(frameWithPeak(1200, 1, 1, curve, -22f, -5f,
-                CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        ControlCommand blocked = c.onFrame(frameWithPeak(1550, 1, 1, curve, -22f, -5f,
-                CaptureReferenceEstimator.Mode.UNKNOWN,
-                NormalizerControlCoordinator.VolumeObservation.UNCHANGED, VolumeWriteOrigin.NORMALIZATION));
-        eq(ControlCommand.Kind.NONE, blocked.kind(),
-                "nearest-step recovery must stay blocked when +5 dB would cross the -2 dBFS peak ceiling");
+    private static void hardSafetyDoesNotCreateNormalizerRecoveryDebt() {
+        MediaAnchorState state = MediaAnchorState.start(3, 0)
+                .recordAppWrite(3, 2, VolumeWriteOrigin.HARD_PEAK_SAFETY)
+                .recordAppWrite(2, 1, VolumeWriteOrigin.QUIET_NOW);
+        eq(0, state.debtSteps(),
+                "hard peak/cap safety attenuation must not become automatic normalizer recovery debt");
+        require(!state.mayRecoverTo(2),
+                "safety-only attenuation cannot later grant automatic upward authority");
     }
 
     private static void hardPeakCannotBypassConfiguredMinimumUnlessAutoMuteIsEnabled() {
@@ -126,21 +78,15 @@ public final class V075LowVolumeLinkedFallbackPureTest {
                 "ordinary normalization must never inherit Auto mute's below-minimum permission");
     }
 
-    private static NormalizerControlCoordinator.Frame frame(long at, int prev, int cur,
-            ControlVolumeCurve curve, float program, CaptureReferenceEstimator.Mode reference,
-            NormalizerControlCoordinator.VolumeObservation observation, VolumeWriteOrigin origin) {
-        return frameWithPeak(at, prev, cur, curve, program, Math.min(-4f, program + 6f),
-                reference, observation, origin);
-    }
-
-    private static NormalizerControlCoordinator.Frame frameWithPeak(long at, int prev, int cur,
-            ControlVolumeCurve curve, float program, float rawPeak,
-            CaptureReferenceEstimator.Mode reference,
-            NormalizerControlCoordinator.VolumeObservation observation, VolumeWriteOrigin origin) {
+    private static NormalizerControlCoordinator.Frame safeOutputFrame(long at, int prev, int cur,
+            ControlVolumeCurve curve, NormalizerControlCoordinator.VolumeObservation observation,
+            VolumeWriteOrigin origin) {
+        OutputLevelModel.Snapshot safe = OutputLevelModel.evaluate(new OutputLevelModel.Input(
+                -18f, -28f, curve.gainDbForIndex(cur), 0f,
+                CaptureReferenceEstimator.Mode.PRE_VOLUME,
+                Float.NaN, Float.NaN, false));
         return new NormalizerControlCoordinator.Frame.Builder(at, prev, cur, curve)
-                .rawPeakDbfs(rawPeak).controlLoudnessDb(program)
-                .mediaGainDb(curve.gainDbForIndex(cur)).captureReference(reference)
-                .assumedPreVolumeFallbackAllowed(true)
+                .outputLevels(safe)
                 .hardPeakCeilingDbfs(-2f).hardMediaCeilingIndex(3)
                 .rawProgramActive(true).effectivePolicy("exact_source_policy", true, true)
                 .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.EXACT)
@@ -164,5 +110,8 @@ public final class V075LowVolumeLinkedFallbackPureTest {
         if (Math.abs(expected - actual) > tolerance) {
             throw new AssertionError(message + " expected=" + expected + " actual=" + actual);
         }
+    }
+    private static void require(boolean value, String message) {
+        if (!value) throw new AssertionError(message);
     }
 }

@@ -3,9 +3,9 @@ package dev.soundceiling.app;
 import java.util.Objects;
 
 /**
- * The one pure decision boundary for a normalizer control tick. It owns controller ordering,
- * user-ceiling authority, activity hangover and the DSP-to-Media hand-off; Android writes remain
- * the service's responsibility.
+ * The one pure decision boundary for a normalizer control tick. v0.7.6 keeps Samsung Media as the
+ * user master: hard Media safety is immediate, verified DSP owns continuous control, and Media
+ * fallback is a separate slow one-step state machine.
  */
 public final class NormalizerControlCoordinator {
     private static final float BOUNDED_GLOBAL_DSP_PROBE_GAIN_DB = -2f;
@@ -23,6 +23,8 @@ public final class NormalizerControlCoordinator {
         private final float currentDspGainDb;
         private final float mediaGainDb;
         private final CaptureReferenceEstimator.Mode captureReference;
+        private final OutputLevelModel.Snapshot outputLevels;
+        private final ControlProfile controlProfile;
         private final float hardPeakCeilingDbfs;
         private final boolean rawProgramActive;
         private final boolean policyAllowsPositiveGain;
@@ -42,7 +44,6 @@ public final class NormalizerControlCoordinator {
         private final float transientSignalDb;
         private final boolean transientEvidence;
         private final boolean calibrationProfileValid;
-        private final boolean assumedPreVolumeFallbackAllowed;
 
         private Frame(Builder b) {
             atMs = Math.max(0L, b.atMs);
@@ -53,10 +54,16 @@ public final class NormalizerControlCoordinator {
             controlLoudnessDb = b.controlLoudnessDb;
             currentDspGainDb = Float.isFinite(b.currentDspGainDb) ? b.currentDspGainDb : 0f;
             mediaGainDb = Float.isFinite(b.mediaGainDb) ? b.mediaGainDb : 0f;
-            captureReference = b.captureReference == null
-                    ? CaptureReferenceEstimator.Mode.UNKNOWN : b.captureReference;
+            controlProfile = b.controlProfile == null ? BuiltInProfiles.balanced() : b.controlProfile;
+            OutputLevelModel.Snapshot supplied = b.outputLevels;
+            captureReference = supplied != null ? supplied.captureReference
+                    : b.captureReference == null ? CaptureReferenceEstimator.Mode.UNKNOWN : b.captureReference;
+            float verifiedGain = b.verifiedDsp ? currentDspGainDb : 0f;
+            outputLevels = supplied != null ? supplied : OutputLevelModel.evaluate(
+                    new OutputLevelModel.Input(rawPeakDbfs, controlLoudnessDb, mediaGainDb,
+                            verifiedGain, captureReference, Float.NaN, Float.NaN, false));
             hardPeakCeilingDbfs = Float.isFinite(b.hardPeakCeilingDbfs)
-                    ? b.hardPeakCeilingDbfs : 0f;
+                    ? b.hardPeakCeilingDbfs : controlProfile.sourcePeakThresholdDbfs;
             rawProgramActive = b.rawProgramActive;
             policyAllowsPositiveGain = b.policyAllowsPositiveGain;
             sourceControlEnabled = b.sourceControlEnabled;
@@ -77,7 +84,6 @@ public final class NormalizerControlCoordinator {
             transientSignalDb = b.transientSignalDb;
             transientEvidence = b.transientEvidence;
             calibrationProfileValid = b.calibrationProfileValid;
-            assumedPreVolumeFallbackAllowed = b.assumedPreVolumeFallbackAllowed;
         }
 
         public static final class Builder {
@@ -90,7 +96,9 @@ public final class NormalizerControlCoordinator {
             private float currentDspGainDb;
             private float mediaGainDb;
             private CaptureReferenceEstimator.Mode captureReference = CaptureReferenceEstimator.Mode.UNKNOWN;
-            private float hardPeakCeilingDbfs;
+            private OutputLevelModel.Snapshot outputLevels;
+            private ControlProfile controlProfile;
+            private float hardPeakCeilingDbfs = ControlDefaults.SOURCE_PEAK_THRESHOLD_DBFS;
             private boolean rawProgramActive;
             private boolean policyAllowsPositiveGain;
             private boolean sourceControlEnabled = true;
@@ -109,9 +117,7 @@ public final class NormalizerControlCoordinator {
             private float transientEmergencyDb = 10f;
             private float transientSignalDb = Float.NaN;
             private boolean transientEvidence;
-            // Non-SPL control does not need a calibration profile. SPL callers must prove one.
             private boolean calibrationProfileValid = true;
-            private boolean assumedPreVolumeFallbackAllowed;
 
             public Builder(long atMs, int previousMediaIndex, int currentMediaIndex,
                            ControlVolumeCurve routeCurve) {
@@ -126,7 +132,8 @@ public final class NormalizerControlCoordinator {
             public Builder currentDspGainDb(float value) { currentDspGainDb = value; return this; }
             public Builder mediaGainDb(float value) { mediaGainDb = value; return this; }
             public Builder captureReference(CaptureReferenceEstimator.Mode value) { captureReference = value; return this; }
-            public Builder assumedPreVolumeFallbackAllowed(boolean value) { assumedPreVolumeFallbackAllowed = value; return this; }
+            public Builder outputLevels(OutputLevelModel.Snapshot value) { outputLevels = value; return this; }
+            public Builder controlProfile(ControlProfile value) { controlProfile = value; return this; }
             public Builder hardPeakCeilingDbfs(float value) { hardPeakCeilingDbfs = value; return this; }
             public Builder rawProgramActive(boolean value) { rawProgramActive = value; return this; }
             public Builder policyAllowsPositiveGain(boolean value) { policyAllowsPositiveGain = value; return this; }
@@ -206,7 +213,8 @@ public final class NormalizerControlCoordinator {
     private TransientGuard transientGuard = new TransientGuard(6f, 10f);
     private float transientWarningDb = 6f;
     private float transientEmergencyDb = 10f;
-    private final StableOutputController outputController = new StableOutputController();
+    private final ContinuousDspController continuousDsp = new ContinuousDspController();
+    private final CoarseMediaFallbackController coarseFallback = new CoarseMediaFallbackController();
     private OutputCeilingState ceilingState = OutputCeilingState.defaultLinked();
     private MediaAnchorState mediaAnchorState;
     private boolean ceilingPersistenceRequested;
@@ -228,34 +236,15 @@ public final class NormalizerControlCoordinator {
                 ? transientGuard.update(frame.atMs, frame.transientSignalDb)
                 : TransientGuard.Event.none(Float.NaN);
 
-        // The only legal non-zero gain on an unverified global transport is the bounded -2 dB
-        // scope probe. Hold ordinary control long enough to measure it instead of immediately
-        // mistaking our own probe for stale DSP. Safety/Quiet interruptions still neutralize first.
-        boolean boundedGlobalProbe = !frame.verifiedDsp
-                && Math.abs(frame.currentDspGainDb - BOUNDED_GLOBAL_DSP_PROBE_GAIN_DB) <= .001f;
-        if (boundedGlobalProbe
-                && frame.currentMediaIndex <= frame.hardMediaCeilingIndex
-                && frame.writeOrigin != VolumeWriteOrigin.QUIET_NOW) {
-            return record(ControlCommand.none("global_dsp_probe_measurement_hold"), 0f, frame,
-                    programActive, transientEvent.severity);
-        }
+        OutputGainPlanner.Plan plan = OutputGainPlanner.plan(new OutputGainPlanner.Input(
+                frame.outputLevels, ceilingState, frame.hardPeakCeilingDbfs, programActive,
+                allowsPositiveControl(frame)));
 
-        // A lost non-neutral DSP must be neutralized before any Media fallback or hard cap. Keep
-        // returning the same one-command neutralization until transport feedback confirms zero.
-        if (!frame.verifiedDsp && Math.abs(frame.currentDspGainDb) > .001f) {
-            String neutralizeReason = boundedGlobalProbe
-                    ? frame.currentMediaIndex > frame.hardMediaCeilingIndex
-                    ? "dsp_probe_interrupted_for_hard_cap"
-                    : "dsp_probe_interrupted_for_quiet_now"
-                    : "dsp_capability_lost_neutralize";
-            return record(ControlCommand.dspGain(0f, neutralizeReason,
-                    ControlCommand.Provenance.DSP_NEUTRALIZATION), 0f, frame, programActive,
-                    transientEvent.severity);
-        }
+        // Hard Media authority is independent of DSP capability and is never a normalizer debt.
         if (frame.currentMediaIndex > frame.hardMediaCeilingIndex) {
             return record(ControlCommand.mediaIndex(frame.hardMediaCeilingIndex, "hard_media_cap",
-                    ControlCommand.Provenance.HARD_CAP), 0f, frame, programActive,
-                    transientEvent.severity);
+                    ControlCommand.Provenance.HARD_CAP), plan.desiredCorrectionDb(), frame,
+                    programActive, transientEvent.severity);
         }
         if (frame.writeOrigin == VolumeWriteOrigin.QUIET_NOW) {
             int quiet = frame.quietTargetIndex < 0 ? frame.currentMediaIndex : Math.min(
@@ -263,54 +252,75 @@ public final class NormalizerControlCoordinator {
             ControlCommand command = quiet == frame.currentMediaIndex
                     ? ControlCommand.none("quiet_now_hold", ControlCommand.Provenance.QUIET_NOW)
                     : ControlCommand.mediaIndex(quiet, "quiet_now", ControlCommand.Provenance.QUIET_NOW);
-            return record(command, 0f, frame, programActive, transientEvent.severity);
-        }
-        CaptureReferenceEstimator.Mode controlCaptureReference = frame.captureReference;
-        boolean assumedPreVolumeFallback = controlCaptureReference == CaptureReferenceEstimator.Mode.UNKNOWN
-                && frame.assumedPreVolumeFallbackAllowed && !frame.verifiedDsp;
-        if (assumedPreVolumeFallback) {
-            // PlaybackCapture on the Samsung field route behaved pre-volume. Treat UNKNOWN as a
-            // conservative PRE-volume Media fallback only: upward Media is still constrained to
-            // app-owned debt and can never exceed the user's master anchor.
-            controlCaptureReference = CaptureReferenceEstimator.Mode.PRE_VOLUME;
-        }
-        if (controlCaptureReference == CaptureReferenceEstimator.Mode.UNKNOWN) {
-            return record(ControlCommand.none("capture_reference_unverified"), 0f, frame,
-                    programActive, transientEvent.severity);
+            return record(command, plan.desiredCorrectionDb(), frame, programActive,
+                    transientEvent.severity);
         }
 
-        // Default Linked Lock is relative to the user's Samsung master. While PRE/POST is still
-        // unverified, PlaybackCapture fallback therefore compares captured source loudness directly
-        // with the linked target instead of subtracting the master a second time.
-        float planningMediaGainDb = assumedPreVolumeFallback && ceilingState.linked()
-                ? 0f : frame.mediaGainDb;
-        OutputGainPlanner.Plan plan = OutputGainPlanner.plan(new OutputGainPlanner.Input(
-                frame.controlLoudnessDb, frame.rawPeakDbfs, frame.currentDspGainDb,
-                planningMediaGainDb, controlCaptureReference, ceilingState, frame.hardPeakCeilingDbfs,
-                programActive, allowsPositiveControl(frame) || frame.globalMixDsp
-                        || debtRecoveryAllowed(frame)));
-
-        if (mediaAnchorState != null && mediaAnchorState.userAuthorityHoldActive(frame.atMs)
-                && !plan.absolutePeakViolation()) {
-            return record(ControlCommand.none("user_master_anchor_hold"),
+        // The bounded -2 dB candidate is measurement state, not normal normalization gain.
+        boolean boundedGlobalProbe = !frame.verifiedDsp
+                && Math.abs(frame.currentDspGainDb - BOUNDED_GLOBAL_DSP_PROBE_GAIN_DB) <= .001f;
+        if (boundedGlobalProbe) {
+            return record(ControlCommand.none("global_dsp_probe_measurement_hold"),
                     plan.desiredCorrectionDb(), frame, programActive, transientEvent.severity);
         }
 
-        // The service supplies false only for SPL mode without a real route profile. This is a
-        // coordinator-owned fail-closed decision, not a second service-side actuator branch.
-        if (!frame.calibrationProfileValid
-                && plan.reason() == OutputGainPlanner.Reason.POSITIVE_GAIN_BLOCKED) {
-            return record(ControlCommand.none("missing_spl_profile"), plan.desiredCorrectionDb(), frame,
+        boolean dspPolicyCompatible = frame.sourceControlEnabled
+                && !frame.effectivePolicy.contains("off")
+                && (frame.globalMixDsp || (frame.playbackEndpointActive
+                && frame.observedPlaybackEndpoints > 0));
+
+        // Any non-neutral gain without a currently usable verified transport is removed before a
+        // lower actuator tier is allowed to take ownership.
+        if ((!frame.verifiedDsp || !dspPolicyCompatible)
+                && Math.abs(frame.currentDspGainDb) > .001f) {
+            return record(ControlCommand.dspGain(0f, "dsp_capability_lost_neutralize",
+                    ControlCommand.Provenance.DSP_NEUTRALIZATION), plan.desiredCorrectionDb(), frame,
                     programActive, transientEvent.severity);
         }
 
-        // Capability loss has a mandatory neutralization tick. A Media command follows only after
-        // the service has had a separate chance to apply neutral DSP state.
-        boolean verifiedDsp = frame.verifiedDsp && (frame.globalMixDsp || allowsPositiveControl(frame));
-        ControlCommand command = outputController.decide(frame.atMs, plan, verifiedDsp,
-                frame.currentDspGainDb, frame.currentMediaIndex, frame.routeCurve);
-        command = constrainDebtRecovery(command, frame);
-        return record(withSafetyProvenance(command, plan), plan.desiredCorrectionDb(), frame,
+        if (frame.verifiedDsp && dspPolicyCompatible) {
+            ContinuousDspController.Decision d = continuousDsp.update(frame.atMs, frame.outputLevels,
+                    ceilingState, frame.controlProfile, frame.currentDspGainDb, programActive);
+            if (d.shouldApply) {
+                if (d.requestedGainDb > frame.currentDspGainDb && !allowsPositiveControl(frame)) {
+                    String blockedReason = !frame.calibrationProfileValid
+                            ? "missing_spl_profile" : "dsp_positive_gain_policy_blocked";
+                    return record(ControlCommand.none(blockedReason),
+                            plan.desiredCorrectionDb(), frame, programActive, transientEvent.severity);
+                }
+                ControlCommand.Provenance provenance = frame.outputLevels.outputPeakViolates(
+                        frame.hardPeakCeilingDbfs)
+                        ? ControlCommand.Provenance.HARD_PEAK_SAFETY
+                        : ControlCommand.Provenance.NORMALIZATION;
+                return record(ControlCommand.dspGain(d.requestedGainDb, d.reason, provenance),
+                        plan.desiredCorrectionDb(), frame, programActive, transientEvent.severity);
+            }
+            return record(ControlCommand.none(d.reason), plan.desiredCorrectionDb(), frame,
+                    programActive, transientEvent.severity);
+        }
+
+        if (!frame.sourceControlEnabled || frame.effectivePolicy.contains("off")) {
+            return record(ControlCommand.none("source_control_disabled"), plan.desiredCorrectionDb(),
+                    frame, programActive, transientEvent.severity);
+        }
+        if (mediaAnchorState.userAuthorityHoldActive(frame.atMs)) {
+            return record(ControlCommand.none("user_master_anchor_hold"), plan.desiredCorrectionDb(),
+                    frame, programActive, transientEvent.severity);
+        }
+
+        CoarseMediaFallbackController.Decision coarse = coarseFallback.update(frame.atMs,
+                frame.currentMediaIndex, mediaAnchorState.userAnchorIndex(), frame.outputLevels,
+                ceilingState, frame.routeCurve, frame.controlProfile, programActive);
+        if (coarse.shouldWrite) {
+            ControlCommand.Provenance provenance = coarse.requestedIndex > frame.currentMediaIndex
+                    ? ControlCommand.Provenance.DEBT_RECOVERY
+                    : ControlCommand.Provenance.COARSE_MEDIA;
+            return record(ControlCommand.mediaIndex(coarse.requestedIndex, coarse.reason, provenance),
+                    plan.desiredCorrectionDb(), frame, programActive, transientEvent.severity);
+        }
+        String holdReason = frame.outputLevels.outputProjectionValid
+                ? coarse.reason : "safety_only_hold";
+        return record(ControlCommand.none(holdReason), plan.desiredCorrectionDb(), frame,
                 programActive, transientEvent.severity);
     }
 
@@ -321,6 +331,10 @@ public final class NormalizerControlCoordinator {
     }
     public Snapshot snapshot() { return snapshot; }
     MediaAnchorState mediaAnchorState() { return mediaAnchorState; }
+    int coarseDebtSteps() { return coarseFallback.debtSteps(); }
+    long coarseDwellRemainingMs(long nowMs, ControlProfile profile) {
+        return coarseFallback.dwellRemainingMs(nowMs, profile == null ? BuiltInProfiles.balanced() : profile);
+    }
     boolean consumeCeilingPersistenceRequest() {
         boolean requested = ceilingPersistenceRequested;
         ceilingPersistenceRequested = false;
@@ -330,14 +344,14 @@ public final class NormalizerControlCoordinator {
     public void onCaptureReplaced() {
         activityGate.reset();
         transientGuard.reset();
-        outputController.reset();
-        // Capture identity is not output-route identity. Preserve the user's Samsung Media anchor,
-        // app-owned attenuation debt and linked ceiling values across mixed<->targeted rebinds.
+        continuousDsp.reset();
+        coarseFallback.onCaptureReplaced();
         ceilingPersistenceRequested = false;
     }
 
     public void onRouteChanged() {
         onCaptureReplaced();
+        coarseFallback.resetForRoute();
         mediaAnchorState = null;
     }
 
@@ -350,47 +364,26 @@ public final class NormalizerControlCoordinator {
                 || frame.observation == VolumeObservation.APP_MISMATCH)
                 && frame.writeOrigin == VolumeWriteOrigin.USER) {
             mediaAnchorState = mediaAnchorState.recordUserIndex(frame.currentMediaIndex, frame.atMs);
-            boolean sourceRelativeLinked = ceilingState.linked()
-                    && frame.captureReference == CaptureReferenceEstimator.Mode.UNKNOWN
-                    && frame.assumedPreVolumeFallbackAllowed && !frame.verifiedDsp;
-            if (!sourceRelativeLinked) {
-                float delta = frame.routeCurve.deltaDb(frame.previousMediaIndex, frame.currentMediaIndex);
-                ceilingState = ceilingState.onMediaIndexChanged(frame.previousMediaIndex,
-                        frame.currentMediaIndex, delta, false);
-                ceilingPersistenceRequested = true;
-            }
+            coarseFallback.onUserAnchorChanged(frame.currentMediaIndex, frame.atMs);
+            float delta = frame.routeCurve.deltaDb(frame.previousMediaIndex, frame.currentMediaIndex);
+            ceilingState = ceilingState.onMediaIndexChanged(frame.previousMediaIndex,
+                    frame.currentMediaIndex, delta, false);
+            ceilingPersistenceRequested = true;
+            continuousDsp.reset();
             return;
         }
         if (frame.observation == VolumeObservation.APP_ACK) {
             mediaAnchorState = mediaAnchorState.recordAppWrite(frame.previousMediaIndex,
                     frame.currentMediaIndex, frame.writeOrigin);
+            coarseFallback.onAppWriteAck(frame.previousMediaIndex, frame.currentMediaIndex,
+                    frame.writeOrigin, frame.atMs);
         }
-    }
-
-    private boolean debtRecoveryAllowed(Frame frame) {
-        return mediaAnchorState != null
-                && mediaAnchorState.maxDebtRecoveryIndex() > frame.currentMediaIndex
-                && !frame.effectivePolicy.contains("off");
-    }
-
-    private ControlCommand constrainDebtRecovery(ControlCommand command, Frame frame) {
-        if (command == null || command.kind() != ControlCommand.Kind.MEDIA_INDEX
-                || command.mediaIndex() <= frame.currentMediaIndex) return command;
-        if (!debtRecoveryAllowed(frame)) {
-            return ControlCommand.none("positive_gain_blocked_above_user_anchor");
-        }
-        int target = Math.min(command.mediaIndex(), mediaAnchorState.maxDebtRecoveryIndex());
-        if (target <= frame.currentMediaIndex) {
-            return ControlCommand.none("positive_gain_blocked_above_user_anchor");
-        }
-        return ControlCommand.mediaIndex(target, "media:DEBT_RECOVERY",
-                ControlCommand.Provenance.DEBT_RECOVERY);
     }
 
     private ControlCommand record(ControlCommand command, float desiredGainDb, Frame frame,
                                   boolean programActive, TransientGuard.Severity transientSeverity) {
         String reason = command.reason();
-        String dwell = reason.contains("direction_reversal_dwell") ? "blocked" : "clear";
+        String dwell = reason.contains("dwell") ? "blocked" : "clear";
         float appliedGain = command.kind() == ControlCommand.Kind.DSP_GAIN
                 ? command.requestedGainDb() : frame.currentDspGainDb;
         boolean verified = command.kind() == ControlCommand.Kind.DSP_GAIN && frame.verifiedDsp;
@@ -406,20 +399,6 @@ public final class NormalizerControlCoordinator {
         transientWarningDb = frame.transientWarningDb;
         transientEmergencyDb = frame.transientEmergencyDb;
         transientGuard = new TransientGuard(transientWarningDb, transientEmergencyDb);
-    }
-
-    private static ControlCommand withSafetyProvenance(ControlCommand command,
-                                                        OutputGainPlanner.Plan plan) {
-        if (!plan.absolutePeakViolation()) return command;
-        if (command.kind() == ControlCommand.Kind.MEDIA_INDEX) {
-            return ControlCommand.mediaIndex(command.mediaIndex(), command.reason(),
-                    ControlCommand.Provenance.HARD_PEAK_SAFETY);
-        }
-        if (command.kind() == ControlCommand.Kind.DSP_GAIN) {
-            return ControlCommand.dspGain(command.requestedGainDb(), command.reason(),
-                    ControlCommand.Provenance.HARD_PEAK_SAFETY);
-        }
-        return ControlCommand.none(command.reason(), ControlCommand.Provenance.HARD_PEAK_SAFETY);
     }
 
     private static boolean allowsPositiveControl(Frame frame) {
