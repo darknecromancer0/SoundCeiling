@@ -8,9 +8,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Apply v0.7.6.1 GREEN snapshot
+        shell: bash
+        run: |
+          if [[ -f .ci/v0761-bootstrap.sh ]]; then
+            bash .ci/v0761-bootstrap.sh
+          else
+            echo "bootstrap already consumed"
+          fi
       - name: Upload source snapshot for v0.7 development
         uses: actions/upload-artifact@v4
         with:
@@ -103,6 +111,10 @@ jobs:
         run: bash ./scripts/check-v076-control-architecture-contract.sh
       - name: Check v0.7.6 release contract
         run: bash ./scripts/check-v076-release-contract.sh
+      - name: Check v0.7.6.1 DSP safety contract
+        run: bash ./scripts/check-v0761-dsp-safety-contract.sh
+      - name: Check v0.7.6.1 release contract
+        run: bash ./scripts/check-v0761-release-contract.sh
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
@@ -114,6 +126,6 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.7.6-debug-apk
+          name: SoundCeiling-v0.7.6.1-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
