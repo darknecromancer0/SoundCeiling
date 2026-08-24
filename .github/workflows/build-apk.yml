@@ -8,9 +8,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: feature/v0.7-adaptive-envelope
+      - name: Bootstrap v0.7.6 task 8
+        run: test ! -f ./scripts/bootstrap-v076-task8.sh || bash ./scripts/bootstrap-v076-task8.sh
       - name: Upload source snapshot for v0.7 development
         uses: actions/upload-artifact@v4
         with:
@@ -99,6 +103,8 @@ jobs:
         run: bash ./scripts/check-v06-release-contract.sh
       - name: Check v0.7 release contract
         run: bash ./scripts/check-v07-release-contract.sh
+      - name: Check v0.7.6 control architecture contract
+        run: bash ./scripts/check-v076-control-architecture-contract.sh
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
