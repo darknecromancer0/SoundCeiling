@@ -101,6 +101,8 @@ jobs:
         run: bash ./scripts/check-v07-release-contract.sh
       - name: Check v0.7.6 control architecture contract
         run: bash ./scripts/check-v076-control-architecture-contract.sh
+      - name: Check v0.7.6 release contract
+        run: bash ./scripts/check-v076-release-contract.sh
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
@@ -112,6 +114,6 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.7.5.2-debug-apk
+          name: SoundCeiling-v0.7.6-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

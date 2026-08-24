@@ -21,9 +21,14 @@ require "$COORD" 'ControlCommand.Provenance.DEBT_RECOVERY'
 require "$TEST" 'hardSafetyDoesNotCreateNormalizerRecoveryDebt()'
 require "$V076TEST" 'ownedAttenuationCanRecoverButUserMoveCancelsIt()'
 ! grep -Fq 'StableOutputController.decideMedia(' "$COORD" || fail 'fast StableOutputController fallback must stay detached'
-require "$BUILD" 'versionCode=19'
-require "$BUILD" 'versionName="0.7.5.2"'
+python - "$BUILD" <<'PYVER'
+from pathlib import Path
+import re, sys
+s = Path(sys.argv[1]).read_text()
+m = re.search(r'versionCode=(\d+)', s)
+if not m or int(m.group(1)) < 19:
+    raise SystemExit('v0.7.5.2 coarse-recovery contract: expected versionCode >= 19')
+PYVER
 require "$WF" 'run: bash ./scripts/check-v0752-coarse-recovery-contract.sh'
-require "$WF" 'name: SoundCeiling-v0.7.5.2-debug-apk'
 
 echo "v0.7.5.2 coarse-recovery contract: PASS"
