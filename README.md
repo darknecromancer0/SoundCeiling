@@ -1,6 +1,16 @@
-# Sound Ceiling for Android - v0.7.6.1
+# Sound Ceiling for Android - v0.7.6.2
 
-SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.6.1 is a Samsung DSP safety corrective release built on the **Control Architecture Reset** from v0.7.6: the normalizer now separates measured source data, projected/output-domain evidence, continuous verified-DSP control, coarse Media fallback, and independent safety authority.
+SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.6.2 is a Samsung output-domain corrective release built on the **Control Architecture Reset** from v0.7.6 and the DSP attach safety work from v0.7.6.1.
+
+## v0.7.6.2 Samsung output-domain corrective
+
+- **PRE_VOLUME PCM outranks Visualizer for normalizer control.** Once targeted playback capture proves that PCM is before Samsung Media attenuation, the output estimate is projected from source level plus the route gain instead of being replaced by a fresh Visualizer frame.
+- **Visualizer-only UNKNOWN evidence is fail-closed.** A readable Visualizer frame does not by itself prove post-volume semantics on an OEM route, so ordinary coarse Media normalization cannot use it to walk the Samsung slider downward.
+- Coarse Media fallback remains available when the output domain is actually proven. It still moves by at most one step after dwell and recovery remains limited to SoundCeiling-owned attenuation debt.
+- Visualizer remains available to the separate paired Global DSP differential-verification path. This corrective does not weaken the v0.7.6.1 neutral-attach and bounded-probe safety sequence.
+- The user master anchor, hard Media cap, Quiet Now, source-policy gates, stop/restart lifecycle protection, and all historical contracts remain unchanged.
+
+Samsung physical acceptance: `docs/field-tests/2026-08-25-v0.7.6.2-samsung-checklist.md`.
 
 ## v0.7.6.1 Samsung DSP safety corrective
 
@@ -12,7 +22,7 @@ SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.6.1 is a S
 - Fresh field-test logs are protected for at least 24 hours and the normal retained budget is 64 MiB.
 - Multiband/MBC normalization remains disabled in this corrective build until broadband session-zero attach/gain behavior is proven safe on the Samsung device.
 
-Samsung physical acceptance: `docs/field-tests/2026-08-24-v0.7.6.1-samsung-checklist.md`.
+Historical Samsung acceptance: `docs/field-tests/2026-08-24-v0.7.6.1-samsung-checklist.md`.
 
 ## v0.7.6 Control Architecture Reset
 
@@ -52,6 +62,6 @@ Playback-capture/log persistence continues to use the existing **MediaStore**/SA
 
 ## Build and verification
 
-Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, the v0.7.6 architecture and release contracts, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
+Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, the v0.7.6 architecture contract, the v0.7.6.1 DSP safety contract, the v0.7.6.2 output-domain and release contracts, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
 
-Release artifact: **`SoundCeiling-v0.7.6.1-debug-apk`**, containing `app-debug.apk`.
+Release artifact: **`SoundCeiling-v0.7.6.2-debug-apk`**, containing `app-debug.apk`.
