@@ -38,6 +38,11 @@ final class DspDifferentialVerifier {
             this.coveredMs = Math.max(0L, coveredMs);
             this.reason = reason == null ? "" : reason;
         }
+
+        boolean retryable() {
+            return "attach_insufficient_pairs".equals(reason)
+                    || "attach_insufficient_coverage".equals(reason);
+        }
     }
 
     static final class Result {

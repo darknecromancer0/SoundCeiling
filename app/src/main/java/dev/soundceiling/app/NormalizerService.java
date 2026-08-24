@@ -1090,8 +1090,9 @@ public class NormalizerService extends Service {
                 return;
             }
             globalDifferentialTransportAttached = true;
-            globalDifferentialAttachFirstMs = nowMs;
-            globalProbeStartedAtMs = nowMs;
+            long attachedAtMs = SystemClock.elapsedRealtime();
+            globalDifferentialAttachFirstMs = attachedAtMs;
+            globalProbeStartedAtMs = attachedAtMs;
             DiagnosticLog.transition("dsp_global_attach_begin", "neutral_0db",
                     "route=" + DeviceDetector.key(currentDevice)
                             + " media=" + mediaIndex
@@ -1109,8 +1110,18 @@ public class NormalizerService extends Service {
             DspDifferentialVerifier.AttachResult attach =
                     optionalDsp.evaluateGlobalNeutralAttach(nowMs);
             DiagnosticLog.transition("dsp_global_attach_result", attach.reason,
-                    "safe=" + attach.safe + " deltaDb=" + attach.deltaDb
+                    "safe=" + attach.safe + " retryable=" + attach.retryable()
+                            + " deltaDb=" + attach.deltaDb
+                            + " coveredMs=" + attach.coveredMs
                             + " samples=" + attach.attachPairs);
+            if (attach.retryable()) {
+                DiagnosticLog.transition("dsp_global_attach_wait", attach.reason,
+                        "coveredMs=" + attach.coveredMs + " samples=" + attach.attachPairs
+                                + " timeoutRemainingMs="
+                                + Math.max(0L, GLOBAL_DSP_PROBE_MAX_ACTIVE_MS
+                                - (nowMs - globalProbeStartedAtMs)));
+                return;
+            }
             if (!attach.safe) {
                 optionalDsp.cancelGlobalDifferentialProbe("neutral_attach_non_neutral");
                 suppressGlobalProbeForRoute("neutral_attach_non_neutral:" + attach.deltaDb, nowMs);
