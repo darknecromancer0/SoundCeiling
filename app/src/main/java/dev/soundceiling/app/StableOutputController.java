@@ -9,6 +9,7 @@ public final class StableOutputController {
     public static final long REVERSAL_DWELL_MS = 1_000L;
     private static final float MAX_ORDINARY_DSP_STEP_DB = 6f;
     private static final float UNKNOWN_RESPONSE_TOLERANCE_DB = 1f;
+    private static final float ROUTE_STEP_EPSILON_DB = .001f;
 
     private enum ActuatorMode { DSP, MEDIA }
 
@@ -91,6 +92,22 @@ public final class StableOutputController {
         }
         if (correctionDb < 0f) target = Math.min(current, target);
         else target = Math.max(current, target);
+
+        // Vendor Media curves are discrete. On the Samsung low-volume route one upward step is
+        // +5 dB, so an exact +4 dB recovery request previously stalled forever because the next
+        // step sits slightly above the continuous target. For positive control only, choose that
+        // adjacent step when it is closer than staying put, while still proving the full discrete
+        // step fits under the absolute peak ceiling. Coordinator debt authority will subsequently
+        // cap this to app-owned attenuation and the user's anchor.
+        if (!absoluteEmergency && correctionDb > 0f && target == current
+                && current < curve.maxIndex()) {
+            int next = current + 1;
+            float nextStepDb = curve.deltaDb(current, next);
+            boolean nearerThanHolding = nextStepDb > 0f && correctionDb > nextStepDb * .5f;
+            boolean peakSafe = nextStepDb <= plan.positivePeakHeadroomDb() + ROUTE_STEP_EPSILON_DB;
+            if (nearerThanHolding && peakSafe) target = next;
+        }
+
         target = DbMath.clamp(target, curve.minIndex(), curve.maxIndex());
         if (target == current) {
             quietEvidenceSinceMs = Long.MIN_VALUE;
