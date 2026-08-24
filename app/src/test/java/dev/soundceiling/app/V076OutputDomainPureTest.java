@@ -5,7 +5,8 @@ public final class V076OutputDomainPureTest {
         lowVolumeMasteredPeakIsNotOutputEmergency();
         postVolumeDoesNotDoubleApplyRouteGain();
         unknownDoesNotInventOutputPeak();
-        directOutputMeterResolvesUnknownCapture();
+        targetedPreVolumeProjectionOutranksVisualizer();
+        unprovenVisualizerCannotResolveUnknownCaptureForControl();
         System.out.println("V076OutputDomainPureTest: PASS");
     }
 
@@ -40,15 +41,37 @@ public final class V076OutputDomainPureTest {
                 "UNKNOWN projected peak must be NaN, not raw source peak");
     }
 
-    private static void directOutputMeterResolvesUnknownCapture() {
+    /** Regression from the v0.7.6.1 Samsung field trace: targeted PCM proved PRE_VOLUME while
+     * Visualizer still reported an apparently loud output. The proven capture reference is the
+     * stronger control-domain fact, so route gain must be applied before coarse Media control. */
+    private static void targetedPreVolumeProjectionOutranksVisualizer() {
+        OutputLevelModel.Snapshot s = OutputLevelModel.evaluate(
+                new OutputLevelModel.Input(-1f, -8.5f, -36f, 0f,
+                        CaptureReferenceEstimator.Mode.PRE_VOLUME,
+                        0f, -9.5f, true));
+        require(s.outputProjectionValid, "proven PRE_VOLUME projection must stay valid");
+        require(s.meterDomain == OutputLevelModel.MeterDomain.PROJECTED,
+                "targeted PRE_VOLUME PCM must outrank unproven Visualizer output semantics");
+        near(-37f, s.projectedOutputPeakDbfs, .01f,
+                "PRE_VOLUME source peak must include Samsung route gain");
+        near(-44.5f, s.projectedOutputLoudnessDb, .01f,
+                "PRE_VOLUME loudness must include Samsung route gain");
+    }
+
+    /** Visualizer is still useful as paired DSP-probe evidence, but its Android/OEM volume-domain
+     * semantics are not proven merely because a frame is fresh. It cannot authorize ordinary
+     * Media normalization while capture reference is UNKNOWN. */
+    private static void unprovenVisualizerCannotResolveUnknownCaptureForControl() {
         OutputLevelModel.Snapshot s = OutputLevelModel.evaluate(
                 new OutputLevelModel.Input(-.2f, -10f, -53f, 0f,
                         CaptureReferenceEstimator.Mode.UNKNOWN,
                         -50f, -58f, true));
-        require(s.outputProjectionValid, "fresh Visualizer output meter is direct output evidence");
-        require(s.meterDomain == OutputLevelModel.MeterDomain.OUTPUT,
-                "direct output meter must win over UNKNOWN capture reference");
-        near(-50f, s.projectedOutputPeakDbfs, .01f, "direct output peak");
+        require(!s.outputProjectionValid,
+                "Visualizer alone must not become trusted post-volume control evidence");
+        require(s.meterDomain == OutputLevelModel.MeterDomain.UNKNOWN,
+                "unproven Visualizer must leave normalizer output domain UNKNOWN");
+        require(Float.isNaN(s.projectedOutputPeakDbfs),
+                "unproven Visualizer must not invent a control-domain output peak");
     }
 
     private static void near(float expected, float actual, float tolerance, String message) {
