@@ -58,18 +58,20 @@ public final class OutputGainPlanner {
         private final float desiredCorrectionDb;
         private final float projectedProgramDbfs;
         private final float projectedPeakDbfs;
+        private final float positivePeakHeadroomDb;
         private final boolean absolutePeakViolation;
         private final boolean programActive;
         private final CaptureReferenceEstimator.Mode captureReference;
         private final Reason reason;
 
         private Plan(float desiredCorrectionDb, float projectedProgramDbfs,
-                     float projectedPeakDbfs, boolean absolutePeakViolation,
-                     boolean programActive, CaptureReferenceEstimator.Mode captureReference,
-                     Reason reason) {
+                     float projectedPeakDbfs, float positivePeakHeadroomDb,
+                     boolean absolutePeakViolation, boolean programActive,
+                     CaptureReferenceEstimator.Mode captureReference, Reason reason) {
             this.desiredCorrectionDb = desiredCorrectionDb;
             this.projectedProgramDbfs = projectedProgramDbfs;
             this.projectedPeakDbfs = projectedPeakDbfs;
+            this.positivePeakHeadroomDb = positivePeakHeadroomDb;
             this.absolutePeakViolation = absolutePeakViolation;
             this.programActive = programActive;
             this.captureReference = captureReference;
@@ -79,6 +81,7 @@ public final class OutputGainPlanner {
         public float desiredCorrectionDb() { return desiredCorrectionDb; }
         public float projectedProgramDbfs() { return projectedProgramDbfs; }
         public float projectedPeakDbfs() { return projectedPeakDbfs; }
+        public float positivePeakHeadroomDb() { return positivePeakHeadroomDb; }
         public boolean absolutePeakViolation() { return absolutePeakViolation; }
         public boolean programActive() { return programActive; }
         public CaptureReferenceEstimator.Mode captureReference() { return captureReference; }
@@ -105,17 +108,20 @@ public final class OutputGainPlanner {
 
         boolean finitePeak = Float.isFinite(projectedPeakDbfs)
                 && Float.isFinite(input.hardPeakCeilingDbfs());
+        float positivePeakHeadroomDb = finitePeak
+                ? Math.max(0f, input.hardPeakCeilingDbfs() - projectedPeakDbfs)
+                : Float.POSITIVE_INFINITY;
         boolean absolutePeakViolation = finitePeak
                 && projectedPeakDbfs > input.hardPeakCeilingDbfs();
         if (absolutePeakViolation) {
             return new Plan(input.hardPeakCeilingDbfs() - projectedPeakDbfs,
-                    projectedProgramDbfs, projectedPeakDbfs, true, input.programActive(),
+                    projectedProgramDbfs, projectedPeakDbfs, 0f, true, input.programActive(),
                     input.captureReference(), Reason.HARD_PEAK_VIOLATION);
         }
 
         if (!input.programActive() || !Float.isFinite(input.programDbfs())) {
             return new Plan(0f, projectedProgramDbfs, projectedPeakDbfs,
-                    false, false, input.captureReference(), Reason.NO_PROGRAM);
+                    positivePeakHeadroomDb, false, false, input.captureReference(), Reason.NO_PROGRAM);
         }
 
         float correctionDb;
@@ -134,22 +140,20 @@ public final class OutputGainPlanner {
         if (correctionDb > 0f && (!input.policyAllowsPositiveGain()
                 || input.captureReference() == CaptureReferenceEstimator.Mode.UNKNOWN)) {
             return new Plan(0f, projectedProgramDbfs, projectedPeakDbfs,
-                    false, true, input.captureReference(), Reason.POSITIVE_GAIN_BLOCKED);
+                    positivePeakHeadroomDb, false, true, input.captureReference(),
+                    Reason.POSITIVE_GAIN_BLOCKED);
         }
 
         if (correctionDb > MAX_POSITIVE_GAIN_DB) {
             correctionDb = MAX_POSITIVE_GAIN_DB;
             reason = Reason.POSITIVE_GAIN_CAPPED;
         }
-        if (correctionDb > 0f && finitePeak) {
-            float peakHeadroomDb = input.hardPeakCeilingDbfs() - projectedPeakDbfs;
-            if (correctionDb > peakHeadroomDb) {
-                correctionDb = Math.max(0f, peakHeadroomDb);
-                reason = Reason.PEAK_LIMITED;
-            }
+        if (correctionDb > 0f && finitePeak && correctionDb > positivePeakHeadroomDb) {
+            correctionDb = positivePeakHeadroomDb;
+            reason = Reason.PEAK_LIMITED;
         }
         return new Plan(correctionDb, projectedProgramDbfs, projectedPeakDbfs,
-                false, true, input.captureReference(), reason);
+                positivePeakHeadroomDb, false, true, input.captureReference(), reason);
     }
 
     private OutputGainPlanner() {}
