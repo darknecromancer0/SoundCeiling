@@ -8,17 +8,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Apply v0.7.6.1 GREEN snapshot
-        shell: bash
-        run: |
-          if [[ -f .ci/v0761-bootstrap.sh ]]; then
-            bash .ci/v0761-bootstrap.sh
-          else
-            echo "bootstrap already consumed"
-          fi
       - name: Upload source snapshot for v0.7 development
         uses: actions/upload-artifact@v4
         with:
