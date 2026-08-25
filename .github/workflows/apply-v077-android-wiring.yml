@@ -27,261 +27,55 @@ jobs:
             echo 'Expected pre-patch Android wiring contract to fail' >&2
             exit 1
           fi
-      - name: Apply exact Session DSP service and UI wiring
+      - name: Apply and verify exact Android wiring
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpkZWYgcmVwKHBhdGgsIG9sZCwgbmV3LCBsYWJlbCk6CiAgICBwID0gUGF0aChwYXRoKQogICAgcyA9IHAucmVhZF90ZXh0KCkKICAgIGlmIG5ldyBpbiBzOgogICAgICAgIHJldHVybgogICAgaWYgb2xkIG5vdCBpbiBzOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQobGFiZWwgKyAiOiBhbmNob3IgbWlzc2luZyIpCiAgICBwLndyaXRlX3RleHQocy5yZXBsYWNlKG9sZCwgbmV3LCAxKSkKCnNlcnZpY2UgPSAiYXBwL3NyYy9tYWluL2phdmEvZGV2L3NvdW5kY2VpbGluZy9hcHAvTm9ybWFsaXplclNlcnZpY2UuamF2YSIKcmVwKHNlcnZpY2UsCicgICAgICAgIGlmIChjb21tYW5kLmtpbmQoKSA9PSBDb250cm9sQ29tbWFuZC5LaW5kLkRTUF9HQUlOKSB7XG4gICAgICAgICAgICBib29sZWFuIGFwcGxpZWQgPSBvcHRpb25hbERzcCAhPSBudWxsICYmIG9wdGlvbmFsRHNwLmFwcGx5R2FpbihcbiAgICAgICAgICAgICAgICAgICAgY29tbWFuZC5yZXF1ZXN0ZWRHYWluRGIoKSwgaXNTYWZldHlDb21tYW5kKGNvbW1hbmQpKTtcbiAgICAgICAgICAgIERpYWdub3N0aWNMb2cudHJhbnNpdGlvbigiZHNwX2dhaW5fY29tbWFuZCIsIGNvbW1hbmQucmVhc29uKCksXG4gICAgICAgICAgICAgICAgICAgICJyZXF1ZXN0ZWRHYWluRGI9IiArIGNvbW1hbmQucmVxdWVzdGVkR2FpbkRiKCkgKyAiIGFwcGxpZWQ9IiArIGFwcGxpZWQpO1xuICAgICAgICAgICAgcmV0dXJuIGN1cnJlbnQ7XG4gICAgICAgIH1cbicsCicgICAgICAgIGlmIChjb21tYW5kLmtpbmQoKSA9PSBDb250cm9sQ29tbWFuZC5LaW5kLkRTUF9HQUlOKSB7XG4gICAgICAgICAgICBpbnQgc2Vzc2lvbkJlZm9yZSA9IG9wdGlvbmFsRHNwID09IG51bGwgPyAtMSA6IG9wdGlvbmFsRHNwLmVuaGFuY2VkU2Vzc2lvbklkKCk7XG4gICAgICAgICAgICBib29sZWFuIGFwcGxpZWQgPSBvcHRpb25hbERzcCAhPSBudWxsICYmIG9wdGlvbmFsRHNwLmFwcGx5R2FpbihcbiAgICAgICAgICAgICAgICAgICAgY29tbWFuZC5yZXF1ZXN0ZWRHYWluRGIoKSwgaXNTYWZldHlDb21tYW5kKGNvbW1hbmQpKTtcbiAgICAgICAgICAgIGZsb2F0IGFwcGxpZWRHYWluRGIgPSBvcHRpb25hbERzcCA9PSBudWxsID8gMGYgOiBvcHRpb25hbERzcC5hcHBsaWVkR2FpbkRiKCk7XG4gICAgICAgICAgICBEaWFnbm9zdGljTG9nLnRyYW5zaXRpb24oImRzcF9nYWluX2NvbW1hbmQiLCBjb21tYW5kLnJlYXNvbigpLFxuICAgICAgICAgICAgICAgICAgICAicmVxdWVzdGVkR2FpbkRiPSIgKyBjb21tYW5kLnJlcXVlc3RlZEdhaW5EYiGpICsgIiBhcHBsaWVkPSIgKyBhcHBsaWVkKTtcbiAgICAgICAgICAgIGlmIChzZXNzaW9uQmVmb3JlID4gMCkge1xuICAgICAgICAgICAgICAgIERpYWdub3N0aWNMb2cudHJhbnNpdGlvbigic2Vzc2lvbl9kc3BfYXBwbHkiLFxuICAgICAgICAgICAgICAgICAgICAgICAgc2Vzc2lvbkJlZm9yZSArICI6IiArIGNvbW1hbmQucmVxdWVzdGVkR2FpbkRiKCkgKyAiOiIgKyBhcHBsaWVkLFxuICAgICAgICAgICAgICAgICAgICAgICAgInNlc3Npb249IiArIHNlc3Npb25CZWZvcmUgKyAiIHJlcXVlc3RlZEdhaW5EYj0iXG4gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICsgY29tbWFuZC5yZXF1ZXN0ZWRHYWluRGIoKSArICIgYXBwbGllZEdhaW5EYj0iICsgYXBwbGllZEdhaW5EYlxuICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICArICIgYXBwbGllZD0iICsgYXBwbGllZCArICIgbWVkaWE9IiArIGN1cnJlbnQpO1xuICAgICAgICAgICAgICAgIGlmICghYXBwbGllZCAmJiBlbmhhbmNlZFNlc3Npb25Ec3AgIT0gbnVsbCkge1xuICAgICAgICAgICAgICAgICAgICBlbmhhbmNlZFNlc3Npb25Ec3Aub25BcHBseUZhaWxlZCgic2Vzc2lvbl9kc3BfYXBwbHlfZmFpbGVkIik7XG4gICAgICAgICAgICAgICAgfVxuICAgICAgICAgICAgfVxuICAgICAgICAgICAgcmV0dXJuIGN1cnJlbnQ7XG4gICAgICAgIH1cbicsICJzZXJ2aWNlIERTUC apply")
 
-          def rep(path, old, new, label):
-              p=Path(path); s=p.read_text()
-              if new in s: return
-              if old not in s: raise SystemExit(label + ': anchor missing')
-              p.write_text(s.replace(old,new,1))
+rep(service,
+'                .profileName(currentProfileV2 != null ? currentProfileV2.name\n                        : currentProfile == null ? "" : currentProfile.name)\n                .logStatus(logger == null ? "" : logger.status())\n                .unexpectedZero(unexpectedZeroThisPoll);\n',
+'                .profileName(currentProfileV2 != null ? currentProfileV2.name\n                        : currentProfile == null ? "" : currentProfile.name)\n                .logStatus(logger == null ? "" : logger.status())\n                .enhancedSession(enhancedSessionDsp != null && enhancedSessionDsp.permissionGranted(),\n                        enhancedSessionDsp != null && enhancedSessionDsp.active(),\n                        enhancedSessionDsp == null ? -1 : enhancedSessionDsp.sessionId(),\n                        enhancedSessionDsp == null ? -1 : enhancedSessionDsp.sessionUid(),\n                        enhancedSessionDsp == null ? "" : enhancedSessionDsp.sessionPackage(),\n                        controlCoordinator.snapshot().desiredGainDb(),\n                        optionalDsp == null ? 0f : optionalDsp.appliedGainDb(),\n                        enhancedSessionDsp == null ? "session_runtime_missing" : enhancedSessionDsp.reason())\n                .unexpectedZero(unexpectedZeroThisPoll);\n', "service telemetry")
 
-          service='app/src/main/java/dev/soundceiling/app/NormalizerService.java'
-          rep(service,
-          '''        if (command.kind() == ControlCommand.Kind.DSP_GAIN) {
-            boolean applied = optionalDsp != null && optionalDsp.applyGain(
-                    command.requestedGainDb(), isSafetyCommand(command));
-            DiagnosticLog.transition("dsp_gain_command", command.reason(),
-                    "requestedGainDb=" + command.requestedGainDb() + " applied=" + applied);
-            return current;
-        }
-''',
-          '''        if (command.kind() == ControlCommand.Kind.DSP_GAIN) {
-            int sessionBefore = optionalDsp == null ? -1 : optionalDsp.enhancedSessionId();
-            boolean applied = optionalDsp != null && optionalDsp.applyGain(
-                    command.requestedGainDb(), isSafetyCommand(command));
-            float appliedGainDb = optionalDsp == null ? 0f : optionalDsp.appliedGainDb();
-            DiagnosticLog.transition("dsp_gain_command", command.reason(),
-                    "requestedGainDb=" + command.requestedGainDb() + " applied=" + applied);
-            if (sessionBefore > 0) {
-                DiagnosticLog.transition("session_dsp_apply",
-                        sessionBefore + ":" + command.requestedGainDb() + ":" + applied,
-                        "session=" + sessionBefore + " requestedGainDb="
-                                + command.requestedGainDb() + " appliedGainDb=" + appliedGainDb
-                                + " applied=" + applied + " media=" + current);
-                if (!applied && enhancedSessionDsp != null) {
-                    enhancedSessionDsp.onApplyFailed("session_dsp_apply_failed");
-                }
-            }
-            return current;
-        }
-''','service DSP apply')
-          rep(service,
-          '''                .profileName(currentProfileV2 != null ? currentProfileV2.name
-                        : currentProfile == null ? "" : currentProfile.name)
-                .logStatus(logger == null ? "" : logger.status())
-                .unexpectedZero(unexpectedZeroThisPoll);
-''',
-          '''                .profileName(currentProfileV2 != null ? currentProfileV2.name
-                        : currentProfile == null ? "" : currentProfile.name)
-                .logStatus(logger == null ? "" : logger.status())
-                .enhancedSession(enhancedSessionDsp != null && enhancedSessionDsp.permissionGranted(),
-                        enhancedSessionDsp != null && enhancedSessionDsp.active(),
-                        enhancedSessionDsp == null ? -1 : enhancedSessionDsp.sessionId(),
-                        enhancedSessionDsp == null ? -1 : enhancedSessionDsp.sessionUid(),
-                        enhancedSessionDsp == null ? "" : enhancedSessionDsp.sessionPackage(),
-                        controlCoordinator.snapshot().desiredGainDb(),
-                        optionalDsp == null ? 0f : optionalDsp.appliedGainDb(),
-                        enhancedSessionDsp == null ? "session_runtime_missing" : enhancedSessionDsp.reason())
-                .unexpectedZero(unexpectedZeroThisPoll);
-''','service telemetry')
+simple = "app/src/main/java/dev/soundceiling/app/SimpleModeView.java"
+rep(simple,
+'import android.content.Context;\nimport android.content.Intent;\nimport android.provider.Settings;\n',
+'import android.content.ClipData;\nimport android.content.ClipboardManager;\nimport android.content.Context;\nimport android.content.Intent;\nimport android.content.pm.PackageManager;\nimport android.provider.Settings;\n', "simple imports")
+rep(simple,
+'    private final TextView globalStatus, linkedHint, lowerLabel, upperLabel, safetyLabel, normalizeLabel;\n    private final SeekBar lowerSeek, upperSeek, safetySeek;\n    private final Button startStop;\n    private final Button sourceAccess;\n',
+'    private final TextView globalStatus, linkedHint, lowerLabel, upperLabel, safetyLabel, normalizeLabel;\n    private final TextView sessionDspSetupStatus;\n    private final SeekBar lowerSeek, upperSeek, safetySeek;\n    private final Button startStop;\n    private final Button sourceAccess;\n    private final Button copySessionDspCommand;\n', "simple fields")
+rep(simple,
+'        root.addView(statusCard, statusLp);\n\n        sourceAccess = new Button(context);\n',
+'        root.addView(statusCard, statusLp);\n\n        sessionDspSetupStatus = secondary("", 13);\n        sessionDspSetupStatus.setPadding(0, dp(2), 0, dp(6));\n        root.addView(sessionDspSetupStatus);\n        copySessionDspCommand = new Button(context);\n        copySessionDspCommand.setAllCaps(false);\n        copySessionDspCommand.setText("Копировать команду Enhanced Session DSP");\n        copySessionDspCommand.setOnClickListener(v -> copyEnhancedSessionCommand());\n        LinearLayout.LayoutParams setupLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50));\n        setupLp.bottomMargin = dp(8);\n        root.addView(copySessionDspCommand, setupLp);\n\n        sourceAccess = new Button(context);\n', "simple setup block")
+rep(simple,
+'    private SimpleModeModel model() {\n        boolean active = runtime.dspTransportCapability\n                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;\n        return new SimpleModeModel(Prefs.outputCeilings(getContext()), curve, active,\n                Prefs.globalDspEnabled(getContext()), active);\n    }\n',
+'    private SimpleModeModel model() {\n        boolean verified = runtime.sessionDspActive\n                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_POLICY_SCOPED\n                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;\n        boolean globalMixActive = runtime.dspTransportCapability\n                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;\n        return new SimpleModeModel(Prefs.outputCeilings(getContext()), curve, verified,\n                Prefs.globalDspEnabled(getContext()), globalMixActive);\n    }\n', "simple model")
+rep(simple,
+'        sourceAccess.setVisibility(runtime.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING\n                ? View.VISIBLE : View.GONE);\n        refreshSharedControls();\n',
+'        sourceAccess.setVisibility(runtime.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING\n                ? View.VISIBLE : View.GONE);\n        refreshEnhancedSessionSetup();\n        refreshSharedControls();\n', "simple render")
+rep(simple,
+'    private void updateSafetyLabel(int percent) {\n',
+'    private void refreshEnhancedSessionSetup() {\n        boolean granted = getContext().checkSelfPermission(EnhancedSessionSetup.DUMP_PERMISSION)\n                == PackageManager.PERMISSION_GRANTED;\n        if (!granted) {\n            sessionDspSetupStatus.setText(EnhancedSessionSetup.REQUIRED_STATUS + "\\n"\n                    + EnhancedSessionSetup.ADB_GRANT_COMMAND);\n            copySessionDspCommand.setVisibility(View.VISIBLE);\n            return;\n        }\n        copySessionDspCommand.setVisibility(View.GONE);\n        sessionDspSetupStatus.setText(runtime.running ? StatusText.sessionDsp(runtime)\n                : "Enhanced Session DSP permission granted · session discovery starts with playback");\n    }\n\n    private void copyEnhancedSessionCommand() {\n        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);\n        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(\n                "SoundCeiling Enhanced Session DSP", EnhancedSessionSetup.ADB_GRANT_COMMAND));\n    }\n\n    private void updateSafetyLabel(int percent) {\n', "simple methods")
 
-          simple='app/src/main/java/dev/soundceiling/app/SimpleModeView.java'
-          rep(simple,
-          '''import android.content.Context;
-import android.content.Intent;
-import android.provider.Settings;
-''',
-          '''import android.content.ClipData;
-import android.content.ClipboardManager;
-import android.content.Context;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.provider.Settings;
-''','simple imports')
-          rep(simple,
-          '''    private final TextView globalStatus, linkedHint, lowerLabel, upperLabel, safetyLabel, normalizeLabel;
-    private final SeekBar lowerSeek, upperSeek, safetySeek;
-    private final Button startStop;
-    private final Button sourceAccess;
-''',
-          '''    private final TextView globalStatus, linkedHint, lowerLabel, upperLabel, safetyLabel, normalizeLabel;
-    private final TextView sessionDspSetupStatus;
-    private final SeekBar lowerSeek, upperSeek, safetySeek;
-    private final Button startStop;
-    private final Button sourceAccess;
-    private final Button copySessionDspCommand;
-''','simple fields')
-          rep(simple,
-          '''        root.addView(statusCard, statusLp);
-
-        sourceAccess = new Button(context);
-''',
-          '''        root.addView(statusCard, statusLp);
-
-        sessionDspSetupStatus = secondary("", 13);
-        sessionDspSetupStatus.setPadding(0, dp(2), 0, dp(6));
-        root.addView(sessionDspSetupStatus);
-        copySessionDspCommand = new Button(context);
-        copySessionDspCommand.setAllCaps(false);
-        copySessionDspCommand.setText("Копировать команду Enhanced Session DSP");
-        copySessionDspCommand.setOnClickListener(v -> copyEnhancedSessionCommand());
-        LinearLayout.LayoutParams setupLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50));
-        setupLp.bottomMargin = dp(8);
-        root.addView(copySessionDspCommand, setupLp);
-
-        sourceAccess = new Button(context);
-''','simple setup block')
-          rep(simple,
-          '''    private SimpleModeModel model() {
-        boolean active = runtime.dspTransportCapability
-                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
-        return new SimpleModeModel(Prefs.outputCeilings(getContext()), curve, active,
-                Prefs.globalDspEnabled(getContext()), active);
-    }
-''',
-          '''    private SimpleModeModel model() {
-        boolean verified = runtime.sessionDspActive
-                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_POLICY_SCOPED
-                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
-        boolean globalMixActive = runtime.dspTransportCapability
-                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
-        return new SimpleModeModel(Prefs.outputCeilings(getContext()), curve, verified,
-                Prefs.globalDspEnabled(getContext()), globalMixActive);
-    }
-''','simple model')
-          rep(simple,
-          '''        sourceAccess.setVisibility(runtime.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING
-                ? View.VISIBLE : View.GONE);
-        refreshSharedControls();
-''',
-          '''        sourceAccess.setVisibility(runtime.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING
-                ? View.VISIBLE : View.GONE);
-        refreshEnhancedSessionSetup();
-        refreshSharedControls();
-''','simple render')
-          rep(simple,
-          '''    private void updateSafetyLabel(int percent) {
-''',
-          '''    private void refreshEnhancedSessionSetup() {
-        boolean granted = getContext().checkSelfPermission(EnhancedSessionSetup.DUMP_PERMISSION)
-                == PackageManager.PERMISSION_GRANTED;
-        if (!granted) {
-            sessionDspSetupStatus.setText(EnhancedSessionSetup.REQUIRED_STATUS + "\n"
-                    + EnhancedSessionSetup.ADB_GRANT_COMMAND);
-            copySessionDspCommand.setVisibility(View.VISIBLE);
-            return;
-        }
-        copySessionDspCommand.setVisibility(View.GONE);
-        sessionDspSetupStatus.setText(runtime.running ? StatusText.sessionDsp(runtime)
-                : "Enhanced Session DSP permission granted · session discovery starts with playback");
-    }
-
-    private void copyEnhancedSessionCommand() {
-        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
-        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(
-                "SoundCeiling Enhanced Session DSP", EnhancedSessionSetup.ADB_GRANT_COMMAND));
-    }
-
-    private void updateSafetyLabel(int percent) {
-''','simple methods')
-
-          adv='app/src/main/java/dev/soundceiling/app/AdvancedModeView.java'
-          rep(adv,
-          '''import android.app.AlertDialog;
-import android.content.Context;
-import android.graphics.Typeface;
-''',
-          '''import android.app.AlertDialog;
-import android.content.ClipData;
-import android.content.ClipboardManager;
-import android.content.Context;
-import android.content.pm.PackageManager;
-import android.graphics.Typeface;
-''','advanced imports')
-          rep(adv,
-          '''    private final TextView modeInfo, profileInfo, liveDetails, decisionDetails, globalDspStatus, linkedLockHint;
-    private final Button startStop;
-''',
-          '''    private final TextView modeInfo, profileInfo, liveDetails, decisionDetails, globalDspStatus, linkedLockHint;
-    private final TextView sessionDspSetupStatus;
-    private final Button copySessionDspCommand;
-    private final Button startStop;
-''','advanced fields')
-          rep(adv,
-          '''        statusCard = new StatusCardView(context); root.addView(statusCard,
-                new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-
-        section("Основной actuator");
-''',
-          '''        statusCard = new StatusCardView(context); root.addView(statusCard,
-                new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-
-        sessionDspSetupStatus = secondary("", 13);
-        sessionDspSetupStatus.setPadding(0, dp(8), 0, dp(6));
-        root.addView(sessionDspSetupStatus);
-        copySessionDspCommand = button("Копировать команду Enhanced Session DSP");
-        copySessionDspCommand.setOnClickListener(v -> copyEnhancedSessionCommand());
-        root.addView(copySessionDspCommand, fullButton());
-
-        section("Основной actuator");
-''','advanced setup block')
-          rep(adv,
-          '''        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderState(runtime);
-        refreshSharedOutputControls();
-''',
-          '''        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderState(runtime);
-        refreshEnhancedSessionSetup();
-        refreshSharedOutputControls();
-''','advanced render')
-          rep(adv,
-          '''    private SimpleModeModel outputModel() {
-        boolean active = runtime.dspTransportCapability
-                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
-        return new SimpleModeModel(Prefs.outputCeilings(getContext()),
-                new ControlVolumeCurve(streamMin, streamMax), active,
-                Prefs.globalDspEnabled(getContext()), active);
-    }
-''',
-          '''    private SimpleModeModel outputModel() {
-        boolean verified = runtime.sessionDspActive
-                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_POLICY_SCOPED
-                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
-        boolean globalMixActive = runtime.dspTransportCapability
-                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
-        return new SimpleModeModel(Prefs.outputCeilings(getContext()),
-                new ControlVolumeCurve(streamMin, streamMax), verified,
-                Prefs.globalDspEnabled(getContext()), globalMixActive);
-    }
-''','advanced model')
-          rep(adv,
-          '''    private void refreshSharedOutputControls() {
-''',
-          '''    private void refreshEnhancedSessionSetup() {
-        boolean granted = getContext().checkSelfPermission(EnhancedSessionSetup.DUMP_PERMISSION)
-                == PackageManager.PERMISSION_GRANTED;
-        if (!granted) {
-            sessionDspSetupStatus.setText(EnhancedSessionSetup.REQUIRED_STATUS + "\n"
-                    + EnhancedSessionSetup.ADB_GRANT_COMMAND);
-            copySessionDspCommand.setVisibility(View.VISIBLE);
-            return;
-        }
-        copySessionDspCommand.setVisibility(View.GONE);
-        sessionDspSetupStatus.setText(runtime.running ? StatusText.sessionDsp(runtime)
-                : "Enhanced Session DSP permission granted · session discovery starts with playback");
-    }
-
-    private void copyEnhancedSessionCommand() {
-        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
-        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(
-                "SoundCeiling Enhanced Session DSP", EnhancedSessionSetup.ADB_GRANT_COMMAND));
-    }
-
-    private void refreshSharedOutputControls() {
-''','advanced methods')
-          PY
+adv = "app/src/main/java/dev/soundceiling/app/AdvancedModeView.java"
+rep(adv,
+'import android.app.AlertDialog;\nimport android.content.Context;\nimport android.graphics.Typeface;\n',
+'import android.app.AlertDialog;\nimport android.content.ClipData;\nimport android.content.ClipboardManager;\nimport android.content.Context;\nimport android.content.pm.PackageManager;\nimport android.graphics.Typeface;\n', "advanced imports")
+rep(adv,
+'    private final TextView modeInfo, profileInfo, liveDetails, decisionDetails, globalDspStatus, linkedLockHint;\n    private final Button startStop;\n',
+'    private final TextView modeInfo, profileInfo, liveDetails, decisionDetails, globalDspStatus, linkedLockHint;\n    private final TextView sessionDspSetupStatus;\n    private final Button copySessionDspCommand;\n    private final Button startStop;\n', "advanced fields")
+rep(adv,
+'        statusCard = new StatusCardView(context); root.addView(statusCard,\n                new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));\n\n        section("Основной actuator");\n',
+'        statusCard = new StatusCardView(context); root.addView(statusCard,\n                new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));\n\n        sessionDspSetupStatus = secondary("", 13);\n        sessionDspSetupStatus.setPadding(0, dp(8), 0, dp(6));\n        root.addView(sessionDspSetupStatus);\n        copySessionDspCommand = button("Копировать команду Enhanced Session DSP");\n        copySessionDspCommand.setOnClickListener(v -> copyEnhancedSessionCommand());\n        root.addView(copySessionDspCommand, fullButton());\n\n        section("Основной actuator");\n', "advanced setup block")
+rep(adv,
+'        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderState(runtime);\n        refreshSharedOutputControls();\n',
+'        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderState(runtime);\n        refreshEnhancedSessionSetup();\n        refreshSharedOutputControls();\n', "advanced render")
+rep(adv,
+'    private SimpleModeModel outputModel() {\n        boolean active = runtime.dspTransportCapability\n                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;\n        return new SimpleModeModel(Prefs.outputCeilings(getContext()),\n                new ControlVolumeCurve(streamMin, streamMax), active,\n                Prefs.globalDspEnabled(getContext()), active);\n    }\n',
+'    private SimpleModeModel outputModel() {\n        boolean verified = runtime.sessionDspActive\n                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_POLICY_SCOPED\n                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;\n        boolean globalMixActive = runtime.dspTransportCapability\n                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;\n        return new SimpleModeModel(Prefs.outputCeilings(getContext()),\n                new ControlVolumeCurve(streamMin, streamMax), verified,\n                Prefs.globalDspEnabled(getContext()), globalMixActive);\n    }\n', "advanced model")
+rep(adv,
+'    private void refreshSharedOutputControls() {\n',
+'    private void refreshEnhancedSessionSetup() {\n        boolean granted = getContext().checkSelfPermission(EnhancedSessionSetup.DUMP_PERMISSION)\n                == PackageManager.PERMISSION_GRANTED;\n        if (!granted) {\n            sessionDspSetupStatus.setText(EnhancedSessionSetup.REQUIRED_STATUS + "\\n"\n                    + EnhancedSessionSetup.ADB_GRANT_COMMAND);\n            copySessionDspCommand.setVisibility(View.VISIBLE);\n            return;\n        }\n        copySessionDspCommand.setVisibility(View.GONE);\n        sessionDspSetupStatus.setText(runtime.running ? StatusText.sessionDsp(runtime)\n                : "Enhanced Session DSP permission granted · session discovery starts with playback");\n    }\n\n    private void copyEnhancedSessionCommand() {\n        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);\n        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(\n                "SoundCeiling Enhanced Session DSP", EnhancedSessionSetup.ADB_GRANT_COMMAND));\n    }\n\n    private void refreshSharedOutputControls() {\n', "advanced methods")
+' | base64 -d > /tmp/v077_patch.py
+          python3 /tmp/v077_patch.py
           bash ./scripts/check-v077-android-wiring-contract.sh
           bash ./scripts/run-v077-session-telemetry-tests.sh
           bash ./scripts/run-v077-samsung-3of15-tests.sh
