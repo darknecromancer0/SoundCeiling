@@ -44,6 +44,7 @@ public final class NormalizerControlCoordinator {
         private final float transientSignalDb;
         private final boolean transientEvidence;
         private final boolean calibrationProfileValid;
+        private final boolean ordinaryMediaFallbackAllowed;
 
         private Frame(Builder b) {
             atMs = Math.max(0L, b.atMs);
@@ -84,6 +85,7 @@ public final class NormalizerControlCoordinator {
             transientSignalDb = b.transientSignalDb;
             transientEvidence = b.transientEvidence;
             calibrationProfileValid = b.calibrationProfileValid;
+            ordinaryMediaFallbackAllowed = b.ordinaryMediaFallbackAllowed;
         }
 
         public static final class Builder {
@@ -118,6 +120,7 @@ public final class NormalizerControlCoordinator {
             private float transientSignalDb = Float.NaN;
             private boolean transientEvidence;
             private boolean calibrationProfileValid = true;
+            private boolean ordinaryMediaFallbackAllowed = true;
 
             public Builder(long atMs, int previousMediaIndex, int currentMediaIndex,
                            ControlVolumeCurve routeCurve) {
@@ -162,6 +165,9 @@ public final class NormalizerControlCoordinator {
             }
             public Builder calibrationProfileValid(boolean value) {
                 calibrationProfileValid = value; return this;
+            }
+            public Builder ordinaryMediaFallbackAllowed(boolean value) {
+                ordinaryMediaFallbackAllowed = value; return this;
             }
             public Frame build() { return new Frame(this); }
         }
@@ -303,6 +309,29 @@ public final class NormalizerControlCoordinator {
             return record(ControlCommand.none("source_control_disabled"), plan.desiredCorrectionDb(),
                     frame, programActive, transientEvent.severity);
         }
+
+        // v0.7.7: missing Session DSP is a HOLD for ordinary normalization. Samsung Media stays
+        // the user's master. Only a proven hard output-peak violation may use Media as emergency
+        // attenuation, in addition to the independent hard Media cap and Quiet Now paths above.
+        if (!frame.ordinaryMediaFallbackAllowed) {
+            if (frame.outputLevels.outputPeakViolates(frame.hardPeakCeilingDbfs)) {
+                float excessDb = frame.outputLevels.projectedOutputPeakDbfs
+                        - frame.hardPeakCeilingDbfs;
+                float desiredRouteGainDb = frame.mediaGainDb - Math.max(0f, excessDb);
+                int emergencyIndex = frame.routeCurve.bestIndexAtOrBelowGain(
+                        desiredRouteGainDb, frame.currentMediaIndex);
+                if (emergencyIndex < frame.currentMediaIndex) {
+                    return record(ControlCommand.mediaIndex(emergencyIndex,
+                                    "session_dsp_hard_peak_safety",
+                                    ControlCommand.Provenance.HARD_PEAK_SAFETY),
+                            plan.desiredCorrectionDb(), frame, programActive,
+                            transientEvent.severity);
+                }
+            }
+            return record(ControlCommand.none("session_dsp_unavailable"),
+                    plan.desiredCorrectionDb(), frame, programActive, transientEvent.severity);
+        }
+
         if (mediaAnchorState.userAuthorityHoldActive(frame.atMs)) {
             return record(ControlCommand.none("user_master_anchor_hold"), plan.desiredCorrectionDb(),
                     frame, programActive, transientEvent.severity);

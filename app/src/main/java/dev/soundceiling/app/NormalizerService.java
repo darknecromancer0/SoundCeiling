@@ -63,6 +63,7 @@ public class NormalizerService extends Service {
     private String controlProfileFingerprint = "";
     private GlobalVisualizerBackend visualizer;
     private OptionalDspController optionalDsp;
+    private EnhancedSessionDspRuntime enhancedSessionDsp;
     private AudioBackendStatus backendStatus = new AudioBackendStatus(
             AudioBackendStatus.Tier.MEDIA_ONLY, true, "not_started");
     private boolean fastOnlyMode;
@@ -115,6 +116,8 @@ public class NormalizerService extends Service {
         systemStreams = new SystemStreamController(audio);
         visualizer = new GlobalVisualizerBackend();
         optionalDsp = new OptionalDspController();
+        enhancedSessionDsp = new EnhancedSessionDspRuntime(
+                new DumpAudioSessionDiscovery(this), optionalDsp);
         hybridRuntime = new HybridRuntimeResolver(this, audio);
         hybridRuntime.start();
         refreshControlSettings(SystemClock.elapsedRealtime(), true);
@@ -220,7 +223,9 @@ public class NormalizerService extends Service {
     private synchronized void switchToFallback(String reason) {
         if (!workerRunning.get()) return;
         if (pcmCapture != null) {
-            if (optionalDsp != null) optionalDsp.onCaptureReplaced();
+            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
+            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
+        if (optionalDsp != null) optionalDsp.onCaptureReplaced();
             pcmCapture.close();
             pcmCapture = null;
         }
@@ -308,9 +313,12 @@ public class NormalizerService extends Service {
             hybridSnapshot = hybridRuntime.resolvePcm(pcmCapture, true, signal, outputMixEvidence,
                     controlProfile, deviceProfile, now);
             if (optionalDsp != null) {
-                updateGlobalDspVerification(blockRms, signal, outputMix.rmsDbfs, outputMixEvidence,
-                        signal && hybridSnapshot.playback.active, current, now);
-                optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, globalDspPreference);
+                enhancedSessionDsp.update(hybridSnapshot, blockRms, signal,
+                        outputMix.rmsDbfs, outputMixEvidence, current,
+                        DeviceDetector.key(currentDevice), globalDspPreference, now);
+                // v0.7.7 normal runtime is policy-scoped non-zero session DSP. Session-zero global
+                // mix remains diagnostic/historical code and receives no runtime authority here.
+                optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, false);
             }
             ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
             boolean verifiedDsp = optionalDsp != null
@@ -376,7 +384,9 @@ public class NormalizerService extends Service {
     private boolean rebindCaptureOnWorker(CaptureRequestCoordinator.Decision decision, long now) {
         if (decision == null || decision.action == CaptureRequestCoordinator.Action.KEEP) return true;
         if (decision.action == CaptureRequestCoordinator.Action.CLOSE) {
-            if (optionalDsp != null) optionalDsp.onCaptureReplaced();
+            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
+            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
+        if (optionalDsp != null) optionalDsp.onCaptureReplaced();
             if (pcmCapture != null) {
                 pcmCapture.close();
                 pcmCapture = null;
@@ -393,6 +403,7 @@ public class NormalizerService extends Service {
             return false;
         }
 
+        if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
         if (optionalDsp != null) optionalDsp.onCaptureReplaced();
         PcmCaptureBackend previous = pcmCapture;
         pcmCapture = null;
@@ -484,9 +495,9 @@ public class NormalizerService extends Service {
             hybridSnapshot = hybridRuntime.resolveFallback(reading.levelAvailable, controlProfile,
                     deviceProfile, detectedAt);
             if (optionalDsp != null) {
-                updateGlobalDspVerification(Float.NaN, false, fallbackRms, reading.levelAvailable,
-                        signal && hybridSnapshot.playback.active, current, detectedAt);
-                optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, globalDspPreference);
+                // No exact PCM reference exists in fallback mode, so v0.7.7 cannot establish a
+                // new third-party session DSP proof here. Safety paths remain available.
+                optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, false);
             }
             ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
             boolean verifiedDsp = optionalDsp != null
@@ -617,8 +628,8 @@ public class NormalizerService extends Service {
                 .calibrationProfileValid(!Prefs.splMode(this) || currentProfile != null)
                 .verifiedDsp(optionalDsp != null
                         && isVerifiedDspCapability(optionalDsp.capability()))
-                .globalMixDsp(optionalDsp != null && globalDspPreference
-                        && optionalDsp.capability() == DspTransport.Capability.VERIFIED_GLOBAL_MIX)
+                .globalMixDsp(false)
+                .ordinaryMediaFallbackAllowed(false)
                 .observation(coordinatorObservation(observed), coordinatorOrigin(observed))
                 .build();
     }
@@ -835,7 +846,9 @@ public class NormalizerService extends Service {
 
     private String actuatorTier(ControlCommand command, String reason) {
         if (command != null) {
-            if (command.kind() == ControlCommand.Kind.DSP_GAIN) return "DSP";
+            if (command.kind() == ControlCommand.Kind.DSP_GAIN)
+                return optionalDsp != null && optionalDsp.enhancedSessionId() > 0
+                        ? "SESSION_DSP" : "DSP";
             if (command.provenance() == ControlCommand.Provenance.COARSE_MEDIA
                     || command.provenance() == ControlCommand.Provenance.DEBT_RECOVERY) {
                 return "COARSE_MEDIA";
@@ -847,6 +860,7 @@ public class NormalizerService extends Service {
             }
         }
         if (reason != null && reason.startsWith("coarse_")) return "COARSE_MEDIA";
+        if (optionalDsp != null && optionalDsp.enhancedSessionId() > 0) return "SESSION_DSP";
         return optionalDsp != null && isVerifiedDspCapability(optionalDsp.capability())
                 ? "DSP" : "SAFETY_ONLY";
     }
@@ -966,6 +980,7 @@ public class NormalizerService extends Service {
         if (!force && fingerprint.equals(controlProfileFingerprint)) return;
         boolean globalChanged = nextGlobalDsp != globalDspPreference;
         if (optionalDsp != null && !controlProfileFingerprint.isEmpty()) {
+            if (enhancedSessionDsp != null) enhancedSessionDsp.onPolicyChanged();
             optionalDsp.onPolicyChanged();
             resetGlobalDifferentialState();
         }
@@ -1287,6 +1302,8 @@ public class NormalizerService extends Service {
         String oldKey = currentDevice == null ? "" : DeviceDetector.key(currentDevice);
         String newKey = DeviceDetector.key(detected);
         if (force || !oldKey.equals(newKey)) {
+            if (enhancedSessionDsp != null && !oldKey.isEmpty())
+                enhancedSessionDsp.onPolicyChanged();
             if (optionalDsp != null && !oldKey.isEmpty()) optionalDsp.onRouteChanged();
             resetGlobalDifferentialState();
             globalProbeSuppressedForRoute = false;
@@ -1408,6 +1425,7 @@ public class NormalizerService extends Service {
         workerRunning.set(false);
         controlCoordinator.onStopped();
         resetGlobalDifferentialState();
+        if (enhancedSessionDsp != null) enhancedSessionDsp.onStopped();
         if (optionalDsp != null) optionalDsp.onServiceStopped();
         DiagnosticLog.event("service_stop", "reason=" + clean(reason));
         if (worker != null && worker != Thread.currentThread()) worker.interrupt();
@@ -1441,6 +1459,7 @@ public class NormalizerService extends Service {
         workerRunning.set(false);
         controlCoordinator.onStopped();
         resetGlobalDifferentialState();
+        if (enhancedSessionDsp != null) enhancedSessionDsp.onStopped();
         if (optionalDsp != null) optionalDsp.onServiceStopped();
         if (worker != null) worker.interrupt();
         if (pcmCapture != null) pcmCapture.close();
