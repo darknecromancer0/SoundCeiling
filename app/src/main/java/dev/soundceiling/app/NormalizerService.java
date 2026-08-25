@@ -224,7 +224,6 @@ public class NormalizerService extends Service {
         if (!workerRunning.get()) return;
         if (pcmCapture != null) {
             if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
-            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
         if (optionalDsp != null) optionalDsp.onCaptureReplaced();
             pcmCapture.close();
             pcmCapture = null;
@@ -384,7 +383,6 @@ public class NormalizerService extends Service {
     private boolean rebindCaptureOnWorker(CaptureRequestCoordinator.Decision decision, long now) {
         if (decision == null || decision.action == CaptureRequestCoordinator.Action.KEEP) return true;
         if (decision.action == CaptureRequestCoordinator.Action.CLOSE) {
-            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
             if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
         if (optionalDsp != null) optionalDsp.onCaptureReplaced();
             if (pcmCapture != null) {
