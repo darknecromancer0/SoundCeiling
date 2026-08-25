@@ -72,6 +72,9 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 "Engine: %s\nCapture: %s · signal: %s · PCM: %s\n"
                         + "Source: %s · package: %s · sourceConfidence: %s · access: %s · rule: %s\n"
                         + "meteringCapability: %s\nЧастотный спектр: %s · age %d ms\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
+                        + "Enhanced Session permission: %s\n"
+                        + "Session DSP: %s · session=%d · uid=%d · package=%s\n"
+                        + "Session gain: requested=%+.2f dB · applied=%+.2f dB · reason=%s\n"
                         + "Downgrade reason: %s\nRoute: %s · Device profile: %s\n"
                         + "Media: %d/%d · effective max: %d\n"
                         + "Raw Peak %.1f dBFS · LUFS-like %.1f · reaction %s\nLog: %s",
@@ -82,6 +85,11 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 state.sourceConfidence, state.sourceAccessState, state.appRuleLabel,
                 state.meteringCapability, spectrumSource(state), state.meterAgeMs,
                 state.volumeControlCapability, state.dspTransportCapability,
+                state.enhancedSessionPermissionGranted ? "granted" : "missing",
+                state.sessionDspActive ? "ACTIVE" : "inactive", state.sessionId, state.sessionUid,
+                state.sessionPackage.isEmpty() ? "—" : state.sessionPackage,
+                state.sessionDspRequestedGainDb, state.sessionDspAppliedGainDb,
+                state.sessionDspReason.isEmpty() ? "—" : state.sessionDspReason,
                 state.downgradeReason.isEmpty() ? "—" : state.downgradeReason,
                 state.routeLabel.isEmpty() ? "—" : state.routeLabel,
                 state.profileName.isEmpty() ? "—" : state.profileName,
