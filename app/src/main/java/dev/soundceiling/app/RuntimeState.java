@@ -45,6 +45,12 @@ final class RuntimeState {
     final float desiredGainDb, appliedGainDb, projectedPeakDbfs, controlLoudnessDb;
     final float lowerOutputCeilingDb, upperOutputCeilingDb, routeStepGainDb;
 
+    // v0.7.7 Enhanced Session DSP setup and bound-session telemetry.
+    final boolean enhancedSessionPermissionGranted, sessionDspActive;
+    final int sessionId, sessionUid;
+    final String sessionPackage, sessionDspReason;
+    final float sessionDspRequestedGainDb, sessionDspAppliedGainDb;
+
     private final float[] bandLevels;
     private final DiagnosticItem[] diagnostics;
 
@@ -85,6 +91,15 @@ final class RuntimeState {
         projectedPeakDbfs=b.projectedPeakDbfs; controlLoudnessDb=b.controlLoudnessDb;
         lowerOutputCeilingDb=b.lowerOutputCeilingDb; upperOutputCeilingDb=b.upperOutputCeilingDb;
         routeStepGainDb=b.routeStepGainDb;
+        enhancedSessionPermissionGranted=b.enhancedSessionPermissionGranted;
+        sessionId=b.sessionId > 0 ? b.sessionId : -1;
+        sessionUid=b.sessionUid > 0 ? b.sessionUid : -1;
+        sessionDspActive=b.sessionDspActive && sessionId > 0;
+        sessionPackage=n(b.sessionPackage); sessionDspReason=n(b.sessionDspReason);
+        sessionDspRequestedGainDb=Float.isFinite(b.sessionDspRequestedGainDb)
+                ? b.sessionDspRequestedGainDb : 0f;
+        sessionDspAppliedGainDb=Float.isFinite(b.sessionDspAppliedGainDb)
+                ? b.sessionDspAppliedGainDb : 0f;
         bandLevels=b.bandLevels.clone(); diagnostics=b.diagnostics.clone();
     }
 
@@ -123,6 +138,9 @@ final class RuntimeState {
                         projectedPeakDbfs, controlLoudnessDb, captureReferenceMode, linkedCeilings,
                         lowerOutputCeilingDb, upperOutputCeilingDb, routeStepGainDb, programActive,
                         directionDwell)
+                .enhancedSession(enhancedSessionPermissionGranted, sessionDspActive, sessionId,
+                        sessionUid, sessionPackage, sessionDspRequestedGainDb,
+                        sessionDspAppliedGainDb, sessionDspReason)
                 .bandLevels(bandLevels).diagnostics(items);
         return b.build();
     }
@@ -165,6 +183,10 @@ final class RuntimeState {
         float desiredGainDb, appliedGainDb, projectedPeakDbfs=Float.NaN, controlLoudnessDb=Float.NaN;
         float lowerOutputCeilingDb=OutputCeilingState.DEFAULT_DB;
         float upperOutputCeilingDb=OutputCeilingState.DEFAULT_DB, routeStepGainDb;
+        boolean enhancedSessionPermissionGranted, sessionDspActive;
+        int sessionId=-1, sessionUid=-1;
+        String sessionPackage="", sessionDspReason="not_discovered";
+        float sessionDspRequestedGainDb, sessionDspAppliedGainDb;
         float[] bandLevels=new float[5];
         DiagnosticItem[] diagnostics=new DiagnosticItem[0];
 
@@ -230,6 +252,14 @@ final class RuntimeState {
             controlLoudnessDb=loudness; captureReferenceMode=captureMode; linkedCeilings=linked;
             lowerOutputCeilingDb=lowerCeiling; upperOutputCeilingDb=upperCeiling;
             routeStepGainDb=routeStepGain; programActive=active; directionDwell=dwell; return this;
+        }
+        Builder enhancedSession(boolean permissionGranted, boolean active, int id, int uid,
+                                String pkg, float requestedGainDb, float appliedGainDb,
+                                String reason) {
+            enhancedSessionPermissionGranted=permissionGranted; sessionDspActive=active;
+            sessionId=id; sessionUid=uid; sessionPackage=pkg;
+            sessionDspRequestedGainDb=requestedGainDb; sessionDspAppliedGainDb=appliedGainDb;
+            sessionDspReason=reason; return this;
         }
         Builder bandLevels(float[] v){bandLevels=v==null?new float[5]:v.clone();return this;}
         Builder diagnostics(List<DiagnosticItem> v){diagnostics=v==null?new DiagnosticItem[0]:v.toArray(new DiagnosticItem[0]);return this;}
