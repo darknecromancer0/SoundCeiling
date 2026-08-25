@@ -3,6 +3,7 @@ package dev.soundceiling.app;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 /** Pure fail-closed bridge from raw session evidence to one exact playback-source-owned session. */
 final class AudioSessionOwnershipResolver {
@@ -33,6 +34,11 @@ final class AudioSessionOwnershipResolver {
         static Decision accept(AudioSessionRecord record, SourceDescriptor source) {
             return new Decision(true, record.sessionId, record.uid, source.packageName,
                     "exact_uid_session", record.observedAtMs);
+        }
+
+        Optional<DspEndpointHandle> toDspHandle(String policyKey, AppPolicy currentPolicy) {
+            return DspEndpointHandle.tryCreateEnhanced(sessionId, uid, packageName,
+                    accepted, policyKey, currentPolicy);
         }
     }
 
