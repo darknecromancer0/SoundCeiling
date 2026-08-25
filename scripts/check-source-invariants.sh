@@ -51,7 +51,7 @@ grep -Fq 'transientGuard.onPlaybackState' "$PKG/NormalizerControlCoordinator.jav
   echo "NormalizerControlCoordinator must feed playback state to TransientGuard" >&2; exit 1; }
 grep -Fq 'calibrationProfileValid' "$PKG/NormalizerControlCoordinator.java" || {
   echo "NormalizerControlCoordinator must own calibration-profile evidence" >&2; exit 1; }
-grep -Fq '&& frame.calibrationProfileValid' "$PKG/NormalizerControlCoordinator.java" || {
+grep -Fq '|| !frame.calibrationProfileValid' "$PKG/NormalizerControlCoordinator.java" || {
   echo "NormalizerControlCoordinator must gate positive control on calibration evidence" >&2; exit 1; }
 grep -Fq 'missing_spl_profile' "$PKG/NormalizerControlCoordinator.java" || {
   echo "NormalizerControlCoordinator must publish missing_spl_profile fail-closed reason" >&2; exit 1; }
