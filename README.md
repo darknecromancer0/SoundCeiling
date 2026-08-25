@@ -1,6 +1,17 @@
-# Sound Ceiling for Android - v0.7.6.3
+# Sound Ceiling for Android - v0.7.7
 
-SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.6.3 is a Samsung DSP attach-evidence corrective built on the **Control Architecture Reset** from v0.7.6, the DSP attach safety work from v0.7.6.1, and the output-domain correction from v0.7.6.2.
+SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.7 moves ordinary normalization to verified **Enhanced Session DSP** on an exact non-zero audio session while keeping the Samsung Media slider as the user master anchor.
+
+## v0.7.7 Enhanced Session DSP
+
+- **Non-zero session authority.** Ordinary normalization may use DSP only after SoundCeiling discovers exactly one active non-zero audio session owned by the exact playback UID and verifies its audible differential response. Session 0 is not the v0.7.7 normalizer target.
+- **Samsung Media remains user authority.** Media **3/15** is a first-class user anchor. Ordinary normalization must not pull the Samsung slider away from 3/15, 2/15, or another manual step. With verified Session DSP, correction is continuous DSP gain; without it, ordinary normalization holds.
+- **One-time no-root setup.** Enhanced Session DSP discovery requires the Android DUMP permission granted once from ADB: `adb shell pm grant dev.soundceiling.app android.permission.DUMP`. Simple and Advanced modes expose setup status and a copyable command.
+- **Fail-closed transport.** A stale, ambiguous, non-neutral, unresponsive, or failed session transport is released. A failed gain apply revokes Session DSP authority and returns ordinary control to HOLD rather than reviving target-chasing Media fallback.
+- **Diagnostics expose the real actuator.** Runtime state and logs include session ID, UID, package, requested/applied gain, reason, and `session_dsp_apply`.
+- Historical Safety Maximum, Quiet Now, source-policy gates, user-master anchor, debt-only recovery, stop/restart protection, and v0.7.6.x output-domain safety contracts remain intact.
+
+Samsung physical acceptance: `docs/field-tests/2026-08-25-v0.7.7-samsung-checklist.md`.
 
 ## v0.7.6.3 Samsung DSP attach evidence corrective
 
@@ -74,6 +85,6 @@ Playback-capture/log persistence continues to use the existing **MediaStore**/SA
 
 ## Build and verification
 
-Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, the v0.7.6 architecture contract, the v0.7.6.1 DSP safety contract, the v0.7.6.2 output-domain contract, the v0.7.6.3 DSP attach-evidence and release contracts, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
+Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, the v0.7.6 architecture contract, the v0.7.6.1 DSP safety contract, the v0.7.6.2 output-domain contract, the v0.7.6.3 DSP attach-evidence and release contracts, the v0.7.7 Samsung 3/15 authority regression, Session DSP telemetry, Android wiring and release contracts, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
 
-Release artifact: **`SoundCeiling-v0.7.6.3-debug-apk`**, containing `app-debug.apk`.
+Release artifact: **`SoundCeiling-v0.7.7-debug-apk`**, containing `app-debug.apk`.
