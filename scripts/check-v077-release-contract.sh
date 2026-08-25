@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+R="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+need(){ grep -Fq -- "$2" "$1" || { echo "v0.7.7 release contract missing: $2" >&2; exit 1; }; }
+need "$R/app/build.gradle.kts" 'versionCode=24'
+need "$R/app/build.gradle.kts" 'versionName="0.7.7"'
+need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" 'android.permission.DUMP'
+need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" 'adb shell pm grant dev.soundceiling.app android.permission.DUMP'
+need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionDspRuntime.java" 'candidate.sessionId() <= 0'
+need "$R/app/src/main/java/dev/soundceiling/app/NormalizerService.java" 'session_dsp_apply'
+need "$R/app/src/main/java/dev/soundceiling/app/NormalizerService.java" 'session_dsp_apply_failed'
+need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/run-v077-samsung-3of15-tests.sh'
+need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/run-v077-session-telemetry-tests.sh'
+need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/check-v077-release-contract.sh'
+need "$R/.github/workflows/build-apk.yml" 'name: SoundCeiling-v0.7.7-debug-apk'
+need "$R/README.md" '# Sound Ceiling for Android - v0.7.7'
+need "$R/README.md" 'Enhanced Session DSP'
+need "$R/README.md" 'non-zero audio session'
+need "$R/README.md" '3/15'
+need "$R/README.md" 'adb shell pm grant dev.soundceiling.app android.permission.DUMP'
+need "$R/README.md" 'SoundCeiling-v0.7.7-debug-apk'
+need "$R/docs/field-tests/2026-08-25-v0.7.7-samsung-checklist.md" 'session_dsp_apply'
+need "$R/docs/field-tests/2026-08-25-v0.7.7-samsung-checklist.md" 'HOLD'
+need "$R/docs/field-tests/2026-08-25-v0.7.7-samsung-checklist.md" 'APK SHA-256'
+echo 'v0.7.7 release contract: PASS'
