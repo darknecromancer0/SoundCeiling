@@ -1,0 +1,53 @@
+name: Apply low-volume Global DSP contract fix
+on:
+  push:
+    branches: [ "feature/v0.7-adaptive-envelope" ]
+permissions:
+  contents: write
+jobs:
+  patch-source:
+    if: github.actor == 'darknecromancer0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/v0.7-adaptive-envelope
+          fetch-depth: 0
+      - name: Apply verified global mix UNKNOWN-source fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          coordinator = Path('app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java')
+          s = coordinator.read_text()
+          old = '''    private static boolean allowsPositiveControl(Frame frame) {\n        return frame.sourceControlEnabled && frame.policyAllowsPositiveGain\n                && frame.playbackEndpointActive && frame.observedPlaybackEndpoints > 0\n                && frame.sourceEvidence == EngineCapabilities.SourceIdentityConfidence.EXACT\n                && frame.calibrationProfileValid\n                && !frame.effectivePolicy.contains("unknown")\n                && !frame.effectivePolicy.contains("off");\n    }\n'''
+          new = '''    private static boolean allowsPositiveControl(Frame frame) {\n        if (!frame.sourceControlEnabled || !frame.policyAllowsPositiveGain\n                || !frame.playbackEndpointActive || frame.observedPlaybackEndpoints <= 0\n                || !frame.calibrationProfileValid || frame.effectivePolicy.contains("off")) {\n            return false;\n        }\n        // A verified policy-compatible global mix already carries route/scope authority.\n        // Package/source identity is only needed for scoped/per-app arbitration, not ordinary\n        // global normalization. This preserves the approved v0.7.1 contract for UNKNOWN media.\n        if (frame.verifiedDsp && frame.globalMixDsp) return true;\n        return frame.sourceEvidence == EngineCapabilities.SourceIdentityConfidence.EXACT\n                && !frame.effectivePolicy.contains("unknown");\n    }\n'''
+          if new not in s:
+              if old not in s: raise SystemExit('coordinator patch anchor missing')
+              coordinator.write_text(s.replace(old, new, 1))
+
+          test = Path('app/src/test/java/dev/soundceiling/app/V076ArchitectureRegressionPureTest.java')
+          t = test.read_text()
+          if 'globalMixDspUnknownSourceBoostsAtMediaThree();' not in t:
+              t = t.replace('        verifiedDspKeepsMediaFixed();\n        hardCapAndQuietRemainMediaSafety();',
+                            '        verifiedDspKeepsMediaFixed();\n        globalMixDspUnknownSourceBoostsAtMediaThree();\n        hardCapAndQuietRemainMediaSafety();', 1)
+          method = '''    private static void globalMixDspUnknownSourceBoostsAtMediaThree() {\n        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);\n        NormalizerControlCoordinator c = new NormalizerControlCoordinator();\n        float mediaGain = curve.gainDbForIndex(3);\n        OutputLevelModel.Snapshot quiet = OutputLevelModel.evaluate(\n                new OutputLevelModel.Input(-20f, -36f, mediaGain, 0f,\n                        CaptureReferenceEstimator.Mode.PRE_VOLUME,\n                        Float.NaN, Float.NaN, false));\n\n        for (long at : new long[]{900L, 930L}) {\n            c.onFrame(new NormalizerControlCoordinator.Frame.Builder(at, 3, 3, curve)\n                    .outputLevels(quiet).hardPeakCeilingDbfs(-2f).hardMediaCeilingIndex(3)\n                    .rawProgramActive(true)\n                    .effectivePolicy("global_unknown_source", true, true)\n                    .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.UNKNOWN)\n                    .playbackEndpoints(true, 1)\n                    .verifiedDsp(true).globalMixDsp(true)\n                    .build());\n        }\n\n        ControlCommand command = c.onFrame(new NormalizerControlCoordinator.Frame.Builder(1000, 3, 3, curve)\n                .outputLevels(quiet).hardPeakCeilingDbfs(-2f).hardMediaCeilingIndex(3)\n                .rawProgramActive(true)\n                .effectivePolicy("global_unknown_source", true, true)\n                .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.UNKNOWN)\n                .playbackEndpoints(true, 1)\n                .verifiedDsp(true).globalMixDsp(true)\n                .observation(NormalizerControlCoordinator.VolumeObservation.UNCHANGED,\n                        VolumeWriteOrigin.NORMALIZATION)\n                .build());\n\n        require(command.kind() == ControlCommand.Kind.DSP_GAIN && command.requestedGainDb() > 0f,\n                "verified global-mix DSP must boost quiet UNKNOWN source at Media 3/15");\n    }\n\n'''
+          if 'private static void globalMixDspUnknownSourceBoostsAtMediaThree()' not in t:
+              anchor = '    private static void hardCapAndQuietRemainMediaSafety() {\n'
+              if anchor not in t: raise SystemExit('test patch anchor missing')
+              t = t.replace(anchor, method + anchor, 1)
+          test.write_text(t)
+          PY
+      - name: Verify pure suite
+        run: ./scripts/run-pure-tests.sh
+      - name: Persist source fix
+        run: |
+          if git diff --quiet; then
+            echo "Source already patched"
+            exit 0
+          fi
+          git config user.name "darknecromancer0"
+          git config user.email "127566984+darknecromancer0@users.noreply.github.com"
+          git add app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java app/src/test/java/dev/soundceiling/app/V076ArchitectureRegressionPureTest.java
+          git commit -m "fix: allow verified global DSP for unknown media at low volume"
+          git push origin HEAD:feature/v0.7-adaptive-envelope
