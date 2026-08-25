@@ -19,12 +19,12 @@ jobs:
           from pathlib import Path
           p = Path('app/src/main/java/dev/soundceiling/app/NormalizerService.java')
           s = p.read_text()
-          bad = '''        if (decision.action == CaptureRequestCoordinator.Action.CLOSE) {\n            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n        if (optionalDsp != null) optionalDsp.onCaptureReplaced();\n'''
-          good = '''        if (decision.action == CaptureRequestCoordinator.Action.CLOSE) {\n            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n            if (optionalDsp != null) optionalDsp.onCaptureReplaced();\n'''
+          bad = '''            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n'''
           if bad in s:
-              s = s.replace(bad, good, 1)
-          if s.count('enhancedSessionDsp.onCaptureReplaced();') != 3:
-              raise SystemExit('unexpected enhanced capture lifecycle count')
+              s = s.replace(bad,
+                  '            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n', 1)
+          if bad in s:
+              raise SystemExit('duplicate enhanced capture lifecycle remains')
           if 'enhancedSessionDsp.update(hybridSnapshot, blockRms, signal,' not in s:
               raise SystemExit('enhanced runtime update missing')
           if 'updateGlobalDspVerification(blockRms, signal' in s:
