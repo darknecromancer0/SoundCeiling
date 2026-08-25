@@ -46,6 +46,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/GlobalVisualizerReading.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CalibrationPreferenceState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/RuntimeState.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/StatusText.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/HelpText.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFormatter.java" \
