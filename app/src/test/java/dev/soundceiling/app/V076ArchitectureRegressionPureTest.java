@@ -1,11 +1,14 @@
 package dev.soundceiling.app;
 
+import java.util.List;
+
 public final class V076ArchitectureRegressionPureTest {
     public static void main(String[] args) {
         samsungOneOfFifteenDoesNotBecomeFastLimiter();
         userOneToTwoIsNotSnappedBack();
         verifiedDspKeepsMediaFixed();
         globalMixDspUnknownSourceBoostsAtMediaThree();
+        v077AudioPolicyDumpParserIsFailClosed();
         hardCapAndQuietRemainMediaSafety();
         System.out.println("V076ArchitectureRegressionPureTest: PASS");
     }
@@ -167,6 +170,21 @@ public final class V076ArchitectureRegressionPureTest {
 
         require(command.kind() == ControlCommand.Kind.DSP_GAIN && command.requestedGainDb() > 0f,
                 "verified global-mix DSP must boost quiet UNKNOWN source at Media 3/15");
+    }
+
+    private static void v077AudioPolicyDumpParserIsFailClosed() {
+        String dump = "Port ID: 57; Session ID: 233; uid 10292; State: Active\n"
+                + "Port ID: 58; Session ID: 0; uid 10292; State: Active\n"
+                + "Port ID: 59; Session ID: 244; uid 10292; State: Inactive\n"
+                + "Port ID: 60; Session ID: 233; uid 10292; State: Active\n"
+                + "garbage Session ID: 999 uid 1\n";
+        List<AudioSessionRecord> records = AudioSessionDumpParser.parse(dump, 1000L);
+        require(records.size() == 1, "only one unique active non-zero session may survive parsing");
+        AudioSessionRecord record = records.get(0);
+        require(record.sessionId == 233 && record.uid == 10292 && record.active,
+                "parser must preserve the AOSP session/uid/active tuple");
+        require(record.observedAtMs == 1000L,
+                "parser must attach the caller observation timestamp");
     }
 
     private static void hardCapAndQuietRemainMediaSafety() {
