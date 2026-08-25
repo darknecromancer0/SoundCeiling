@@ -23,7 +23,7 @@ jobs:
           good = '''        if (decision.action == CaptureRequestCoordinator.Action.CLOSE) {\n            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n            if (optionalDsp != null) optionalDsp.onCaptureReplaced();\n'''
           if bad in s:
               s = s.replace(bad, good, 1)
-          if s.count('enhancedSessionDsp.onCaptureReplaced();') != 2:
+          if s.count('enhancedSessionDsp.onCaptureReplaced();') != 3:
               raise SystemExit('unexpected enhanced capture lifecycle count')
           if 'enhancedSessionDsp.update(hybridSnapshot, blockRms, signal,' not in s:
               raise SystemExit('enhanced runtime update missing')
