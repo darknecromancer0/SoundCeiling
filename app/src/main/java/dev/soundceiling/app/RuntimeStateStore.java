@@ -82,6 +82,20 @@ final class RuntimeStateStore {
         String raiseReason = raiseBlockReason(state);
         DiagnosticLog.transition("raise_blocked_reason", raiseReason,
                 "reason=" + raiseReason + " source=" + source);
+
+        DiagnosticLog.transition("session_dsp_permission",
+                state.enhancedSessionPermissionGranted ? "granted" : "missing",
+                "granted=" + state.enhancedSessionPermissionGranted
+                        + " reason=" + state.sessionDspReason);
+        String sessionKey = state.sessionDspActive
+                ? state.sessionId + ":" + state.sessionUid + ":" + state.sessionPackage
+                : "inactive:" + state.sessionDspReason;
+        DiagnosticLog.transition("session_dsp_state", sessionKey,
+                "active=" + state.sessionDspActive + " session=" + state.sessionId
+                        + " uid=" + state.sessionUid + " package=" + state.sessionPackage
+                        + " requestedGainDb=" + state.sessionDspRequestedGainDb
+                        + " appliedGainDb=" + state.sessionDspAppliedGainDb
+                        + " reason=" + state.sessionDspReason);
     }
 
     private static String raiseBlockReason(RuntimeState state) {
