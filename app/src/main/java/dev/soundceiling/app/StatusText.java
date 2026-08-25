@@ -31,8 +31,25 @@ final class StatusText {
         return "Media " + s.volumeIndex + "/" + s.volumeMax;
     }
 
+    static String sessionDsp(RuntimeState s) {
+        if (!s.enhancedSessionPermissionGranted) {
+            return EnhancedSessionSetup.REQUIRED_STATUS + " · "
+                    + EnhancedSessionSetup.ADB_GRANT_COMMAND;
+        }
+        if (s.sessionDspActive && s.sessionId > 0) {
+            String pkg = s.sessionPackage.isEmpty() ? "unknown" : s.sessionPackage;
+            return String.format(java.util.Locale.US,
+                    "Session DSP %d · %s · requested %+.2f dB · applied %+.2f dB",
+                    s.sessionId, pkg, s.sessionDspRequestedGainDb, s.sessionDspAppliedGainDb);
+        }
+        String reason = s.sessionDspReason == null || s.sessionDspReason.isEmpty()
+                ? "session_dsp_unavailable" : s.sessionDspReason;
+        return "Session DSP unavailable · " + reason;
+    }
+
     static String engine(RuntimeState s) {
         if (!s.running) return "Sound Ceiling выключен";
+        if (s.sessionDspActive && s.sessionId > 0) return "Session DSP";
 
         boolean precisePcm = s.pcmState == PcmAvailabilityState.ACTIVE
                 && s.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT
