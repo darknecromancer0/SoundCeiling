@@ -115,6 +115,8 @@ jobs:
         run: bash ./scripts/check-v0763-dsp-attach-evidence-contract.sh
       - name: Check v0.7.6.3 release contract
         run: bash ./scripts/check-v0763-release-contract.sh
+      - name: Check v0.7.7 Samsung 3-of-15 authority
+        run: bash ./scripts/run-v077-samsung-3of15-tests.sh
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
