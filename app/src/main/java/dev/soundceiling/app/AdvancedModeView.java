@@ -1,7 +1,10 @@
 package dev.soundceiling.app;
 
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
@@ -28,6 +31,8 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private final int streamMin, streamMax;
     private final LinearLayout root;
     private final TextView modeInfo, profileInfo, liveDetails, decisionDetails, globalDspStatus, linkedLockHint;
+    private final TextView sessionDspSetupStatus;
+    private final Button copySessionDspCommand;
     private final Button startStop;
     private final StatusCardView statusCard;
     private final FrequencyMeterView frequencyMeter;
@@ -57,6 +62,13 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         modeInfo = secondary("", 14); modeInfo.setPadding(0, dp(6), 0, dp(10)); root.addView(modeInfo);
         statusCard = new StatusCardView(context); root.addView(statusCard,
                 new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
+        sessionDspSetupStatus = secondary("", 13);
+        sessionDspSetupStatus.setPadding(0, dp(8), 0, dp(6));
+        root.addView(sessionDspSetupStatus);
+        copySessionDspCommand = button("Копировать команду Enhanced Session DSP");
+        copySessionDspCommand.setOnClickListener(v -> copyEnhancedSessionCommand());
+        root.addView(copySessionDspCommand, fullButton());
 
         section("Основной actuator");
         globalDsp = addSwitch("Global DSP", HelpText.GLOBAL_DSP, Prefs.globalDspEnabled(context),
@@ -204,6 +216,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     @Override public void render(RuntimeState state) {
         if (state != null) runtime = state;
         startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderState(runtime);
+        refreshEnhancedSessionSetup();
         refreshSharedOutputControls();
         state = runtime;
         String source = state.sourcePackage.isEmpty() ? "не определён" : state.sourcePackage;
@@ -295,11 +308,14 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     }
 
     private SimpleModeModel outputModel() {
-        boolean active = runtime.dspTransportCapability
+        boolean verified = runtime.sessionDspActive
+                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_POLICY_SCOPED
+                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
+        boolean globalMixActive = runtime.dspTransportCapability
                 == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
         return new SimpleModeModel(Prefs.outputCeilings(getContext()),
-                new ControlVolumeCurve(streamMin, streamMax), active,
-                Prefs.globalDspEnabled(getContext()), active);
+                new ControlVolumeCurve(streamMin, streamMax), verified,
+                Prefs.globalDspEnabled(getContext()), globalMixActive);
     }
 
     private void saveOutputCeiling(boolean lower, int progress) {
@@ -307,6 +323,26 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         model = lower ? model.withLowerProgress(progress) : model.withUpperProgress(progress);
         Prefs.saveOutputCeilings(getContext(), model.ceilings());
         refreshSharedOutputControls();
+    }
+
+    private void refreshEnhancedSessionSetup() {
+        boolean granted = getContext().checkSelfPermission(EnhancedSessionSetup.DUMP_PERMISSION)
+                == PackageManager.PERMISSION_GRANTED;
+        if (!granted) {
+            sessionDspSetupStatus.setText(EnhancedSessionSetup.REQUIRED_STATUS + "\n"
+                    + EnhancedSessionSetup.ADB_GRANT_COMMAND);
+            copySessionDspCommand.setVisibility(View.VISIBLE);
+            return;
+        }
+        copySessionDspCommand.setVisibility(View.GONE);
+        sessionDspSetupStatus.setText(runtime.running ? StatusText.sessionDsp(runtime)
+                : "Enhanced Session DSP permission granted · session discovery starts with playback");
+    }
+
+    private void copyEnhancedSessionCommand() {
+        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(
+                "SoundCeiling Enhanced Session DSP", EnhancedSessionSetup.ADB_GRANT_COMMAND));
     }
 
     private void refreshSharedOutputControls() {

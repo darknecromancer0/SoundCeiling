@@ -655,10 +655,22 @@ public class NormalizerService extends Service {
                                         int effectiveMax, boolean autoMuteEnabled, long now) {
         if (command == null || command.kind() == ControlCommand.Kind.NONE) return current;
         if (command.kind() == ControlCommand.Kind.DSP_GAIN) {
+            int sessionBefore = optionalDsp == null ? -1 : optionalDsp.enhancedSessionId();
             boolean applied = optionalDsp != null && optionalDsp.applyGain(
                     command.requestedGainDb(), isSafetyCommand(command));
+            float appliedGainDb = optionalDsp == null ? 0f : optionalDsp.appliedGainDb();
             DiagnosticLog.transition("dsp_gain_command", command.reason(),
                     "requestedGainDb=" + command.requestedGainDb() + " applied=" + applied);
+            if (sessionBefore > 0) {
+                DiagnosticLog.transition("session_dsp_apply",
+                        sessionBefore + ":" + command.requestedGainDb() + ":" + applied,
+                        "session=" + sessionBefore + " requestedGainDb="
+                                + command.requestedGainDb() + " appliedGainDb=" + appliedGainDb
+                                + " applied=" + applied + " media=" + current);
+                if (!applied && enhancedSessionDsp != null) {
+                    enhancedSessionDsp.onApplyFailed("session_dsp_apply_failed");
+                }
+            }
             return current;
         }
         int target = command.mediaIndex();
@@ -939,6 +951,14 @@ public class NormalizerService extends Service {
                 .profileName(currentProfileV2 != null ? currentProfileV2.name
                         : currentProfile == null ? "" : currentProfile.name)
                 .logStatus(logger == null ? "" : logger.status())
+                .enhancedSession(enhancedSessionDsp != null && enhancedSessionDsp.permissionGranted(),
+                        enhancedSessionDsp != null && enhancedSessionDsp.active(),
+                        enhancedSessionDsp == null ? -1 : enhancedSessionDsp.sessionId(),
+                        enhancedSessionDsp == null ? -1 : enhancedSessionDsp.sessionUid(),
+                        enhancedSessionDsp == null ? "" : enhancedSessionDsp.sessionPackage(),
+                        controlCoordinator.snapshot().desiredGainDb(),
+                        optionalDsp == null ? 0f : optionalDsp.appliedGainDb(),
+                        enhancedSessionDsp == null ? "session_runtime_missing" : enhancedSessionDsp.reason())
                 .unexpectedZero(unexpectedZeroThisPoll);
         if (hybridSnapshot != null) {
             EffectivePolicy policy = hybridSnapshot.policy;

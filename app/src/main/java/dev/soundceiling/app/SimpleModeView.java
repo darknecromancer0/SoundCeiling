@@ -1,7 +1,10 @@
 package dev.soundceiling.app;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.provider.Settings;
 import android.view.View;
 import android.graphics.Typeface;
@@ -24,9 +27,11 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
     private final LinearLayout root;
     private final Switch globalDsp, linkedLock;
     private final TextView globalStatus, linkedHint, lowerLabel, upperLabel, safetyLabel, normalizeLabel;
+    private final TextView sessionDspSetupStatus;
     private final SeekBar lowerSeek, upperSeek, safetySeek;
     private final Button startStop;
     private final Button sourceAccess;
+    private final Button copySessionDspCommand;
     private final Button resetDefaults;
     private final StatusCardView statusCard;
     private boolean loading;
@@ -55,6 +60,17 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         statusLp.bottomMargin = dp(12);
         root.addView(statusCard, statusLp);
+
+        sessionDspSetupStatus = secondary("", 13);
+        sessionDspSetupStatus.setPadding(0, dp(2), 0, dp(6));
+        root.addView(sessionDspSetupStatus);
+        copySessionDspCommand = new Button(context);
+        copySessionDspCommand.setAllCaps(false);
+        copySessionDspCommand.setText("Копировать команду Enhanced Session DSP");
+        copySessionDspCommand.setOnClickListener(v -> copyEnhancedSessionCommand());
+        LinearLayout.LayoutParams setupLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50));
+        setupLp.bottomMargin = dp(8);
+        root.addView(copySessionDspCommand, setupLp);
 
         sourceAccess = new Button(context);
         sourceAccess.setAllCaps(false);
@@ -174,10 +190,13 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
     }
 
     private SimpleModeModel model() {
-        boolean active = runtime.dspTransportCapability
+        boolean verified = runtime.sessionDspActive
+                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_POLICY_SCOPED
+                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
+        boolean globalMixActive = runtime.dspTransportCapability
                 == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
-        return new SimpleModeModel(Prefs.outputCeilings(getContext()), curve, active,
-                Prefs.globalDspEnabled(getContext()), active);
+        return new SimpleModeModel(Prefs.outputCeilings(getContext()), curve, verified,
+                Prefs.globalDspEnabled(getContext()), globalMixActive);
     }
 
     private void refreshSharedControls() { applyModel(model()); }
@@ -204,7 +223,28 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         statusCard.render(runtime);
         sourceAccess.setVisibility(runtime.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING
                 ? View.VISIBLE : View.GONE);
+        refreshEnhancedSessionSetup();
         refreshSharedControls();
+    }
+
+    private void refreshEnhancedSessionSetup() {
+        boolean granted = getContext().checkSelfPermission(EnhancedSessionSetup.DUMP_PERMISSION)
+                == PackageManager.PERMISSION_GRANTED;
+        if (!granted) {
+            sessionDspSetupStatus.setText(EnhancedSessionSetup.REQUIRED_STATUS + "\n"
+                    + EnhancedSessionSetup.ADB_GRANT_COMMAND);
+            copySessionDspCommand.setVisibility(View.VISIBLE);
+            return;
+        }
+        copySessionDspCommand.setVisibility(View.GONE);
+        sessionDspSetupStatus.setText(runtime.running ? StatusText.sessionDsp(runtime)
+                : "Enhanced Session DSP permission granted · session discovery starts with playback");
+    }
+
+    private void copyEnhancedSessionCommand() {
+        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(
+                "SoundCeiling Enhanced Session DSP", EnhancedSessionSetup.ADB_GRANT_COMMAND));
     }
 
     private void updateSafetyLabel(int percent) {
