@@ -29,19 +29,24 @@ require "$ADV" 'Prefs.setGlobalDspEnabled(getContext(), v)'
 require "$HELP" 'GLOBAL_DSP'
 require "$HELP" 'системные звуки, уведомления, будильники, звонки и System UI'
 
-# Global DSP preference is not active status. Runtime must prove VERIFIED_GLOBAL_MIX and run the
-# existing bounded session-zero probe. Normal correction then selects DSP; hard Media cap remains.
+# v0.7.1 introduced runtime-proven DSP rather than preference==active. v0.7.7 preserves that
+# principle but supersedes session-zero global-mix authority with verified non-zero Session DSP.
+# Historical bounded session-zero probe code may remain for diagnostics, but Smart PCM must frame
+# ordinary normalization as policy-scoped Session DSP and HOLD when that transport is unavailable.
 require "$MODEL" 'boolean globalDspPreferred()'
 require "$MODEL" 'boolean globalDspActive()'
 require "$MODEL" 'Global DSP недоступен · используется совместимый режим'
 require "$SERVICE" 'updateGlobalDspVerification('
 require "$SERVICE" 'optionalDsp.beginGlobalDifferentialProbe('
 require "$SERVICE" 'optionalDsp.finishGlobalDifferentialProbe('
-require "$SERVICE" 'optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, globalDspPreference)'
-require "$SERVICE" '.globalMixDsp(optionalDsp != null && globalDspPreference'
+require "$SERVICE" 'enhancedSessionDsp.update(hybridSnapshot, blockRms, signal,'
+require "$SERVICE" 'optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, false)'
+require "$SERVICE" '.globalMixDsp(false)'
+require "$SERVICE" '.ordinaryMediaFallbackAllowed(false)'
 require "$COORD" 'frame.verifiedDsp && dspPolicyCompatible'
 require "$COORD" 'd.requestedGainDb > frame.currentDspGainDb && !allowsPositiveControl(frame)'
 require "$COORD" 'frame.globalMixDsp || (frame.playbackEndpointActive'
+require "$COORD" 'session_dsp_unavailable'
 require "$COORD" 'hard_media_cap'
 require "$ARBITER" 'verified_global_mix_global_dsp_mode'
 
@@ -92,4 +97,4 @@ require "$HELP" 'VERIFIED_POLICY_DSP'
 require "$HELP" 'VERIFIED_GLOBAL_DSP'
 require "$HELP" 'MEDIA_STEP_PERCENT'
 
-echo "v0.7.1 Simple/Advanced + Global DSP UI contract: PASS"
+echo "v0.7.1 Simple/Advanced UI + v0.7.7 DSP supersession contract: PASS"
