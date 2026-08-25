@@ -58,8 +58,8 @@ public final class V077SessionDiscoveryPureTest {
         AudioSessionOwnershipResolver.Decision exact = AudioSessionOwnershipResolver.resolve(
                 List.of(new AudioSessionRecord(233, 10292, true, 1000L, "test")),
                 yandex, 1200L);
-        Optional<DspEndpointHandle> handle = DspEndpointHandle.forEnhancedSession(
-                exact, "ru.yandex.music", AppPolicy.global());
+        Optional<DspEndpointHandle> handle = exact.toDspHandle(
+                "ru.yandex.music", AppPolicy.global());
         require(handle.isPresent() && handle.get().audioSessionId == 233
                         && handle.get().isEnhancedSession(),
                 "accepted ownership may become a trusted enhanced endpoint");
@@ -67,8 +67,7 @@ public final class V077SessionDiscoveryPureTest {
         AudioSessionOwnershipResolver.Decision rejected = AudioSessionOwnershipResolver.resolve(
                 List.of(new AudioSessionRecord(233, 12345, true, 1000L, "test")),
                 yandex, 1200L);
-        require(DspEndpointHandle.forEnhancedSession(
-                rejected, "ru.yandex.music", AppPolicy.global()).isEmpty(),
+        require(rejected.toDspHandle("ru.yandex.music", AppPolicy.global()).isEmpty(),
                 "rejected ownership must never self-promote to DSP authority");
         require(DspEndpointHandle.tryCreate(233,
                 DspEndpointHandle.Provenance.ENHANCED_SESSION_DISCOVERY,
