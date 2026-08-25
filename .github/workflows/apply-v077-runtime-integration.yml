@@ -1,11 +1,11 @@
-name: Apply v0.7.7 runtime integration
+name: Finalize v0.7.7 runtime integration
 on:
   push:
     branches: [ "feature/v0.7-adaptive-envelope" ]
 permissions:
   contents: write
 jobs:
-  patch-runtime:
+  finalize-runtime:
     if: github.actor == 'darknecromancer0'
     runs-on: ubuntu-latest
     steps:
@@ -13,126 +13,36 @@ jobs:
         with:
           ref: feature/v0.7-adaptive-envelope
           fetch-depth: 0
-      - name: Integrate Enhanced Session DSP runtime
+      - name: Clean runtime integration and verify invariants
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          # Coordinator: v0.7.7 service can disable ordinary Media fallback while keeping old
-          # historical pure behavior available by default for compatibility tests.
-          p = Path('app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java')
-          s = p.read_text()
-          if 'ordinaryMediaFallbackAllowed' not in s:
-              s = s.replace('        private final boolean calibrationProfileValid;\n',
-                            '        private final boolean calibrationProfileValid;\n'
-                            '        private final boolean ordinaryMediaFallbackAllowed;\n')
-              s = s.replace('            calibrationProfileValid = b.calibrationProfileValid;\n',
-                            '            calibrationProfileValid = b.calibrationProfileValid;\n'
-                            '            ordinaryMediaFallbackAllowed = b.ordinaryMediaFallbackAllowed;\n')
-              s = s.replace('            private boolean calibrationProfileValid = true;\n',
-                            '            private boolean calibrationProfileValid = true;\n'
-                            '            private boolean ordinaryMediaFallbackAllowed = true;\n')
-              s = s.replace(
-                  '            public Builder calibrationProfileValid(boolean value) {\n'
-                  '                calibrationProfileValid = value; return this;\n'
-                  '            }\n',
-                  '            public Builder calibrationProfileValid(boolean value) {\n'
-                  '                calibrationProfileValid = value; return this;\n'
-                  '            }\n'
-                  '            public Builder ordinaryMediaFallbackAllowed(boolean value) {\n'
-                  '                ordinaryMediaFallbackAllowed = value; return this;\n'
-                  '            }\n')
-              old = '''        if (!frame.sourceControlEnabled || frame.effectivePolicy.contains("off")) {\n            return record(ControlCommand.none("source_control_disabled"), plan.desiredCorrectionDb(),\n                    frame, programActive, transientEvent.severity);\n        }\n        if (mediaAnchorState.userAuthorityHoldActive(frame.atMs)) {\n'''
-              new = '''        if (!frame.sourceControlEnabled || frame.effectivePolicy.contains("off")) {\n            return record(ControlCommand.none("source_control_disabled"), plan.desiredCorrectionDb(),\n                    frame, programActive, transientEvent.severity);\n        }\n\n        // v0.7.7: missing Session DSP is a HOLD for ordinary normalization. Samsung Media stays\n        // the user's master. Only a proven hard output-peak violation may use Media as emergency\n        // attenuation, in addition to the independent hard Media cap and Quiet Now paths above.\n        if (!frame.ordinaryMediaFallbackAllowed) {\n            if (frame.outputLevels.outputPeakViolates(frame.hardPeakCeilingDbfs)) {\n                float excessDb = frame.outputLevels.projectedOutputPeakDbfs\n                        - frame.hardPeakCeilingDbfs;\n                float desiredRouteGainDb = frame.mediaGainDb - Math.max(0f, excessDb);\n                int emergencyIndex = frame.routeCurve.bestIndexAtOrBelowGain(\n                        desiredRouteGainDb, frame.currentMediaIndex);\n                if (emergencyIndex < frame.currentMediaIndex) {\n                    return record(ControlCommand.mediaIndex(emergencyIndex,\n                                    "session_dsp_hard_peak_safety",\n                                    ControlCommand.Provenance.HARD_PEAK_SAFETY),\n                            plan.desiredCorrectionDb(), frame, programActive,\n                            transientEvent.severity);\n                }\n            }\n            return record(ControlCommand.none("session_dsp_unavailable"),\n                    plan.desiredCorrectionDb(), frame, programActive, transientEvent.severity);\n        }\n\n        if (mediaAnchorState.userAuthorityHoldActive(frame.atMs)) {\n'''
-              if old not in s: raise SystemExit('coordinator fallback anchor missing')
-              s = s.replace(old, new, 1)
-              p.write_text(s)
-
           p = Path('app/src/main/java/dev/soundceiling/app/NormalizerService.java')
           s = p.read_text()
-          if 'private EnhancedSessionDspRuntime enhancedSessionDsp;' not in s:
-              s = s.replace('    private OptionalDspController optionalDsp;\n',
-                            '    private OptionalDspController optionalDsp;\n'
-                            '    private EnhancedSessionDspRuntime enhancedSessionDsp;\n')
-          if 'new EnhancedSessionDspRuntime(new DumpAudioSessionDiscovery(this), optionalDsp)' not in s:
-              s = s.replace('        optionalDsp = new OptionalDspController();\n',
-                            '        optionalDsp = new OptionalDspController();\n'
-                            '        enhancedSessionDsp = new EnhancedSessionDspRuntime(\n'
-                            '                new DumpAudioSessionDiscovery(this), optionalDsp);\n')
-
-          old = '''            if (optionalDsp != null) {\n                updateGlobalDspVerification(blockRms, signal, outputMix.rmsDbfs, outputMixEvidence,\n                        signal && hybridSnapshot.playback.active, current, now);\n                optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, globalDspPreference);\n            }\n'''
-          new = '''            if (optionalDsp != null) {\n                enhancedSessionDsp.update(hybridSnapshot, blockRms, signal,\n                        outputMix.rmsDbfs, outputMixEvidence, current,\n                        DeviceDetector.key(currentDevice), globalDspPreference, now);\n                // v0.7.7 normal runtime is policy-scoped non-zero session DSP. Session-zero global\n                // mix remains diagnostic/historical code and receives no runtime authority here.\n                optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, false);\n            }\n'''
-          if old in s:
-              s = s.replace(old, new, 1)
-          elif 'enhancedSessionDsp.update(hybridSnapshot, blockRms, signal,' not in s:
-              raise SystemExit('playback DSP integration anchor missing')
-
-          old = '''            if (optionalDsp != null) {\n                updateGlobalDspVerification(Float.NaN, false, fallbackRms, reading.levelAvailable,\n                        signal && hybridSnapshot.playback.active, current, detectedAt);\n                optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, globalDspPreference);\n            }\n'''
-          new = '''            if (optionalDsp != null) {\n                // No exact PCM reference exists in fallback mode, so v0.7.7 cannot establish a\n                // new third-party session DSP proof here. Safety paths remain available.\n                optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, false);\n            }\n'''
-          if old in s:
-              s = s.replace(old, new, 1)
-          elif 'No exact PCM reference exists in fallback mode' not in s:
-              raise SystemExit('fallback DSP integration anchor missing')
-
+          bad = '''        if (decision.action == CaptureRequestCoordinator.Action.CLOSE) {\n            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n        if (optionalDsp != null) optionalDsp.onCaptureReplaced();\n'''
+          good = '''        if (decision.action == CaptureRequestCoordinator.Action.CLOSE) {\n            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n            if (optionalDsp != null) optionalDsp.onCaptureReplaced();\n'''
+          if bad in s:
+              s = s.replace(bad, good, 1)
+          if s.count('enhancedSessionDsp.onCaptureReplaced();') != 2:
+              raise SystemExit('unexpected enhanced capture lifecycle count')
+          if 'enhancedSessionDsp.update(hybridSnapshot, blockRms, signal,' not in s:
+              raise SystemExit('enhanced runtime update missing')
+          if 'updateGlobalDspVerification(blockRms, signal' in s:
+              raise SystemExit('session-zero verification still called by Smart PCM runtime')
           if '.ordinaryMediaFallbackAllowed(false)' not in s:
-              s = s.replace(
-                  '                .globalMixDsp(optionalDsp != null && globalDspPreference\n'
-                  '                        && optionalDsp.capability() == DspTransport.Capability.VERIFIED_GLOBAL_MIX)\n'
-                  '                .observation(coordinatorObservation(observed), coordinatorOrigin(observed))\n',
-                  '                .globalMixDsp(false)\n'
-                  '                .ordinaryMediaFallbackAllowed(false)\n'
-                  '                .observation(coordinatorObservation(observed), coordinatorOrigin(observed))\n')
-
-          # Keep EnhancedSessionDspRuntime state synchronized with lifecycle boundaries. The
-          # OptionalDspController call remains to invalidate historical/global diagnostics too.
-          s = s.replace(
-              '            if (optionalDsp != null) optionalDsp.onCaptureReplaced();\n',
-              '            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n'
-              '            if (optionalDsp != null) optionalDsp.onCaptureReplaced();\n')
-          s = s.replace(
-              '        if (optionalDsp != null) optionalDsp.onCaptureReplaced();\n',
-              '        if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n'
-              '        if (optionalDsp != null) optionalDsp.onCaptureReplaced();\n')
-          s = s.replace(
-              '            optionalDsp.onPolicyChanged();\n            resetGlobalDifferentialState();\n',
-              '            if (enhancedSessionDsp != null) enhancedSessionDsp.onPolicyChanged();\n'
-              '            optionalDsp.onPolicyChanged();\n            resetGlobalDifferentialState();\n')
-          s = s.replace(
-              '            if (optionalDsp != null && !oldKey.isEmpty()) optionalDsp.onRouteChanged();\n',
-              '            if (enhancedSessionDsp != null && !oldKey.isEmpty())\n'
-              '                enhancedSessionDsp.onPolicyChanged();\n'
-              '            if (optionalDsp != null && !oldKey.isEmpty()) optionalDsp.onRouteChanged();\n')
-          s = s.replace(
-              '        if (optionalDsp != null) optionalDsp.onServiceStopped();\n',
-              '        if (enhancedSessionDsp != null) enhancedSessionDsp.onStopped();\n'
-              '        if (optionalDsp != null) optionalDsp.onServiceStopped();\n')
-
-          # Telemetry distinguishes the new normalizer actuator from historical global DSP.
-          s = s.replace(
-              '            if (command.kind() == ControlCommand.Kind.DSP_GAIN) return "DSP";\n',
-              '            if (command.kind() == ControlCommand.Kind.DSP_GAIN)\n'
-              '                return optionalDsp != null && optionalDsp.enhancedSessionId() > 0\n'
-              '                        ? "SESSION_DSP" : "DSP";\n')
-          s = s.replace(
-              '        return optionalDsp != null && isVerifiedDspCapability(optionalDsp.capability())\n'
-              '                ? "DSP" : "SAFETY_ONLY";\n',
-              '        if (optionalDsp != null && optionalDsp.enhancedSessionId() > 0) return "SESSION_DSP";\n'
-              '        return optionalDsp != null && isVerifiedDspCapability(optionalDsp.capability())\n'
-              '                ? "DSP" : "SAFETY_ONLY";\n')
+              raise SystemExit('ordinary Media fallback still enabled in v0.7.7 service')
+          if '.globalMixDsp(false)' not in s:
+              raise SystemExit('session-zero global mix still framed as runtime authority')
           p.write_text(s)
           PY
           bash ./scripts/run-pure-tests.sh
           bash ./scripts/run-v077-session-tests.sh
           ./gradlew --no-daemon :app:compileDebugJavaWithJavac
-      - name: Persist runtime integration
+      - name: Persist cleanup and remove one-shot workflow
         run: |
-          if git diff --quiet; then
-            echo "Runtime already integrated"
-            exit 0
-          fi
           git config user.name "darknecromancer0"
           git config user.email "127566984+darknecromancer0@users.noreply.github.com"
-          git add app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java \
-                  app/src/main/java/dev/soundceiling/app/NormalizerService.java
-          git commit -m "feat: route normalizer through enhanced session DSP"
+          git rm .github/workflows/apply-v077-runtime-integration.yml
+          git add app/src/main/java/dev/soundceiling/app/NormalizerService.java
+          git commit -m "fix: finalize v0.7.7 session DSP runtime integration"
           git push origin HEAD:feature/v0.7-adaptive-envelope
