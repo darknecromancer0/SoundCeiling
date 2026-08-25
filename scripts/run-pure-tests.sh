@@ -72,6 +72,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EqVisualizationMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EngineCapabilities.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackEndpoint.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AudioSessionRecord.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AudioSessionDumpParser.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspEndpointHandle.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspScope.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspApplyResult.java" \
