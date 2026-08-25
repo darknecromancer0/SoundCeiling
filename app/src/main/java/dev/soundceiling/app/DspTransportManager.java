@@ -12,8 +12,18 @@ import java.util.Set;
 /** Owns every framework DSP effect and enforces neutralize-before-release lifecycle ordering. */
 final class DspTransportManager implements AutoCloseable {
     private final int channelCount;
+
+    // Historical session-zero proof path. v0.7.7 no longer uses it as the normal runtime actuator.
     private final DspScopeProbe scopeProbe = new DspScopeProbe();
     private final DspDifferentialVerifier differentialVerifier = new DspDifferentialVerifier();
+
+    // v0.7.7 non-zero session proof path.
+    private final DspScopeProbe enhancedScopeProbe = new DspScopeProbe();
+    private final DspDifferentialVerifier enhancedVerifier = new DspDifferentialVerifier();
+    private DspEndpointHandle enhancedProbeHandle;
+    private AndroidDynamicsProcessingTransport enhancedProbeTransport;
+    private String enhancedRouteIdentity = "";
+
     final Map<DspEndpointHandle, AndroidDynamicsProcessingTransport> scoped = new HashMap<>();
     AndroidDynamicsProcessingTransport global;
     private DspScopeProbe.Evidence globalProof;
@@ -30,9 +40,8 @@ final class DspTransportManager implements AutoCloseable {
         HashSet<DspEndpointHandle> wanted = new HashSet<>();
         HashSet<Integer> physicalSessions = new HashSet<>();
         for (DspEndpointHandle handle : requested) {
-            if (handle == null || !handle.isTrusted()) continue;
+            if (handle == null || !handle.isTrusted() || handle.isEnhancedSession()) continue;
             if (!physicalSessions.add(handle.audioSessionId)) {
-                // One physical session may not masquerade as multiple policy endpoints.
                 closeScoped();
                 reason = "duplicate_physical_dsp_session";
                 return;
@@ -44,6 +53,7 @@ final class DspTransportManager implements AutoCloseable {
                 scoped.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<DspEndpointHandle, AndroidDynamicsProcessingTransport> entry = iterator.next();
+            if (entry.getKey().isEnhancedSession()) continue;
             if (!wanted.contains(entry.getKey())) {
                 neutralizeAndClose(entry.getValue());
                 iterator.remove();
@@ -61,6 +71,190 @@ final class DspTransportManager implements AutoCloseable {
         }
         reason = scoped.isEmpty() ? "no_trusted_dsp_handles" : "trusted_scoped_dsp_ready";
     }
+
+    // -------------------------------------------------------------------------
+    // v0.7.7 Enhanced Session DSP: baseline(no effect) -> neutral attach -> -0.5 dB proof.
+    // -------------------------------------------------------------------------
+
+    boolean beginEnhancedSessionDifferentialProbe(DspEndpointHandle handle,
+                                                   String currentRouteIdentity,
+                                                   int mediaIndex,
+                                                   boolean allowedMediaActive,
+                                                   long atMs) {
+        if (!allowedMediaActive || handle == null || !handle.isEnhancedSession()
+                || handle.audioSessionId <= 0) {
+            reason = "enhanced_session_probe_rejected";
+            return false;
+        }
+        if (hasVerifiedEnhancedSession(handle)) {
+            reason = "enhanced_session_already_verified";
+            return false;
+        }
+        cancelEnhancedSessionProbe("new_probe");
+        enhancedProbeHandle = handle;
+        enhancedRouteIdentity = currentRouteIdentity == null ? "" : currentRouteIdentity;
+        enhancedVerifier.begin(enhancedRouteIdentity, mediaIndex, atMs);
+        reason = "enhanced_session_probe_baseline";
+        return true;
+    }
+
+    void addEnhancedSessionBaseline(float sourceRmsDb, float outputRmsDb, long atMs) {
+        enhancedVerifier.addBaseline(sourceRmsDb, outputRmsDb, atMs);
+    }
+
+    boolean attachEnhancedSessionDifferentialProbe(long atMs) {
+        if (!enhancedVerifier.active() || enhancedVerifier.probePhase()
+                || enhancedProbeHandle == null || enhancedProbeHandle.audioSessionId <= 0) {
+            reason = "enhanced_session_attach_not_ready";
+            return false;
+        }
+        if (enhancedProbeTransport != null) neutralizeAndClose(enhancedProbeTransport);
+        enhancedProbeTransport = AndroidDynamicsProcessingTransport.forEnhancedSessionProbe(
+                enhancedProbeHandle, channelCount);
+        if (enhancedProbeTransport.capability() == DspTransport.Capability.UNAVAILABLE) {
+            enhancedVerifier.cancel("session_transport_unavailable");
+            reason = enhancedProbeTransport.reason();
+            neutralizeAndClose(enhancedProbeTransport);
+            enhancedProbeTransport = null;
+            return false;
+        }
+        DspApplyResult attached = enhancedProbeTransport.enableNeutralForProbe();
+        if (!attached.applied) {
+            enhancedVerifier.cancel("session_neutral_attach_failed");
+            reason = attached.reason;
+            neutralizeAndClose(enhancedProbeTransport);
+            enhancedProbeTransport = null;
+            return false;
+        }
+        enhancedVerifier.beginNeutralAttach(atMs);
+        reason = "enhanced_session_neutral_attach";
+        return true;
+    }
+
+    void addEnhancedSessionNeutralAttach(float sourceRmsDb, float outputRmsDb, long atMs) {
+        enhancedVerifier.addNeutralAttach(sourceRmsDb, outputRmsDb, atMs);
+    }
+
+    DspDifferentialVerifier.AttachResult evaluateEnhancedSessionNeutralAttach(long atMs) {
+        DspDifferentialVerifier.AttachResult result = enhancedVerifier.evaluateNeutralAttach(atMs);
+        reason = result.reason;
+        return result;
+    }
+
+    boolean activateEnhancedSessionDifferentialProbe(long atMs) {
+        if (!enhancedVerifier.active() || enhancedVerifier.probePhase()
+                || !enhancedVerifier.neutralAttachVerified()
+                || enhancedProbeTransport == null) {
+            reason = "enhanced_session_probe_not_ready";
+            return false;
+        }
+        if (!enhancedScopeProbe.begin(enhancedProbeTransport, true)) {
+            enhancedVerifier.cancel("session_probe_gain_apply_failed");
+            reason = "session_probe_gain_apply_failed";
+            return false;
+        }
+        enhancedVerifier.beginProbe(atMs);
+        reason = "enhanced_session_probe_active";
+        return true;
+    }
+
+    void addEnhancedSessionProbePair(float sourceRmsDb, float outputRmsDb, long atMs) {
+        enhancedVerifier.addProbe(sourceRmsDb, outputRmsDb, atMs);
+    }
+
+    DspScopeProbe.Evidence finishEnhancedSessionDifferentialProbe(long timestampMs) {
+        DspDifferentialVerifier.Result result = enhancedVerifier.finish(timestampMs);
+        DspScopeProbe.Evidence evidence = enhancedScopeProbe.finish(
+                enhancedRouteIdentity, enhancedProbeHandle, enhancedProbeTransport, result,
+                DspScopeProbe.ScopeAuthority.NONE, timestampMs);
+        boolean verified = evidence.allowedMediaEffectVerified()
+                && enhancedProbeHandle != null
+                && enhancedProbeHandle.audioSessionId > 0
+                && enhancedProbeTransport != null
+                && enhancedProbeTransport.authorizeVerifiedPolicyScoped();
+        if (verified) {
+            closeEnhancedScoped();
+            scoped.put(enhancedProbeHandle, enhancedProbeTransport);
+            reason = "verified_enhanced_session";
+            enhancedProbeTransport = null; // ownership moved into scoped map
+        } else {
+            reason = "enhanced_session_probe_rejected:" + evidence.reason;
+            neutralizeAndClose(enhancedProbeTransport);
+            enhancedProbeTransport = null;
+        }
+        enhancedProbeHandle = null;
+        enhancedRouteIdentity = "";
+        return evidence;
+    }
+
+    void cancelEnhancedSessionProbe(String cancelReason) {
+        String actual = cancelReason == null || cancelReason.isEmpty()
+                ? "enhanced_session_probe_cancelled" : cancelReason;
+        enhancedVerifier.cancel(actual);
+        enhancedScopeProbe.cancel();
+        neutralizeAndClose(enhancedProbeTransport);
+        enhancedProbeTransport = null;
+        enhancedProbeHandle = null;
+        enhancedRouteIdentity = "";
+        if (!"new_probe".equals(actual)) reason = actual;
+    }
+
+    boolean enhancedSessionProbeActive() {
+        return enhancedVerifier.active() || enhancedScopeProbe.active();
+    }
+
+    boolean hasVerifiedEnhancedSession(DspEndpointHandle handle) {
+        if (handle == null || !handle.isEnhancedSession()) return false;
+        AndroidDynamicsProcessingTransport transport = scoped.get(handle);
+        return transport != null
+                && transport.capability() == DspTransport.Capability.VERIFIED_POLICY_SCOPED;
+    }
+
+    int enhancedSessionId() {
+        for (Map.Entry<DspEndpointHandle, AndroidDynamicsProcessingTransport> entry : scoped.entrySet()) {
+            if (entry.getKey().isEnhancedSession()
+                    && entry.getValue().capability() == DspTransport.Capability.VERIFIED_POLICY_SCOPED) {
+                return entry.getKey().audioSessionId;
+            }
+        }
+        return -1;
+    }
+
+    int enhancedSessionUid() {
+        for (DspEndpointHandle handle : scoped.keySet()) {
+            if (handle.isEnhancedSession()) return handle.sourceUid;
+        }
+        return -1;
+    }
+
+    String enhancedSessionPackage() {
+        for (DspEndpointHandle handle : scoped.keySet()) {
+            if (handle.isEnhancedSession()) return handle.sourcePackage;
+        }
+        return "";
+    }
+
+    void releaseEnhancedSession(String releaseReason) {
+        cancelEnhancedSessionProbe(releaseReason == null ? "enhanced_session_release" : releaseReason);
+        closeEnhancedScoped();
+        reason = releaseReason == null || releaseReason.isEmpty()
+                ? "enhanced_session_released" : releaseReason;
+    }
+
+    private void closeEnhancedScoped() {
+        Iterator<Map.Entry<DspEndpointHandle, AndroidDynamicsProcessingTransport>> iterator =
+                scoped.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<DspEndpointHandle, AndroidDynamicsProcessingTransport> entry = iterator.next();
+            if (!entry.getKey().isEnhancedSession()) continue;
+            neutralizeAndClose(entry.getValue());
+            iterator.remove();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Shared verified transport APIs.
+    // -------------------------------------------------------------------------
 
     DspTransport.Capability policyScopedCapability() {
         if (scoped.isEmpty()) return DspTransport.Capability.UNAVAILABLE;
@@ -95,6 +289,8 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     String reason() {
+        if (enhancedSessionId() > 0) return "verified_enhanced_session";
+        if (enhancedSessionProbeActive()) return reason;
         if (effectiveCapability() == DspTransport.Capability.VERIFIED_POLICY_SCOPED) {
             return "verified_policy_scoped";
         }
@@ -138,13 +334,16 @@ final class DspTransportManager implements AutoCloseable {
             }
             return result.applied;
         }
-        // Neutral is always accepted as lifecycle cleanup, but not reported as verified DSP.
         if (requestedGainDb == 0f) {
             cancelProbeAndNeutralize();
             return true;
         }
         return false;
     }
+
+    // -------------------------------------------------------------------------
+    // Historical session-zero probe implementation retained for diagnostics/compatibility.
+    // -------------------------------------------------------------------------
 
     DspTransport.Capability prepareGlobalProbeTransport() {
         if (global == null) {
@@ -159,7 +358,6 @@ final class DspTransportManager implements AutoCloseable {
         if (!allowedMediaActive) return false;
         routeIdentity = currentRouteIdentity == null ? "" : currentRouteIdentity;
         differentialVerifier.begin(routeIdentity, mediaIndex, atMs);
-        // Baseline must be captured before session-zero DynamicsProcessing is constructed/enabled.
         reason = "differential_probe_baseline_no_transport";
         return true;
     }
@@ -293,6 +491,7 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     void onRouteChanged() {
+        cancelEnhancedSessionProbe("route_changed");
         neutralizeAll();
         closeScoped();
         invalidateGlobalProof("route_changed");
@@ -300,8 +499,7 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     void onCaptureReplaced() {
-        // Preserve a completed verified route proof, but never leave an unverified session-zero
-        // effect attached when the measurement source disappears mid-probe.
+        releaseEnhancedSession("capture_replaced");
         boolean probeWasActive = scopeProbe.active() || differentialVerifier.active();
         differentialVerifier.cancel("capture_replaced");
         scopeProbe.cancel();
@@ -311,12 +509,14 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     void onPolicyChanged() {
+        cancelEnhancedSessionProbe("policy_changed");
         neutralizeAll();
         closeScoped();
         invalidateGlobalProof("policy_changed");
     }
 
     void onServiceStopped() {
+        cancelEnhancedSessionProbe("service_stopped");
         neutralizeAll();
         closeScoped();
         invalidateGlobalProof("service_stopped");
@@ -343,6 +543,7 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     void neutralizeForFallback() {
+        cancelEnhancedSessionProbe("fallback");
         cancelProbeAndNeutralize();
         if (global != null && global.capability() != DspTransport.Capability.VERIFIED_GLOBAL_MIX) {
             rejectUnverifiedGlobal("fallback");
