@@ -27,6 +27,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     private boolean documentedOemScopeProof;
     private boolean wholeOutputConsent;
     private boolean globalGainAuthorized;
+    private boolean enhancedProbeCandidate;
 
     private AndroidDynamicsProcessingTransport(int audioSessionId, boolean globalSession,
                                                int channelCount, Capability initialCapability,
@@ -97,6 +98,20 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                 DspScope.POLICY_SCOPED, "trusted_policy_scoped_handle");
     }
 
+    /** v0.7.7: a discovered third-party session starts unverified and neutral. */
+    static AndroidDynamicsProcessingTransport forEnhancedSessionProbe(DspEndpointHandle handle,
+                                                                       int channelCount) {
+        if (handle == null || !handle.isEnhancedSession() || handle.audioSessionId <= 0) {
+            return unavailable("enhanced_session_handle_untrusted");
+        }
+        AndroidDynamicsProcessingTransport transport = new AndroidDynamicsProcessingTransport(
+                handle.audioSessionId, false, channelCount,
+                DspTransport.Capability.AVAILABLE_UNVERIFIED,
+                DspScope.UNKNOWN, "enhanced_session_neutral_unverified");
+        transport.enhancedProbeCandidate = transport.effect != null;
+        return transport;
+    }
+
     static AndroidDynamicsProcessingTransport forNeutralGlobalProbe(int channelCount) {
         return new AndroidDynamicsProcessingTransport(0, true, channelCount,
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
@@ -104,9 +119,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     }
 
     private static AndroidDynamicsProcessingTransport unavailable(String reason) {
-        AndroidDynamicsProcessingTransport transport =
-                new AndroidDynamicsProcessingTransport(false, reason);
-        return transport;
+        return new AndroidDynamicsProcessingTransport(false, reason);
     }
 
     private AndroidDynamicsProcessingTransport(boolean unused, String unavailableReason) {
@@ -125,36 +138,59 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         return appliedGainDb;
     }
 
-    /** Enable the global candidate at exactly 0 dB so attach behavior can be measured separately. */
+    /** Enable a bounded verification candidate at exactly 0 dB. */
     DspApplyResult enableNeutralForProbe() {
-        if (!globalSession || effect == null) {
+        if ((!globalSession && !enhancedProbeCandidate) || effect == null) {
             return DspApplyResult.rejected(appliedGainDb, capability,
-                    "global_probe_transport_unavailable");
+                    "probe_transport_unavailable");
         }
         try {
             effect.setInputGainAllChannelsTo(0f);
             effect.setEnabled(true);
             appliedGainDb = 0f;
             lastApplyAtMs = 0L;
-            return DspApplyResult.applied(0f, capability, "global_probe_neutral_attach");
+            return DspApplyResult.applied(0f, capability,
+                    globalSession ? "global_probe_neutral_attach" : "session_probe_neutral_attach");
         } catch (RuntimeException error) {
             downgrade(DspTransport.Capability.AVAILABLE_UNVERIFIED,
-                    "global_probe_attach_failed:" + error.getClass().getSimpleName());
+                    "probe_attach_failed:" + error.getClass().getSimpleName());
             return DspApplyResult.rejected(0f, capability, reason);
         }
     }
 
     /** Probe-only path. It can only apply the bounded negative test gain or restore neutral. */
     DspApplyResult applyProbeAttenuationDb(float gainDb) {
-        if (!globalSession || effect == null) {
+        if ((!globalSession && !enhancedProbeCandidate) || effect == null) {
             return DspApplyResult.rejected(appliedGainDb, capability,
-                    "global_probe_transport_unavailable");
+                    "probe_transport_unavailable");
         }
         if (!Float.isFinite(gainDb) || gainDb > 0f || gainDb < MAX_PROBE_ATTENUATION_DB) {
             return DspApplyResult.rejected(appliedGainDb, capability,
                     "probe_gain_out_of_bounds");
         }
-        return setGainDirect(gainDb, "bounded_global_scope_probe");
+        return setGainDirect(gainDb, "bounded_scope_probe");
+    }
+
+    /** Promote a verified non-zero enhanced session after neutral + differential proof. */
+    boolean authorizeVerifiedPolicyScoped() {
+        if (globalSession || !enhancedProbeCandidate || effect == null || audioSessionId <= 0) {
+            return false;
+        }
+        try {
+            effect.setInputGainAllChannelsTo(0f);
+            effect.setEnabled(true);
+            appliedGainDb = 0f;
+            lastApplyAtMs = 0L;
+            capability = DspTransport.Capability.VERIFIED_POLICY_SCOPED;
+            scope = DspScope.POLICY_SCOPED;
+            reason = "verified_enhanced_session";
+            enhancedProbeCandidate = false;
+            return true;
+        } catch (RuntimeException error) {
+            downgrade(DspTransport.Capability.UNAVAILABLE,
+                    "session_verify_promote_failed:" + error.getClass().getSimpleName());
+            return false;
+        }
     }
 
     /** Promote session-zero only after digital proof plus an explicit authority for its scope. */
@@ -251,7 +287,6 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     }
 
     @Override public Set<Integer> affectedUsages() {
-        // A session handle or digital probe does not prove a complete Android usage set.
         return Collections.emptySet();
     }
 
@@ -290,6 +325,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         appliedGainDb = 0f;
         lastApplyAtMs = 0L;
         globalGainAuthorized = false;
+        enhancedProbeCandidate = false;
         capability = downgraded == null ? Capability.UNAVAILABLE : downgraded;
         scope = capability == Capability.UNAVAILABLE ? DspScope.NONE : DspScope.UNKNOWN;
         reason = downgradeReason == null ? "dsp_downgraded" : downgradeReason;
@@ -305,6 +341,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         try { old.release(); }
         catch (RuntimeException ignored) {}
         globalGainAuthorized = false;
+        enhancedProbeCandidate = false;
     }
 
     private static float clampGain(float gainDb) {
