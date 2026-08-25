@@ -41,7 +41,7 @@ require "$PKG/NormalizerControlCoordinator.java" 'TransientGuard transientGuard'
 require "$PKG/NormalizerControlCoordinator.java" 'transientGuard.onPlaybackState'
 require "$PKG/NormalizerControlCoordinator.java" 'OutputGainPlanner.plan('
 require "$PKG/NormalizerControlCoordinator.java" 'calibrationProfileValid'
-require "$PKG/NormalizerControlCoordinator.java" '&& frame.calibrationProfileValid'
+require "$PKG/NormalizerControlCoordinator.java" '|| !frame.calibrationProfileValid'
 require "$PKG/NormalizerControlCoordinator.java" 'missing_spl_profile'
 require "$PKG/ControlCommand.java" 'enum Provenance'
 # Superseded by approved v0.7.1 Task 7: DSP transport slew receives explicit hard-safety provenance.
