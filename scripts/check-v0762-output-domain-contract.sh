@@ -18,7 +18,10 @@ require "$DOMAIN_TEST" 'targetedPreVolumeProjectionOutranksVisualizer()'
 require "$DOMAIN_TEST" 'unprovenVisualizerCannotResolveUnknownCaptureForControl()'
 require "$COARSE_TEST" 'CaptureReferenceEstimator.Mode.PRE_VOLUME'
 require "$COARSE_TEST" 'proven sustained loudness may trim exactly one step'
-require "$SERVICE" 'updateGlobalDspVerification(blockRms, signal, outputMix.rmsDbfs, outputMixEvidence,'
+# v0.7.7 keeps the v0.7.6.2 paired source/output evidence requirement but feeds those meters
+# into the non-zero Enhanced Session verifier instead of the superseded session-zero verifier.
+require "$SERVICE" 'enhancedSessionDsp.update(hybridSnapshot, blockRms, signal,'
+require "$SERVICE" 'outputMix.rmsDbfs, outputMixEvidence, current,'
 python - "$BUILD" <<'PYVER'
 from pathlib import Path
 import re, sys
@@ -29,4 +32,4 @@ if not m or int(m.group(1)) < 22:
 PYVER
 require "$WF" 'run: bash ./scripts/check-v0762-output-domain-contract.sh'
 
-echo 'v0.7.6.2 output-domain contract: PASS'
+echo 'v0.7.6.2 output-domain + v0.7.7 Session DSP evidence contract: PASS'
