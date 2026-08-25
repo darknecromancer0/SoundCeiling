@@ -40,18 +40,20 @@ final class DspEndpointHandle {
         return Optional.of(new DspEndpointHandle(audioSessionId, provenance, key, -1, ""));
     }
 
-    static Optional<DspEndpointHandle> forEnhancedSession(
-            AudioSessionOwnershipResolver.Decision decision,
-            String policyKey, AppPolicy currentPolicy) {
+    /** Called only with an accepted exact-UID ownership decision. */
+    static Optional<DspEndpointHandle> tryCreateEnhanced(int audioSessionId, int sourceUid,
+                                                         String sourcePackage,
+                                                         boolean ownershipAccepted,
+                                                         String policyKey,
+                                                         AppPolicy currentPolicy) {
         String key = policyKey == null ? "" : policyKey.trim();
-        if (decision == null || !decision.accepted || decision.sessionId <= 0 || decision.uid <= 0
-                || decision.packageName.isEmpty() || key.isEmpty()
-                || currentPolicy == null || !currentPolicy.allowsDspControl()) {
+        String pkg = sourcePackage == null ? "" : sourcePackage.trim();
+        if (!ownershipAccepted || audioSessionId <= 0 || sourceUid <= 0 || pkg.isEmpty()
+                || key.isEmpty() || currentPolicy == null || !currentPolicy.allowsDspControl()) {
             return Optional.empty();
         }
-        return Optional.of(new DspEndpointHandle(decision.sessionId,
-                Provenance.ENHANCED_SESSION_DISCOVERY, key,
-                decision.uid, decision.packageName));
+        return Optional.of(new DspEndpointHandle(audioSessionId,
+                Provenance.ENHANCED_SESSION_DISCOVERY, key, sourceUid, pkg));
     }
 
     boolean isTrusted() {
