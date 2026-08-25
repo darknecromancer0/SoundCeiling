@@ -402,11 +402,16 @@ public final class NormalizerControlCoordinator {
     }
 
     private static boolean allowsPositiveControl(Frame frame) {
-        return frame.sourceControlEnabled && frame.policyAllowsPositiveGain
-                && frame.playbackEndpointActive && frame.observedPlaybackEndpoints > 0
-                && frame.sourceEvidence == EngineCapabilities.SourceIdentityConfidence.EXACT
-                && frame.calibrationProfileValid
-                && !frame.effectivePolicy.contains("unknown")
-                && !frame.effectivePolicy.contains("off");
+        if (!frame.sourceControlEnabled || !frame.policyAllowsPositiveGain
+                || !frame.playbackEndpointActive || frame.observedPlaybackEndpoints <= 0
+                || !frame.calibrationProfileValid || frame.effectivePolicy.contains("off")) {
+            return false;
+        }
+        // A verified policy-compatible global mix already carries route/scope authority.
+        // Package/source identity is only needed for scoped/per-app arbitration, not ordinary
+        // global normalization. This preserves the approved v0.7.1 contract for UNKNOWN media.
+        if (frame.verifiedDsp && frame.globalMixDsp) return true;
+        return frame.sourceEvidence == EngineCapabilities.SourceIdentityConfidence.EXACT
+                && !frame.effectivePolicy.contains("unknown");
     }
 }

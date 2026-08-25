@@ -5,6 +5,7 @@ public final class V076ArchitectureRegressionPureTest {
         samsungOneOfFifteenDoesNotBecomeFastLimiter();
         userOneToTwoIsNotSnappedBack();
         verifiedDspKeepsMediaFixed();
+        globalMixDspUnknownSourceBoostsAtMediaThree();
         hardCapAndQuietRemainMediaSafety();
         System.out.println("V076ArchitectureRegressionPureTest: PASS");
     }
@@ -131,6 +132,41 @@ public final class V076ArchitectureRegressionPureTest {
         ControlCommand up = c.onFrame(quietFrame);
         require(up.kind() == ControlCommand.Kind.DSP_GAIN,
                 "verified DSP recovery must also keep Media fixed");
+    }
+
+    private static void globalMixDspUnknownSourceBoostsAtMediaThree() {
+        ControlVolumeCurve curve = new ControlVolumeCurve(0, 15);
+        NormalizerControlCoordinator c = new NormalizerControlCoordinator();
+        float mediaGain = curve.gainDbForIndex(3);
+        OutputLevelModel.Snapshot quiet = OutputLevelModel.evaluate(
+                new OutputLevelModel.Input(-20f, -36f, mediaGain, 0f,
+                        CaptureReferenceEstimator.Mode.PRE_VOLUME,
+                        Float.NaN, Float.NaN, false));
+
+        for (long at : new long[]{900L, 930L}) {
+            c.onFrame(new NormalizerControlCoordinator.Frame.Builder(at, 3, 3, curve)
+                    .outputLevels(quiet).hardPeakCeilingDbfs(-2f).hardMediaCeilingIndex(3)
+                    .rawProgramActive(true)
+                    .effectivePolicy("global_unknown_source", true, true)
+                    .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.UNKNOWN)
+                    .playbackEndpoints(true, 1)
+                    .verifiedDsp(true).globalMixDsp(true)
+                    .build());
+        }
+
+        ControlCommand command = c.onFrame(new NormalizerControlCoordinator.Frame.Builder(1000, 3, 3, curve)
+                .outputLevels(quiet).hardPeakCeilingDbfs(-2f).hardMediaCeilingIndex(3)
+                .rawProgramActive(true)
+                .effectivePolicy("global_unknown_source", true, true)
+                .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.UNKNOWN)
+                .playbackEndpoints(true, 1)
+                .verifiedDsp(true).globalMixDsp(true)
+                .observation(NormalizerControlCoordinator.VolumeObservation.UNCHANGED,
+                        VolumeWriteOrigin.NORMALIZATION)
+                .build());
+
+        require(command.kind() == ControlCommand.Kind.DSP_GAIN && command.requestedGainDb() > 0f,
+                "verified global-mix DSP must boost quiet UNKNOWN source at Media 3/15");
     }
 
     private static void hardCapAndQuietRemainMediaSafety() {
