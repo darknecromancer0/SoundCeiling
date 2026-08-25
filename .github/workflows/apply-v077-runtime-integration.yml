@@ -20,9 +20,9 @@ jobs:
           p = Path('app/src/main/java/dev/soundceiling/app/NormalizerService.java')
           s = p.read_text()
           bad = '''            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n'''
-          if bad in s:
-              s = s.replace(bad,
-                  '            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n', 1)
+          single = '            if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();\n'
+          while bad in s:
+              s = s.replace(bad, single)
           if bad in s:
               raise SystemExit('duplicate enhanced capture lifecycle remains')
           if 'enhancedSessionDsp.update(hybridSnapshot, blockRms, signal,' not in s:
