@@ -13,6 +13,7 @@ need "$R/app/src/main/java/dev/soundceiling/app/NormalizerService.java" 'session
 need "$R/app/src/main/java/dev/soundceiling/app/NormalizerService.java" 'session_dsp_apply_failed'
 need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/run-v077-samsung-3of15-tests.sh'
 need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/run-v077-session-telemetry-tests.sh'
+need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/check-v077-android-wiring-contract.sh'
 need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/check-v077-release-contract.sh'
 need "$R/.github/workflows/build-apk.yml" 'name: SoundCeiling-v0.7.7-debug-apk'
 need "$R/README.md" '# Sound Ceiling for Android - v0.7.7'
