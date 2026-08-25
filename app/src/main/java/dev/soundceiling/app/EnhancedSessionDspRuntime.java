@@ -237,6 +237,11 @@ final class EnhancedSessionDspRuntime {
 
     void onCaptureReplaced() { release("session_capture_replaced", false); }
     void onPolicyChanged() { release("session_policy_changed", true); }
+    void onApplyFailed(String why) {
+        String actual = why == null || why.isEmpty() ? "session_dsp_apply_failed" : why;
+        release(actual, false);
+        DiagnosticLog.transition("session_dsp_unavailable", actual, "applyFailed=true");
+    }
     void onStopped() { release("session_service_stopped", true); }
 
     private void cancelProbe(String why, long nowMs) {
