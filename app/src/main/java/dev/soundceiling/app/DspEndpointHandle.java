@@ -8,6 +8,7 @@ final class DspEndpointHandle {
     enum Provenance {
         APP_OWNED,
         DOCUMENTED_PROVIDER,
+        ENHANCED_SESSION_DISCOVERY,
         AUDIO_PLAYBACK_CONFIGURATION,
         PACKAGE_CANDIDATE
     }
@@ -15,11 +16,16 @@ final class DspEndpointHandle {
     final int audioSessionId;
     final Provenance provenance;
     final String allowedPolicyKey;
+    final int sourceUid;
+    final String sourcePackage;
 
-    private DspEndpointHandle(int audioSessionId, Provenance provenance, String allowedPolicyKey) {
+    private DspEndpointHandle(int audioSessionId, Provenance provenance, String allowedPolicyKey,
+                              int sourceUid, String sourcePackage) {
         this.audioSessionId = audioSessionId;
         this.provenance = provenance;
         this.allowedPolicyKey = allowedPolicyKey;
+        this.sourceUid = sourceUid;
+        this.sourcePackage = sourcePackage == null ? "" : sourcePackage;
     }
 
     static Optional<DspEndpointHandle> tryCreate(int audioSessionId, Provenance provenance,
@@ -31,14 +37,34 @@ final class DspEndpointHandle {
                 || currentPolicy == null || !currentPolicy.allowsDspControl()) {
             return Optional.empty();
         }
-        return Optional.of(new DspEndpointHandle(audioSessionId, provenance, key));
+        return Optional.of(new DspEndpointHandle(audioSessionId, provenance, key, -1, ""));
+    }
+
+    static Optional<DspEndpointHandle> forEnhancedSession(
+            AudioSessionOwnershipResolver.Decision decision,
+            String policyKey, AppPolicy currentPolicy) {
+        String key = policyKey == null ? "" : policyKey.trim();
+        if (decision == null || !decision.accepted || decision.sessionId <= 0 || decision.uid <= 0
+                || decision.packageName.isEmpty() || key.isEmpty()
+                || currentPolicy == null || !currentPolicy.allowsDspControl()) {
+            return Optional.empty();
+        }
+        return Optional.of(new DspEndpointHandle(decision.sessionId,
+                Provenance.ENHANCED_SESSION_DISCOVERY, key,
+                decision.uid, decision.packageName));
     }
 
     boolean isTrusted() {
         return audioSessionId > 0
                 && (provenance == Provenance.APP_OWNED
-                || provenance == Provenance.DOCUMENTED_PROVIDER)
+                || provenance == Provenance.DOCUMENTED_PROVIDER
+                || provenance == Provenance.ENHANCED_SESSION_DISCOVERY)
                 && !allowedPolicyKey.isEmpty();
+    }
+
+    boolean isEnhancedSession() {
+        return provenance == Provenance.ENHANCED_SESSION_DISCOVERY
+                && audioSessionId > 0 && sourceUid > 0 && !sourcePackage.isEmpty();
     }
 
     @Override public boolean equals(Object other) {
@@ -46,11 +72,13 @@ final class DspEndpointHandle {
         if (!(other instanceof DspEndpointHandle)) return false;
         DspEndpointHandle that = (DspEndpointHandle) other;
         return audioSessionId == that.audioSessionId
+                && sourceUid == that.sourceUid
                 && provenance == that.provenance
-                && allowedPolicyKey.equals(that.allowedPolicyKey);
+                && allowedPolicyKey.equals(that.allowedPolicyKey)
+                && sourcePackage.equals(that.sourcePackage);
     }
 
     @Override public int hashCode() {
-        return Objects.hash(audioSessionId, provenance, allowedPolicyKey);
+        return Objects.hash(audioSessionId, provenance, allowedPolicyKey, sourceUid, sourcePackage);
     }
 }
