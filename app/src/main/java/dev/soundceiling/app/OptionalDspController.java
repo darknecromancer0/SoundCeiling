@@ -15,8 +15,6 @@ final class OptionalDspController implements AutoCloseable {
     private DspPolicyArbiter.Decision policyDecision;
 
     AudioBackendStatus probe() {
-        // There is intentionally no guessed third-party session and no verified-by-construction
-        // global effect here. Task 8 may supply trusted handles; global proof is explicit/bounded.
         transports.reconcileTrustedHandles(Collections.emptyList());
         detail = transports.reason();
         return new AudioBackendStatus(AudioBackendStatus.Tier.DSP,
@@ -42,7 +40,8 @@ final class OptionalDspController implements AutoCloseable {
         policyDecision = DspPolicyArbiter.decide(input);
         if (policyDecision.result != DspPolicyArbiter.Result.POLICY_SCOPED_DSP
                 && policyDecision.result != DspPolicyArbiter.Result.GLOBAL_MIX_DSP
-                && !transports.globalProbeActive()) {
+                && !transports.globalProbeActive()
+                && !transports.enhancedSessionProbeActive()) {
             transports.neutralizeForFallback();
         }
         detail = policyDecision.reason;
@@ -63,7 +62,12 @@ final class OptionalDspController implements AutoCloseable {
     }
 
     DspTransport.Capability capability() {
-        if (policyDecision == null) return DspTransport.Capability.UNAVAILABLE;
+        if (policyDecision == null) {
+            DspTransport.Capability raw = transports.effectiveCapability();
+            return raw == DspTransport.Capability.UNAVAILABLE
+                    ? DspTransport.Capability.UNAVAILABLE
+                    : raw;
+        }
         if (policyDecision.result == DspPolicyArbiter.Result.POLICY_SCOPED_DSP) {
             return transports.policyScopedCapability();
         }
@@ -77,7 +81,7 @@ final class OptionalDspController implements AutoCloseable {
     }
 
     DspScope scope() {
-        if (policyDecision == null) return DspScope.NONE;
+        if (policyDecision == null) return transports.effectiveScope();
         if (policyDecision.result == DspPolicyArbiter.Result.POLICY_SCOPED_DSP) {
             return DspScope.POLICY_SCOPED;
         }
@@ -98,6 +102,13 @@ final class OptionalDspController implements AutoCloseable {
     }
 
     boolean globalProbeActive() { return transports.globalProbeActive(); }
+    boolean enhancedSessionProbeActive() { return transports.enhancedSessionProbeActive(); }
+    int enhancedSessionId() { return transports.enhancedSessionId(); }
+    int enhancedSessionUid() { return transports.enhancedSessionUid(); }
+    String enhancedSessionPackage() { return transports.enhancedSessionPackage(); }
+    boolean hasVerifiedEnhancedSession(DspEndpointHandle handle) {
+        return transports.hasVerifiedEnhancedSession(handle);
+    }
 
     boolean applyGain(float requestedGainDb, boolean hardSafety) {
         if (requestedGainDb != 0f && (policyDecision == null
@@ -111,7 +122,6 @@ final class OptionalDspController implements AutoCloseable {
         return applied;
     }
 
-    /** Compatibility overload for non-safety callers; live service passes explicit provenance. */
     boolean applyGain(float requestedGainDb) {
         return applyGain(requestedGainDb, false);
     }
@@ -120,6 +130,66 @@ final class OptionalDspController implements AutoCloseable {
         return transports.appliedGainDb();
     }
 
+    // v0.7.7 enhanced non-zero session differential verification.
+    boolean beginEnhancedSessionDifferentialProbe(DspEndpointHandle handle, String routeIdentity,
+                                                   int mediaIndex, boolean allowedMediaActive,
+                                                   long atMs) {
+        boolean started = transports.beginEnhancedSessionDifferentialProbe(handle, routeIdentity,
+                mediaIndex, allowedMediaActive, atMs);
+        detail = transports.reason();
+        return started;
+    }
+
+    void addEnhancedSessionBaseline(float sourceRmsDb, float outputRmsDb, long atMs) {
+        transports.addEnhancedSessionBaseline(sourceRmsDb, outputRmsDb, atMs);
+    }
+
+    boolean attachEnhancedSessionDifferentialProbe(long atMs) {
+        boolean attached = transports.attachEnhancedSessionDifferentialProbe(atMs);
+        detail = transports.reason();
+        return attached;
+    }
+
+    void addEnhancedSessionNeutralAttach(float sourceRmsDb, float outputRmsDb, long atMs) {
+        transports.addEnhancedSessionNeutralAttach(sourceRmsDb, outputRmsDb, atMs);
+    }
+
+    DspDifferentialVerifier.AttachResult evaluateEnhancedSessionNeutralAttach(long atMs) {
+        DspDifferentialVerifier.AttachResult result =
+                transports.evaluateEnhancedSessionNeutralAttach(atMs);
+        detail = transports.reason();
+        return result;
+    }
+
+    boolean activateEnhancedSessionDifferentialProbe(long atMs) {
+        boolean activated = transports.activateEnhancedSessionDifferentialProbe(atMs);
+        detail = transports.reason();
+        return activated;
+    }
+
+    void addEnhancedSessionProbePair(float sourceRmsDb, float outputRmsDb, long atMs) {
+        transports.addEnhancedSessionProbePair(sourceRmsDb, outputRmsDb, atMs);
+    }
+
+    DspScopeProbe.Evidence finishEnhancedSessionDifferentialProbe(long timestampMs) {
+        DspScopeProbe.Evidence evidence =
+                transports.finishEnhancedSessionDifferentialProbe(timestampMs);
+        detail = transports.reason();
+        return evidence;
+    }
+
+    void cancelEnhancedSessionProbe(String reason) {
+        transports.cancelEnhancedSessionProbe(reason);
+        detail = transports.reason();
+    }
+
+    void releaseEnhancedSession(String reason) {
+        transports.releaseEnhancedSession(reason);
+        policyDecision = null;
+        detail = transports.reason();
+    }
+
+    // Historical session-zero probe facade retained for diagnostics.
     DspTransport.Capability prepareGlobalProbeTransport() {
         DspTransport.Capability capability = transports.prepareGlobalProbeTransport();
         detail = transports.reason();
