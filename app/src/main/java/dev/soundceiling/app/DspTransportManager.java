@@ -17,7 +17,8 @@ final class DspTransportManager implements AutoCloseable {
     private final DspScopeProbe scopeProbe = new DspScopeProbe();
     private final DspDifferentialVerifier differentialVerifier = new DspDifferentialVerifier();
 
-    // v0.7.7 non-zero session proof path.
+    // Historical v0.7.7 acoustic Enhanced Session probe retained for compatibility/tests.
+    // v0.7.7.1 production Enhanced Session authority uses deterministic Android readback below.
     private final DspScopeProbe enhancedScopeProbe = new DspScopeProbe();
     private final DspDifferentialVerifier enhancedVerifier = new DspDifferentialVerifier();
     private DspEndpointHandle enhancedProbeHandle;
@@ -72,8 +73,44 @@ final class DspTransportManager implements AutoCloseable {
         reason = scoped.isEmpty() ? "no_trusted_dsp_handles" : "trusted_scoped_dsp_ready";
     }
 
+    /** v0.7.7.1 deterministic Enhanced Session authority: exact session ownership + API readback. */
+    boolean verifyEnhancedSessionReadback(DspEndpointHandle handle, boolean allowedMediaActive) {
+        if (!allowedMediaActive || handle == null || !handle.isEnhancedSession()
+                || handle.audioSessionId <= 0) {
+            reason = "enhanced_session_readback_rejected:invalid_handle_or_inactive";
+            return false;
+        }
+        if (hasVerifiedEnhancedSession(handle)) {
+            reason = "verified_enhanced_session_readback";
+            return true;
+        }
+
+        cancelEnhancedSessionProbe("readback_handshake");
+        AndroidDynamicsProcessingTransport transport =
+                AndroidDynamicsProcessingTransport.forEnhancedSessionProbe(handle, channelCount);
+        if (transport.capability() == DspTransport.Capability.UNAVAILABLE) {
+            reason = transport.reason();
+            neutralizeAndClose(transport);
+            return false;
+        }
+
+        EnhancedSessionReadbackVerifier.Result readback =
+                transport.verifyEnhancedSessionReadbackHandshake();
+        boolean verified = readback.verified && transport.authorizeVerifiedPolicyScoped();
+        if (!verified) {
+            reason = "enhanced_session_readback_rejected:" + readback.reason;
+            neutralizeAndClose(transport);
+            return false;
+        }
+
+        closeEnhancedScoped();
+        scoped.put(handle, transport);
+        reason = "verified_enhanced_session_readback";
+        return true;
+    }
+
     // -------------------------------------------------------------------------
-    // v0.7.7 Enhanced Session DSP: baseline(no effect) -> neutral attach -> -0.5 dB proof.
+    // Historical v0.7.7 Enhanced Session acoustic differential probe.
     // -------------------------------------------------------------------------
 
     boolean beginEnhancedSessionDifferentialProbe(DspEndpointHandle handle,
@@ -176,7 +213,7 @@ final class DspTransportManager implements AutoCloseable {
             closeEnhancedScoped();
             scoped.put(enhancedProbeHandle, enhancedProbeTransport);
             reason = "verified_enhanced_session";
-            enhancedProbeTransport = null; // ownership moved into scoped map
+            enhancedProbeTransport = null;
         } else {
             reason = "enhanced_session_probe_rejected:" + evidence.reason;
             neutralizeAndClose(enhancedProbeTransport);
@@ -196,7 +233,7 @@ final class DspTransportManager implements AutoCloseable {
         enhancedProbeTransport = null;
         enhancedProbeHandle = null;
         enhancedRouteIdentity = "";
-        if (!"new_probe".equals(actual)) reason = actual;
+        if (!"new_probe".equals(actual) && !"readback_handshake".equals(actual)) reason = actual;
     }
 
     boolean enhancedSessionProbeActive() {
@@ -252,10 +289,6 @@ final class DspTransportManager implements AutoCloseable {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Shared verified transport APIs.
-    // -------------------------------------------------------------------------
-
     DspTransport.Capability policyScopedCapability() {
         if (scoped.isEmpty()) return DspTransport.Capability.UNAVAILABLE;
         for (AndroidDynamicsProcessingTransport transport : scoped.values()) {
@@ -289,7 +322,7 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     String reason() {
-        if (enhancedSessionId() > 0) return "verified_enhanced_session";
+        if (enhancedSessionId() > 0) return "verified_enhanced_session_readback";
         if (enhancedSessionProbeActive()) return reason;
         if (effectiveCapability() == DspTransport.Capability.VERIFIED_POLICY_SCOPED) {
             return "verified_policy_scoped";
@@ -340,10 +373,6 @@ final class DspTransportManager implements AutoCloseable {
         }
         return false;
     }
-
-    // -------------------------------------------------------------------------
-    // Historical session-zero probe implementation retained for diagnostics/compatibility.
-    // -------------------------------------------------------------------------
 
     DspTransport.Capability prepareGlobalProbeTransport() {
         if (global == null) {
@@ -478,9 +507,7 @@ final class DspTransportManager implements AutoCloseable {
         return evidence;
     }
 
-    DspScopeProbe.Evidence globalProof() {
-        return globalProof;
-    }
+    DspScopeProbe.Evidence globalProof() { return globalProof; }
 
     boolean globalProbeActive() {
         return scopeProbe.active() || differentialVerifier.active();
@@ -578,7 +605,5 @@ final class DspTransportManager implements AutoCloseable {
         transport.close();
     }
 
-    @Override public void close() {
-        onServiceStopped();
-    }
+    @Override public void close() { onServiceStopped(); }
 }
