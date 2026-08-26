@@ -47,7 +47,6 @@ final class OptionalDspController implements AutoCloseable {
         detail = policyDecision.reason;
     }
 
-    /** Compatibility path for callers that only have public usage facts. */
     void updatePolicy(PlaybackSnapshot playback, boolean documentedOemScopeProof,
                       boolean wholeOutputConsent) {
         List<PlaybackEndpoint> endpoints = new ArrayList<>();
@@ -65,8 +64,7 @@ final class OptionalDspController implements AutoCloseable {
         if (policyDecision == null) {
             DspTransport.Capability raw = transports.effectiveCapability();
             return raw == DspTransport.Capability.UNAVAILABLE
-                    ? DspTransport.Capability.UNAVAILABLE
-                    : raw;
+                    ? DspTransport.Capability.UNAVAILABLE : raw;
         }
         if (policyDecision.result == DspPolicyArbiter.Result.POLICY_SCOPED_DSP) {
             return transports.policyScopedCapability();
@@ -97,17 +95,23 @@ final class OptionalDspController implements AutoCloseable {
                 || capability == DspTransport.Capability.VERIFIED_GLOBAL_MIX;
     }
 
-    String detail() {
-        return detail;
-    }
-
+    String detail() { return detail; }
     boolean globalProbeActive() { return transports.globalProbeActive(); }
     boolean enhancedSessionProbeActive() { return transports.enhancedSessionProbeActive(); }
     int enhancedSessionId() { return transports.enhancedSessionId(); }
     int enhancedSessionUid() { return transports.enhancedSessionUid(); }
     String enhancedSessionPackage() { return transports.enhancedSessionPackage(); }
+
     boolean hasVerifiedEnhancedSession(DspEndpointHandle handle) {
         return transports.hasVerifiedEnhancedSession(handle);
+    }
+
+    /** v0.7.7.1 deterministic non-zero Session DSP verification. */
+    boolean verifyEnhancedSessionReadback(DspEndpointHandle handle, boolean allowedMediaActive) {
+        boolean verified = transports.verifyEnhancedSessionReadback(handle, allowedMediaActive);
+        policyDecision = null;
+        detail = transports.reason();
+        return verified;
     }
 
     boolean applyGain(float requestedGainDb, boolean hardSafety) {
@@ -122,15 +126,10 @@ final class OptionalDspController implements AutoCloseable {
         return applied;
     }
 
-    boolean applyGain(float requestedGainDb) {
-        return applyGain(requestedGainDb, false);
-    }
+    boolean applyGain(float requestedGainDb) { return applyGain(requestedGainDb, false); }
+    float appliedGainDb() { return transports.appliedGainDb(); }
 
-    float appliedGainDb() {
-        return transports.appliedGainDb();
-    }
-
-    // v0.7.7 enhanced non-zero session differential verification.
+    // Historical v0.7.7 enhanced acoustic differential verification.
     boolean beginEnhancedSessionDifferentialProbe(DspEndpointHandle handle, String routeIdentity,
                                                    int mediaIndex, boolean allowedMediaActive,
                                                    long atMs) {
@@ -189,7 +188,6 @@ final class OptionalDspController implements AutoCloseable {
         detail = transports.reason();
     }
 
-    // Historical session-zero probe facade retained for diagnostics.
     DspTransport.Capability prepareGlobalProbeTransport() {
         DspTransport.Capability capability = transports.prepareGlobalProbeTransport();
         detail = transports.reason();
