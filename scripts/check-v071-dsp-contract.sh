@@ -21,13 +21,22 @@ PROBE="$PKG/DspScopeProbe.java"
 OBSERVER="$PKG/PlaybackObserver.java"
 SERVICE="$PKG/NormalizerService.java"
 RUNTIME="$PKG/RuntimeState.java"
+PLANNER="$PKG/OutputGainPlanner.java"
 
-# Task 7.1: integration classes must exist and use the public framework DynamicsProcessing API.
+# Task 7.1 historical integration: framework DynamicsProcessing is still the public transport.
 require "$TRANSPORT" 'import android.media.audiofx.DynamicsProcessing;'
 require "$TRANSPORT" 'new DynamicsProcessing(0, audioSessionId, config)'
 require "$TRANSPORT" 'DynamicsProcessing.Config.Builder('
 require "$TRANSPORT" 'setInputGainAllChannelsTo'
-require "$TRANSPORT" 'setLimiterAllChannelsTo'
+
+# v0.7.7.1 supersedes the old always-present limiter topology for neutral Session probes.
+# Neutral verification must be input-gain-only; positive gain remains peak-headroom limited by
+# the planner and hard safety remains a separate authority.
+reject "$TRANSPORT" '.setLimiterAllChannelsTo('
+require "$TRANSPORT" 'enhanced_session_input_gain_only_unverified'
+require "$PLANNER" 'positivePeakHeadroomDb'
+require "$PLANNER" 'Reason.PEAK_LIMITED'
+require "$PLANNER" 'input.hardPeakCeilingDbfs() - projectedPeakDbfs'
 
 # Non-zero session DSP is legal only for trusted handles with explicit provenance.
 require "$TRANSPORT" 'forTrustedHandle(DspEndpointHandle handle'
@@ -93,4 +102,4 @@ require "$SERVICE" 'DspTransport.Capability.VERIFIED_GLOBAL_MIX'
 reject "$SERVICE" 'capability == DspTransport.Capability.AVAILABLE_UNVERIFIED'
 require "$RUNTIME" 'controlCapabilityVerified'
 
-echo "v0.7.1 DSP integration contract: PASS"
+echo "v0.7.1 DSP integration + v0.7.7.1 neutral topology contract: PASS"
