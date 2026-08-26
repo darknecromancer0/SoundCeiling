@@ -9,15 +9,18 @@ final class EnhancedSessionReadbackVerifier {
 
     static final class Snapshot {
         final boolean effectEnabled;
+        final boolean hasControl;
         final boolean preEqInUse;
         final boolean mbcInUse;
         final boolean postEqInUse;
         final boolean limiterInUse;
         final float[] inputGainsDb;
 
-        Snapshot(boolean effectEnabled, boolean preEqInUse, boolean mbcInUse,
+        Snapshot(boolean effectEnabled, boolean hasControl,
+                 boolean preEqInUse, boolean mbcInUse,
                  boolean postEqInUse, boolean limiterInUse, float[] inputGainsDb) {
             this.effectEnabled = effectEnabled;
+            this.hasControl = hasControl;
             this.preEqInUse = preEqInUse;
             this.mbcInUse = mbcInUse;
             this.postEqInUse = postEqInUse;
@@ -49,6 +52,9 @@ final class EnhancedSessionReadbackVerifier {
         }
         if (!neutral.effectEnabled || !probe.effectEnabled || !restored.effectEnabled) {
             return reject("effect_not_enabled");
+        }
+        if (!neutral.hasControl || !probe.hasControl || !restored.hasControl) {
+            return reject("effect_control_missing");
         }
         if (!neutral.inputGainOnly() || !probe.inputGainOnly() || !restored.inputGainOnly()) {
             return reject("topology_not_input_gain_only");
