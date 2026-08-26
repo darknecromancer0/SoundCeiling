@@ -6,7 +6,7 @@ on:
   pull_request:
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -33,23 +33,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Restore stable dev debug keystore
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: soundceiling-debug-keystore-v1
-      - name: Ensure stable dev debug keystore
+      - name: Install fixed dev debug keystore
         run: |
           mkdir -p ~/.android
-          if [ ! -f ~/.android/debug.keystore ]; then
-            keytool -genkeypair -v \
-              -keystore ~/.android/debug.keystore \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -dname "CN=SoundCeiling Dev,O=SoundCeiling,C=US" \
-              -keyalg RSA -keysize 2048 -validity 10000
-          fi
+          base64 --decode .github/dev-debug-keystore.b64 > ~/.android/debug.keystore
+          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey >/dev/null
+      - name: Check v0.7.7.1 fixed dev signing identity
+        run: bash ./scripts/check-v0771-dev-signing-contract.sh
       - name: Run pure logic tests
         run: ./scripts/run-pure-tests.sh
       - name: Check v0.4 storage contract
