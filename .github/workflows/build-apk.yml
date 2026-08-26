@@ -131,10 +131,15 @@ jobs:
         run: bash ./scripts/check-v0771-readback-wiring-contract.sh
       - name: Check v0.7.7.1 release contract
         run: bash ./scripts/check-v0771-release-contract.sh
-      - uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android SDK 35 packages
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
       - name: Build debug APK
         run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
       - name: APK checksum
