@@ -9,6 +9,8 @@ public final class V076DspDifferentialVerifierPureTest {
         neutralAttachWithoutResidualShiftIsSafe();
         neutralAttachResidualShiftIsUnsafe();
         neutralAttachShortValidWindowRemainsRetryable();
+        unstableNeutralResidualsRemainInconclusive();
+        unstableProbeResidualsRemainInconclusive();
         mediaMoveCancelsEvidence();
         System.out.println("V076DspDifferentialVerifierPureTest: PASS");
     }
@@ -121,6 +123,52 @@ public final class V076DspDifferentialVerifierPureTest {
                 "field regression must retain explicit insufficient-coverage reason");
         require(r.attachPairs >= 20, "pair count alone must not make evidence conclusive");
         require(r.coveredMs < 250, "test fixture must reproduce sub-250ms valid coverage");
+    }
+
+    /** v0.7.7 Samsung field trace showed neutral-attach deltas ranging from about -16.6 dB to
+     * +9.7 dB on the same session. Such a wide residual cloud is asynchronous meter evidence,
+     * not proof that a 0 dB transport is non-neutral. */
+    private static void unstableNeutralResidualsRemainInconclusive() {
+        DspDifferentialVerifier v = new DspDifferentialVerifier();
+        v.begin("speaker", 3, 0);
+        float[] baselineResidual = {-25f, -18f, -31f, -22f, -29f, -20f, -27f, -23f, -32f, -19f};
+        for (int i = 0; i < baselineResidual.length; i++) {
+            float source = -24f + i * .3f;
+            v.addBaseline(source, source + baselineResidual[i], i * 30L);
+        }
+        v.beginNeutralAttach(300);
+        float[] attachResidual = {-19f, -34f, -21f, -30f, -17f, -28f, -35f, -20f, -31f, -18f};
+        for (int i = 0; i < attachResidual.length; i++) {
+            float source = -23f + i * .25f;
+            v.addNeutralAttach(source, source + attachResidual[i], 300 + i * 30L);
+        }
+        DspDifferentialVerifier.AttachResult r = v.evaluateNeutralAttach(600);
+        require(!r.safe, "unstable residual evidence is not yet safe");
+        require(r.retryable(), "unstable residual evidence must remain retryable, not suppress the session");
+        require(r.reason.contains("attach_unstable_residuals"),
+                "unstable attach evidence needs an explicit diagnostic reason");
+    }
+
+    private static void unstableProbeResidualsRemainInconclusive() {
+        DspDifferentialVerifier v = new DspDifferentialVerifier();
+        v.begin("speaker", 3, 0);
+        float[] baselineResidual = {-25f, -18f, -31f, -22f, -29f, -20f, -27f, -23f, -32f, -19f};
+        for (int i = 0; i < baselineResidual.length; i++) {
+            float source = -24f + i * .3f;
+            v.addBaseline(source, source + baselineResidual[i], i * 30L);
+        }
+        v.beginProbe(300);
+        float[] probeResidual = {-19f, -34f, -21f, -30f, -17f, -28f, -35f, -20f, -31f, -18f};
+        for (int i = 0; i < probeResidual.length; i++) {
+            float source = -23f + i * .25f;
+            v.addProbe(source, source + probeResidual[i], 300 + i * 30L);
+        }
+        DspDifferentialVerifier.Result r = v.finish(600);
+        require(!r.verified, "unstable probe evidence cannot verify DSP");
+        require(r.classification == DspDifferentialVerifier.Classification.INSUFFICIENT_EVIDENCE,
+                "unstable probe evidence must be inconclusive, not responsive-nonlinear");
+        require(r.reason.contains("unstable_residuals"),
+                "unstable probe evidence needs an explicit diagnostic reason");
     }
 
     private static void mediaMoveCancelsEvidence() {
