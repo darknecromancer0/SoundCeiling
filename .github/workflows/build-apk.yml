@@ -2,7 +2,7 @@ name: Build Sound Ceiling APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "feature/v0.7-adaptive-envelope" ]
   pull_request:
 jobs:
   build:
