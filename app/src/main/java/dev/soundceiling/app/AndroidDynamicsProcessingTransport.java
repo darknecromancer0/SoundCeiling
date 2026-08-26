@@ -210,7 +210,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
             gains[channel] = effect.getInputGainByChannelIndex(channel);
         }
         return new EnhancedSessionReadbackVerifier.Snapshot(
-                effect.getEnabled(),
+                effect.getEnabled(), effect.hasControl(),
                 config.isPreEqInUse(), config.isMbcInUse(),
                 config.isPostEqInUse(), config.isLimiterInUse(), gains);
     }
