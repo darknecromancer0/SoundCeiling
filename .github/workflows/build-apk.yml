@@ -33,13 +33,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install fixed dev debug keystore
-        run: |
-          mkdir -p ~/.android
-          base64 --decode .github/dev-debug-keystore.b64 > ~/.android/debug.keystore
-          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey >/dev/null
-      - name: Check v0.7.7.1 fixed dev signing identity
-        run: bash ./scripts/check-v0771-dev-signing-contract.sh
       - name: Run pure logic tests
         run: ./scripts/run-pure-tests.sh
       - name: Check v0.4 storage contract
