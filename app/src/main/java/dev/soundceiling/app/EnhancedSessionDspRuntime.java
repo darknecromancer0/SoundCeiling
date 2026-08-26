@@ -174,7 +174,7 @@ final class EnhancedSessionDspRuntime {
         }
 
         if (nowMs - transportAttachedAtMs > PROBE_MAX_ACTIVE_MS) {
-            suppressAndRelease("session_probe_timeout", nowMs);
+            cancelProbe("session_probe_inconclusive_timeout", nowMs);
             return;
         }
 
@@ -188,7 +188,15 @@ final class EnhancedSessionDspRuntime {
                     "session=" + candidate.audioSessionId + " safe=" + attach.safe
                             + " retryable=" + attach.retryable() + " deltaDb=" + attach.deltaDb
                             + " coveredMs=" + attach.coveredMs + " samples=" + attach.attachPairs);
-            if (attach.retryable()) return;
+            if (attach.retryable()) {
+                if ("attach_unstable_residuals".equals(attach.reason)) {
+                    DiagnosticLog.transition("session_dsp_attach_inconclusive", attach.reason,
+                            "session=" + candidate.audioSessionId + " coveredMs="
+                                    + attach.coveredMs + " samples=" + attach.attachPairs);
+                    cancelProbe("session_attach_inconclusive", nowMs);
+                }
+                return;
+            }
             if (!attach.safe) {
                 suppressAndRelease("session_neutral_attach_unsafe:" + attach.deltaDb, nowMs);
                 return;
@@ -221,6 +229,13 @@ final class EnhancedSessionDspRuntime {
             DiagnosticLog.transition("session_dsp_attached", "verified",
                     "session=" + dsp.enhancedSessionId() + " uid=" + dsp.enhancedSessionUid()
                             + " package=" + dsp.enhancedSessionPackage());
+            resetProbeState(nowMs);
+        } else if (evidence.classification
+                == DspDifferentialVerifier.Classification.INSUFFICIENT_EVIDENCE) {
+            reason = "session_probe_inconclusive:" + evidence.reason;
+            DiagnosticLog.transition("session_dsp_probe_inconclusive", evidence.reason,
+                    "session=" + (candidate == null ? -1 : candidate.audioSessionId)
+                            + " samples=" + evidence.sampleCount);
             resetProbeState(nowMs);
         } else {
             suppressAndRelease("session_probe_unverified:" + evidence.classification
