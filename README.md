@@ -62,6 +62,7 @@ Historical Samsung acceptance: `docs/field-tests/2026-08-24-v0.7.6.1-samsung-che
 
 - **Samsung slider is the user master anchor.** Manual Media movement rebases control immediately. SoundCeiling may never silently redefine the user's chosen Samsung step.
 - **Verified DSP is the continuous normalizer.** DSP normalization becomes active only after verification proves that the transport controls the intended output path with the required scope.
+- **Historical v0.7.6 scope proof used route-scoped differential verification.** That acoustic proof remains a historical contract; v0.7.7.1 Enhanced Session production authority now uses deterministic Android readback instead.
 - **Unverified DSP is reported honestly.** If verification is absent or fails, UI and logs do not claim verified DSP authority.
 - **Raw peak is not output authority.** A **source peak alone cannot force Media down**. Ordinary control uses measured/projected output evidence. Hard Media cap and Quiet Now remain separate immediate safety paths.
 - **Low-volume authority is explicit.** Media 1/15 and 2/15 are valid user anchors, not automatic normalization destinations. Manual 1→2, 2→3 and 3→2 changes must not snap back.
