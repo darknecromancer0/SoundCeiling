@@ -29,11 +29,16 @@ require "$TRANSPORT" 'new DynamicsProcessing(0, audioSessionId, config)'
 require "$TRANSPORT" 'DynamicsProcessing.Config.Builder('
 require "$TRANSPORT" 'setInputGainAllChannelsTo'
 
-# v0.7.7.1 supersedes the old always-present limiter topology for neutral Session probes.
-# Neutral verification must be input-gain-only; positive gain remains peak-headroom limited by
-# the planner and hard safety remains a separate authority.
-reject "$TRANSPORT" '.setLimiterAllChannelsTo('
-require "$TRANSPORT" 'enhanced_session_input_gain_only_unverified'
+# v0.7.7.2 supersedes the all-stages-absent Enhanced Session topology on Samsung.
+# A limiter stage may exist only as an explicitly disabled constructor-compatibility shell;
+# input gain remains the only active processing control. The historical active 10:1 / -1 dBFS
+# limiter is still forbidden, and positive gain remains peak-headroom limited by the planner.
+require "$TRANSPORT" 'disabledLimiterCompatibilityShell'
+require "$TRANSPORT" '.setLimiterAllChannelsTo('
+require "$TRANSPORT" 'true, false, 0, 1f, 60f, 1f, 0f, 0f'
+require "$TRANSPORT" 'enhanced_session_input_gain_with_disabled_limiter_shell_unverified'
+require "$TRANSPORT" 'getLimiterByChannelIndex(channel).isEnabled()'
+reject "$TRANSPORT" 'true, true, 0, 1f, 60f, 10f, -1f, 0f'
 require "$PLANNER" 'positivePeakHeadroomDb'
 require "$PLANNER" 'Reason.PEAK_LIMITED'
 require "$PLANNER" 'input.hardPeakCeilingDbfs() - projectedPeakDbfs'
@@ -102,4 +107,4 @@ require "$SERVICE" 'DspTransport.Capability.VERIFIED_GLOBAL_MIX'
 reject "$SERVICE" 'capability == DspTransport.Capability.AVAILABLE_UNVERIFIED'
 require "$RUNTIME" 'controlCapabilityVerified'
 
-echo "v0.7.1 DSP integration + v0.7.7.1 neutral topology contract: PASS"
+echo "v0.7.1 DSP integration + v0.7.7.2 disabled-shell compatibility contract: PASS"
