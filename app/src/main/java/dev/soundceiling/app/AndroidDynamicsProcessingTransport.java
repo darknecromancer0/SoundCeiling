@@ -40,9 +40,6 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         this.reason = initialReason;
         String configuredFailure = "";
         try {
-            // v0.7.7.1: the verification topology must be genuinely neutral at 0 dB.
-            // Only inputGain is present. PreEQ, MBC, PostEQ and Limiter are not in use,
-            // so an enabled candidate cannot alter dynamics before we deliberately request gain.
             DynamicsProcessing.Config config =
                     new DynamicsProcessing.Config.Builder(
                             DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION,
@@ -61,9 +58,6 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
 
         if (effect == null && allowDefaultConfigFallback) {
             try {
-                // Historical compatibility only. Enhanced Session probes explicitly disable this
-                // path because an OEM/default topology cannot be claimed neutral or measured as an
-                // input-gain-only transport.
                 effect = initializeCandidate(new DynamicsProcessing(audioSessionId));
                 reason = initialReason + ":default_config_fallback"
                         + (configuredFailure.isEmpty() ? "" : ":after=" + configuredFailure);
@@ -105,7 +99,6 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                 DspScope.POLICY_SCOPED, "trusted_policy_scoped_handle", true);
     }
 
-    /** v0.7.7.1: a discovered third-party session starts unverified and input-gain-only. */
     static AndroidDynamicsProcessingTransport forEnhancedSessionProbe(DspEndpointHandle handle,
                                                                        int channelCount) {
         if (handle == null || !handle.isEnhancedSession() || handle.audioSessionId <= 0) {
@@ -137,15 +130,9 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         reason = unavailableReason;
     }
 
-    int audioSessionId() {
-        return audioSessionId;
-    }
+    int audioSessionId() { return audioSessionId; }
+    float appliedGainDb() { return appliedGainDb; }
 
-    float appliedGainDb() {
-        return appliedGainDb;
-    }
-
-    /** Enable a bounded verification candidate at exactly 0 dB. */
     DspApplyResult enableNeutralForProbe() {
         if ((!globalSession && !enhancedProbeCandidate) || effect == null) {
             return DspApplyResult.rejected(appliedGainDb, capability,
@@ -165,7 +152,6 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         }
     }
 
-    /** Probe-only path. It can only apply the bounded negative test gain or restore neutral. */
     DspApplyResult applyProbeAttenuationDb(float gainDb) {
         if ((!globalSession && !enhancedProbeCandidate) || effect == null) {
             return DspApplyResult.rejected(appliedGainDb, capability,
@@ -178,7 +164,57 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         return setGainDirect(gainDb, "bounded_scope_probe");
     }
 
-    /** Promote a verified non-zero enhanced session after neutral + differential proof. */
+    /**
+     * v0.7.7.1 Enhanced Session proof. Non-zero session scope is already established by exact
+     * sessionId + UID ownership; this handshake verifies the actual Android effect topology and
+     * parameter control without using asynchronous PCM/Visualizer samples as an authority gate.
+     */
+    EnhancedSessionReadbackVerifier.Result verifyEnhancedSessionReadbackHandshake() {
+        if (globalSession || !enhancedProbeCandidate || effect == null || audioSessionId <= 0) {
+            return new EnhancedSessionReadbackVerifier.Result(false,
+                    "readback_transport_unavailable");
+        }
+        try {
+            effect.setInputGainAllChannelsTo(0f);
+            effect.setEnabled(true);
+            EnhancedSessionReadbackVerifier.Snapshot neutral = readbackSnapshot();
+
+            effect.setInputGainAllChannelsTo(EnhancedSessionReadbackVerifier.PROBE_GAIN_DB);
+            EnhancedSessionReadbackVerifier.Snapshot probe = readbackSnapshot();
+
+            effect.setInputGainAllChannelsTo(0f);
+            EnhancedSessionReadbackVerifier.Snapshot restored = readbackSnapshot();
+            appliedGainDb = 0f;
+            lastApplyAtMs = 0L;
+
+            EnhancedSessionReadbackVerifier.Result result =
+                    EnhancedSessionReadbackVerifier.verify(neutral, probe, restored);
+            reason = result.verified ? "enhanced_session_readback_verified"
+                    : "enhanced_session_readback_rejected:" + result.reason;
+            return result;
+        } catch (RuntimeException error) {
+            try { effect.setInputGainAllChannelsTo(0f); }
+            catch (RuntimeException ignored) {}
+            appliedGainDb = 0f;
+            lastApplyAtMs = 0L;
+            reason = "enhanced_session_readback_failed:" + error.getClass().getSimpleName();
+            return new EnhancedSessionReadbackVerifier.Result(false, reason);
+        }
+    }
+
+    private EnhancedSessionReadbackVerifier.Snapshot readbackSnapshot() {
+        DynamicsProcessing.Config config = effect.getConfig();
+        int channels = effect.getChannelCount();
+        float[] gains = new float[Math.max(0, channels)];
+        for (int channel = 0; channel < gains.length; channel++) {
+            gains[channel] = effect.getInputGainByChannelIndex(channel);
+        }
+        return new EnhancedSessionReadbackVerifier.Snapshot(
+                effect.getEnabled(),
+                config.isPreEqInUse(), config.isMbcInUse(),
+                config.isPostEqInUse(), config.isLimiterInUse(), gains);
+    }
+
     boolean authorizeVerifiedPolicyScoped() {
         if (globalSession || !enhancedProbeCandidate || effect == null || audioSessionId <= 0) {
             return false;
@@ -200,7 +236,6 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         }
     }
 
-    /** Promote session-zero only after digital proof plus an explicit authority for its scope. */
     boolean authorizeVerifiedGlobal(boolean allowedMediaEffectVerified,
                                     boolean documentedOemScopeProof,
                                     boolean wholeOutputConsent) {
@@ -232,13 +267,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                 && (documentedOemScopeProof || wholeOutputConsent);
     }
 
-    @Override public Capability capability() {
-        return capability;
-    }
-
-    @Override public DspScope scope() {
-        return scope;
-    }
+    @Override public Capability capability() { return capability; }
+    @Override public DspScope scope() { return scope; }
 
     @Override public DspApplyResult applyGainDb(float gainDb, boolean hardSafety) {
         if (!Float.isFinite(gainDb)) {
@@ -257,7 +287,6 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
             return DspApplyResult.rejected(appliedGainDb, capability,
                     "scoped_gain_requires_verified_handle");
         }
-
         float target = clampGain(gainDb);
         long now = SystemClock.elapsedRealtime();
         long elapsed = lastApplyAtMs <= 0L ? 20L : Math.max(0L, now - lastApplyAtMs);
@@ -293,13 +322,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         }
     }
 
-    @Override public Set<Integer> affectedUsages() {
-        return Collections.emptySet();
-    }
-
-    @Override public String reason() {
-        return reason;
-    }
+    @Override public Set<Integer> affectedUsages() { return Collections.emptySet(); }
+    @Override public String reason() { return reason; }
 
     @Override public void neutralize() {
         if (effect == null) {
