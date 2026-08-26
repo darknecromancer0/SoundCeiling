@@ -12,6 +12,7 @@ need "$T" 'verifyEnhancedSessionReadbackHandshake'
 need "$T" 'effect.getConfig()'
 need "$T" 'effect.getChannelCount()'
 need "$T" 'effect.getInputGainByChannelIndex(channel)'
+need "$T" 'effect.getEnabled(), effect.hasControl()'
 need "$T" 'config.isPreEqInUse()'
 need "$T" 'config.isMbcInUse()'
 need "$T" 'config.isPostEqInUse()'
@@ -29,6 +30,7 @@ if grep -Fq 'finishEnhancedSessionDifferentialProbe' "$E"; then
   exit 1
 fi
 need "$V" 'PROBE_GAIN_DB = -.5f'
+need "$V" 'effect_control_missing'
 need "$V" 'topology_not_input_gain_only'
 need "$V" 'restore_gain_mismatch'
 echo 'v0.7.7.1 readback wiring contract: PASS'
