@@ -14,23 +14,33 @@ final class EnhancedSessionReadbackVerifier {
         final boolean mbcInUse;
         final boolean postEqInUse;
         final boolean limiterInUse;
+        final boolean[] limiterEnabled;
         final float[] inputGainsDb;
 
         Snapshot(boolean effectEnabled, boolean hasControl,
                  boolean preEqInUse, boolean mbcInUse,
-                 boolean postEqInUse, boolean limiterInUse, float[] inputGainsDb) {
+                 boolean postEqInUse, boolean limiterInUse,
+                 boolean[] limiterEnabled, float[] inputGainsDb) {
             this.effectEnabled = effectEnabled;
             this.hasControl = hasControl;
             this.preEqInUse = preEqInUse;
             this.mbcInUse = mbcInUse;
             this.postEqInUse = postEqInUse;
             this.limiterInUse = limiterInUse;
+            this.limiterEnabled = limiterEnabled == null
+                    ? new boolean[0] : Arrays.copyOf(limiterEnabled, limiterEnabled.length);
             this.inputGainsDb = inputGainsDb == null
                     ? new float[0] : Arrays.copyOf(inputGainsDb, inputGainsDb.length);
         }
 
         boolean inputGainOnly() {
-            return !preEqInUse && !mbcInUse && !postEqInUse && !limiterInUse;
+            if (preEqInUse || mbcInUse || postEqInUse) return false;
+            if (!limiterInUse) return true;
+            if (limiterEnabled.length != inputGainsDb.length || limiterEnabled.length == 0) {
+                return false;
+            }
+            for (boolean enabled : limiterEnabled) if (enabled) return false;
+            return true;
         }
     }
 
