@@ -31,7 +31,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
 
     private AndroidDynamicsProcessingTransport(int audioSessionId, boolean globalSession,
                                                int channelCount, Capability initialCapability,
-                                               DspScope initialScope, String initialReason) {
+                                               DspScope initialScope, String initialReason,
+                                               boolean allowDefaultConfigFallback) {
         this.audioSessionId = audioSessionId;
         this.globalSession = globalSession;
         this.capability = initialCapability;
@@ -39,6 +40,9 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         this.reason = initialReason;
         String configuredFailure = "";
         try {
+            // v0.7.7.1: the verification topology must be genuinely neutral at 0 dB.
+            // Only inputGain is present. PreEQ, MBC, PostEQ and Limiter are not in use,
+            // so an enabled candidate cannot alter dynamics before we deliberately request gain.
             DynamicsProcessing.Config config =
                     new DynamicsProcessing.Config.Builder(
                             DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION,
@@ -46,10 +50,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                             false, 0,
                             false, 0,
                             false, 0,
-                            true)
+                            false)
                             .setInputGainAllChannelsTo(0f)
-                            .setLimiterAllChannelsTo(new DynamicsProcessing.Limiter(
-                                    true, true, 0, 1f, 60f, 10f, -1f, 0f))
                             .build();
             effect = initializeCandidate(new DynamicsProcessing(0, audioSessionId, config));
         } catch (RuntimeException configuredError) {
@@ -57,10 +59,11 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
             effect = null;
         }
 
-        if (effect == null) {
+        if (effect == null && allowDefaultConfigFallback) {
             try {
-                // Public Android API fallback: no Config asks the platform/OEM for its default
-                // topology. Construction is still only availability; measured proof is mandatory.
+                // Historical compatibility only. Enhanced Session probes explicitly disable this
+                // path because an OEM/default topology cannot be claimed neutral or measured as an
+                // input-gain-only transport.
                 effect = initializeCandidate(new DynamicsProcessing(audioSessionId));
                 reason = initialReason + ":default_config_fallback"
                         + (configuredFailure.isEmpty() ? "" : ":after=" + configuredFailure);
@@ -70,6 +73,10 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                         "dsp_create_failed:custom=" + configuredFailure
                                 + ":default=" + defaultError.getClass().getSimpleName());
             }
+        } else if (effect == null) {
+            downgrade(Capability.UNAVAILABLE,
+                    "dsp_create_failed:custom=" + configuredFailure
+                            + ":default_fallback_disabled");
         }
         appliedGainDb = 0f;
     }
@@ -95,10 +102,10 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         }
         return new AndroidDynamicsProcessingTransport(handle.audioSessionId, false, channelCount,
                 DspTransport.Capability.VERIFIED_POLICY_SCOPED,
-                DspScope.POLICY_SCOPED, "trusted_policy_scoped_handle");
+                DspScope.POLICY_SCOPED, "trusted_policy_scoped_handle", true);
     }
 
-    /** v0.7.7: a discovered third-party session starts unverified and neutral. */
+    /** v0.7.7.1: a discovered third-party session starts unverified and input-gain-only. */
     static AndroidDynamicsProcessingTransport forEnhancedSessionProbe(DspEndpointHandle handle,
                                                                        int channelCount) {
         if (handle == null || !handle.isEnhancedSession() || handle.audioSessionId <= 0) {
@@ -107,7 +114,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         AndroidDynamicsProcessingTransport transport = new AndroidDynamicsProcessingTransport(
                 handle.audioSessionId, false, channelCount,
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
-                DspScope.UNKNOWN, "enhanced_session_neutral_unverified");
+                DspScope.UNKNOWN, "enhanced_session_input_gain_only_unverified", false);
         transport.enhancedProbeCandidate = transport.effect != null;
         return transport;
     }
@@ -115,7 +122,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     static AndroidDynamicsProcessingTransport forNeutralGlobalProbe(int channelCount) {
         return new AndroidDynamicsProcessingTransport(0, true, channelCount,
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
-                DspScope.UNKNOWN, "global_session_neutral_unverified");
+                DspScope.UNKNOWN, "global_session_neutral_unverified", true);
     }
 
     private static AndroidDynamicsProcessingTransport unavailable(String reason) {
@@ -183,7 +190,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
             lastApplyAtMs = 0L;
             capability = DspTransport.Capability.VERIFIED_POLICY_SCOPED;
             scope = DspScope.POLICY_SCOPED;
-            reason = "verified_enhanced_session";
+            reason = "verified_enhanced_session_input_gain_only";
             enhancedProbeCandidate = false;
             return true;
         } catch (RuntimeException error) {
