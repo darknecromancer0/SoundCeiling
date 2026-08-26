@@ -9,6 +9,7 @@ final class DspDifferentialVerifier {
     private static final float LINEAR_TOLERANCE_DB = .25f;
     private static final float ATTACH_NEUTRAL_TOLERANCE_DB = .50f;
     private static final float MIN_MEASURABLE_EFFECT_DB = .20f;
+    private static final float MAX_RESIDUAL_MAD_DB = 1.00f;
     private static final int MIN_PAIRS = 8;
     private static final long MIN_COVERED_MS = 250L;
     private static final int MAX_PAIRS = 64;
@@ -41,7 +42,8 @@ final class DspDifferentialVerifier {
 
         boolean retryable() {
             return "attach_insufficient_pairs".equals(reason)
-                    || "attach_insufficient_coverage".equals(reason);
+                    || "attach_insufficient_coverage".equals(reason)
+                    || "attach_unstable_residuals".equals(reason);
         }
     }
 
@@ -100,6 +102,17 @@ final class DspDifferentialVerifier {
         baselineCount++;
     }
 
+    boolean baselineReady() {
+        return active && !neutralAttachPhase && !probePhase
+                && baselineCount >= MIN_PAIRS
+                && span(baselineTimes, baselineCount) >= MIN_COVERED_MS
+                && residualMad(baselineResiduals, baselineCount) <= MAX_RESIDUAL_MAD_DB;
+    }
+
+    float baselineResidualMadDb() {
+        return baselineCount <= 0 ? Float.NaN : residualMad(baselineResiduals, baselineCount);
+    }
+
     void beginNeutralAttach(long atMs) {
         if (!active || probePhase) return;
         neutralAttachPhase = true;
@@ -130,6 +143,11 @@ final class DspDifferentialVerifier {
         long covered = attachCoverageMs();
         if (covered < MIN_COVERED_MS) {
             return attachResult(false, Float.NaN, covered, "attach_insufficient_coverage");
+        }
+        float baselineMad = residualMad(baselineResiduals, baselineCount);
+        float attachMad = residualMad(attachResiduals, attachCount);
+        if (baselineMad > MAX_RESIDUAL_MAD_DB || attachMad > MAX_RESIDUAL_MAD_DB) {
+            return attachResult(false, Float.NaN, covered, "attach_unstable_residuals");
         }
         float baseline = median(baselineResiduals, baselineCount);
         float attached = median(attachResiduals, attachCount);
@@ -184,6 +202,12 @@ final class DspDifferentialVerifier {
         if (covered < MIN_COVERED_MS) {
             return result(false, Classification.INSUFFICIENT_EVIDENCE, Float.NaN,
                     covered, "insufficient_coverage");
+        }
+        float baselineMad = residualMad(baselineResiduals, baselineCount);
+        float probeMad = residualMad(probeResiduals, probeCount);
+        if (baselineMad > MAX_RESIDUAL_MAD_DB || probeMad > MAX_RESIDUAL_MAD_DB) {
+            return result(false, Classification.INSUFFICIENT_EVIDENCE, Float.NaN, covered,
+                    "unstable_residuals");
         }
         float baseline = median(baselineResiduals, baselineCount);
         float probe = median(probeResiduals, probeCount);
@@ -245,6 +269,14 @@ final class DspDifferentialVerifier {
         Arrays.sort(copy);
         int mid = count / 2;
         return (count & 1) == 1 ? copy[mid] : (copy[mid - 1] + copy[mid]) * .5f;
+    }
+
+    private static float residualMad(float[] values, int count) {
+        if (count <= 0) return Float.POSITIVE_INFINITY;
+        float center = median(values, count);
+        float[] deviations = new float[count];
+        for (int i = 0; i < count; i++) deviations[i] = Math.abs(values[i] - center);
+        return median(deviations, count);
     }
 
     private void reset() {
