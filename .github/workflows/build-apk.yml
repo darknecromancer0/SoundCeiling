@@ -123,13 +123,13 @@ jobs:
         run: bash ./scripts/check-v077-android-wiring-contract.sh
       - name: Check v0.7.7 release contract
         run: bash ./scripts/check-v077-release-contract.sh
-      - name: Check v0.7.7.1 neutral Session DSP topology contract
+      - name: Check v0.7.7.2 Samsung Session DSP topology contract
         run: bash ./scripts/check-v0771-neutral-session-probe-contract.sh
-      - name: Check v0.7.7.1 deterministic readback pure test
+      - name: Check v0.7.7.2 deterministic readback pure test
         run: bash ./scripts/run-v0771-readback-tests.sh
-      - name: Check v0.7.7.1 deterministic readback wiring
+      - name: Check v0.7.7.2 deterministic readback wiring
         run: bash ./scripts/check-v0771-readback-wiring-contract.sh
-      - name: Check v0.7.7.1 release contract
+      - name: Check v0.7.7.2 release contract
         run: bash ./scripts/check-v0771-release-contract.sh
       - name: Install Android SDK 35 packages
         run: |
@@ -147,6 +147,6 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.7.7.1-debug-apk
+          name: SoundCeiling-v0.7.7.2-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
