@@ -140,8 +140,12 @@ jobs:
         run: bash ./scripts/check-v077-android-wiring-contract.sh
       - name: Check v0.7.7 release contract
         run: bash ./scripts/check-v077-release-contract.sh
-      - name: Check v0.7.7.1 neutral Session DSP probe contract
+      - name: Check v0.7.7.1 neutral Session DSP topology contract
         run: bash ./scripts/check-v0771-neutral-session-probe-contract.sh
+      - name: Check v0.7.7.1 deterministic readback pure test
+        run: bash ./scripts/run-v0771-readback-tests.sh
+      - name: Check v0.7.7.1 deterministic readback wiring
+        run: bash ./scripts/check-v0771-readback-wiring-contract.sh
       - name: Check v0.7.7.1 release contract
         run: bash ./scripts/check-v0771-release-contract.sh
       - uses: android-actions/setup-android@v4
