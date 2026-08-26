@@ -7,3 +7,4 @@ javac -Xlint:all -Werror -d "$OUT" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java" \
   "$ROOT/app/src/test/java/dev/soundceiling/app/V0771EnhancedSessionReadbackPureTest.java"
 java -cp "$OUT" dev.soundceiling.app.V0771EnhancedSessionReadbackPureTest
+bash "$ROOT/scripts/run-v0771-session-authority-bridge-tests.sh"
