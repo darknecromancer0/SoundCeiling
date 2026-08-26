@@ -32,7 +32,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     private AndroidDynamicsProcessingTransport(int audioSessionId, boolean globalSession,
                                                int channelCount, Capability initialCapability,
                                                DspScope initialScope, String initialReason,
-                                               boolean allowDefaultConfigFallback) {
+                                               boolean allowDefaultConfigFallback,
+                                               boolean disabledLimiterCompatibilityShell) {
         this.audioSessionId = audioSessionId;
         this.globalSession = globalSession;
         this.capability = initialCapability;
@@ -40,16 +41,20 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         this.reason = initialReason;
         String configuredFailure = "";
         try {
-            DynamicsProcessing.Config config =
+            DynamicsProcessing.Config.Builder builder =
                     new DynamicsProcessing.Config.Builder(
                             DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION,
                             Math.max(1, channelCount),
                             false, 0,
                             false, 0,
                             false, 0,
-                            false)
-                            .setInputGainAllChannelsTo(0f)
-                            .build();
+                            disabledLimiterCompatibilityShell)
+                            .setInputGainAllChannelsTo(0f);
+            if (disabledLimiterCompatibilityShell) {
+                builder.setLimiterAllChannelsTo(new DynamicsProcessing.Limiter(
+                        true, false, 0, 1f, 60f, 1f, 0f, 0f));
+            }
+            DynamicsProcessing.Config config = builder.build();
             effect = initializeCandidate(new DynamicsProcessing(0, audioSessionId, config));
         } catch (RuntimeException configuredError) {
             configuredFailure = configuredError.getClass().getSimpleName();
@@ -96,7 +101,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         }
         return new AndroidDynamicsProcessingTransport(handle.audioSessionId, false, channelCount,
                 DspTransport.Capability.VERIFIED_POLICY_SCOPED,
-                DspScope.POLICY_SCOPED, "trusted_policy_scoped_handle", true);
+                DspScope.POLICY_SCOPED, "trusted_policy_scoped_handle", true, false);
     }
 
     static AndroidDynamicsProcessingTransport forEnhancedSessionProbe(DspEndpointHandle handle,
@@ -107,7 +112,9 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         AndroidDynamicsProcessingTransport transport = new AndroidDynamicsProcessingTransport(
                 handle.audioSessionId, false, channelCount,
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
-                DspScope.UNKNOWN, "enhanced_session_input_gain_only_unverified", false);
+                DspScope.UNKNOWN,
+                "enhanced_session_input_gain_with_disabled_limiter_shell_unverified",
+                false, true);
         transport.enhancedProbeCandidate = transport.effect != null;
         return transport;
     }
@@ -115,7 +122,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     static AndroidDynamicsProcessingTransport forNeutralGlobalProbe(int channelCount) {
         return new AndroidDynamicsProcessingTransport(0, true, channelCount,
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
-                DspScope.UNKNOWN, "global_session_neutral_unverified", true);
+                DspScope.UNKNOWN, "global_session_neutral_unverified", true, false);
     }
 
     private static AndroidDynamicsProcessingTransport unavailable(String reason) {
@@ -165,9 +172,10 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     }
 
     /**
-     * v0.7.7.1 Enhanced Session proof. Non-zero session scope is already established by exact
-     * sessionId + UID ownership; this handshake verifies the actual Android effect topology and
-     * parameter control without using asynchronous PCM/Visualizer samples as an authority gate.
+     * v0.7.7.2 Enhanced Session proof. Non-zero session scope is already established by exact
+     * sessionId + UID ownership; this handshake verifies that input gain is the only active
+     * processing. Samsung may require a Limiter stage to exist in the engine architecture, but
+     * it must read back disabled on every channel before authority is granted.
      */
     EnhancedSessionReadbackVerifier.Result verifyEnhancedSessionReadbackHandshake() {
         if (globalSession || !enhancedProbeCandidate || effect == null || audioSessionId <= 0) {
@@ -206,13 +214,17 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         DynamicsProcessing.Config config = effect.getConfig();
         int channels = effect.getChannelCount();
         float[] gains = new float[Math.max(0, channels)];
+        boolean[] limiterEnabled = new boolean[gains.length];
         for (int channel = 0; channel < gains.length; channel++) {
             gains[channel] = effect.getInputGainByChannelIndex(channel);
+            if (config.isLimiterInUse()) {
+                limiterEnabled[channel] = effect.getLimiterByChannelIndex(channel).isEnabled();
+            }
         }
         return new EnhancedSessionReadbackVerifier.Snapshot(
                 effect.getEnabled(), effect.hasControl(),
                 config.isPreEqInUse(), config.isMbcInUse(),
-                config.isPostEqInUse(), config.isLimiterInUse(), gains);
+                config.isPostEqInUse(), config.isLimiterInUse(), limiterEnabled, gains);
     }
 
     boolean authorizeVerifiedPolicyScoped() {
