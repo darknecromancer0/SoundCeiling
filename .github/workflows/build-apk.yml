@@ -33,6 +33,23 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Restore stable dev debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: soundceiling-debug-keystore-v1
+      - name: Ensure stable dev debug keystore
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore ~/.android/debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -dname "CN=SoundCeiling Dev,O=SoundCeiling,C=US" \
+              -keyalg RSA -keysize 2048 -validity 10000
+          fi
       - name: Run pure logic tests
         run: ./scripts/run-pure-tests.sh
       - name: Check v0.4 storage contract
