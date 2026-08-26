@@ -121,6 +121,8 @@ jobs:
         run: bash ./scripts/run-v077-session-telemetry-tests.sh
       - name: Check v0.7.7 Android wiring contract
         run: bash ./scripts/check-v077-android-wiring-contract.sh
+      - name: Check v0.7.7.1 neutral Session DSP probe contract
+        run: bash ./scripts/check-v0771-neutral-session-probe-contract.sh
       - name: Check v0.7.7 release contract
         run: bash ./scripts/check-v077-release-contract.sh
       - uses: android-actions/setup-android@v4
