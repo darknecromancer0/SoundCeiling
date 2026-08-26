@@ -1,6 +1,16 @@
-# Sound Ceiling for Android - v0.7.7
+# Sound Ceiling for Android - v0.7.7.1
 
-SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.7 moves ordinary normalization to verified **Enhanced Session DSP** on an exact non-zero audio session while keeping the Samsung Media slider as the user master anchor.
+SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.7.1 is a Samsung Session DSP verification corrective on top of v0.7.7 Enhanced Session DSP.
+
+## v0.7.7.1 neutral Session DSP corrective
+
+- **The 0 dB probe is now actually neutral by construction.** Enhanced Session `DynamicsProcessing` uses an input-gain-only topology: PreEQ, MBC, PostEQ and Limiter are disabled/absent. The v0.7.7 limiter could itself alter playback during a so-called neutral attach.
+- **No unknown OEM topology fallback for Enhanced Session probes.** If the explicit input-gain-only configuration cannot be created, the candidate stays unavailable instead of silently switching to a vendor default configuration whose stages are unknown.
+- **Unstable PCM/Visualizer residuals are inconclusive, not unsafe.** The paired verifier now requires a stable residual window using a robust MAD gate before it can call an attach non-neutral or a probe nonlinear. This addresses Samsung field traces where the same session produced apparent neutral-attach deltas from about -16.6 dB to +9.7 dB.
+- **Inconclusive evidence cannot blacklist the session.** `attach_unstable_residuals`, unstable probe evidence and an inconclusive probe timeout release the candidate and retry later. Stable proven non-neutral/nonlinear behavior remains fail-closed and may suppress the session.
+- **Samsung Media remains the user master.** The required physical acceptance remains Media **3/15** with ordinary normalization performed by verified non-zero Session DSP and no Samsung slider movement.
+
+Samsung physical acceptance: `docs/field-tests/2026-08-26-v0.7.7.1-samsung-checklist.md`.
 
 ## v0.7.7 Enhanced Session DSP
 
@@ -11,7 +21,7 @@ SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.7 moves or
 - **Diagnostics expose the real actuator.** Runtime state and logs include session ID, UID, package, requested/applied gain, reason, and `session_dsp_apply`.
 - Historical Safety Maximum, Quiet Now, source-policy gates, user-master anchor, debt-only recovery, stop/restart protection, and v0.7.6.x output-domain safety contracts remain intact.
 
-Samsung physical acceptance: `docs/field-tests/2026-08-25-v0.7.7-samsung-checklist.md`.
+Historical Samsung acceptance: `docs/field-tests/2026-08-25-v0.7.7-samsung-checklist.md`.
 
 ## v0.7.6.3 Samsung DSP attach evidence corrective
 
@@ -23,7 +33,7 @@ Samsung physical acceptance: `docs/field-tests/2026-08-25-v0.7.7-samsung-checkli
 - Diagnostics now expose `retryable`, `coveredMs`, and `dsp_global_attach_wait`, making an inconclusive attach distinguishable from an unsafe attach in Samsung field logs.
 - v0.7.6.2 output-domain behavior is preserved: proven `PRE_VOLUME` PCM owns normalizer projection and Visualizer-only UNKNOWN evidence cannot drive ordinary Media normalization.
 
-Samsung physical acceptance: `docs/field-tests/2026-08-25-v0.7.6.3-samsung-checklist.md`.
+Historical Samsung acceptance: `docs/field-tests/2026-08-25-v0.7.6.3-samsung-checklist.md`.
 
 ## v0.7.6.2 Samsung output-domain corrective
 
@@ -50,10 +60,9 @@ Historical Samsung acceptance: `docs/field-tests/2026-08-24-v0.7.6.1-samsung-che
 ## v0.7.6 Control Architecture Reset
 
 - **Samsung slider is the user master anchor.** Manual Media movement rebases control immediately. SoundCeiling may never silently redefine the user's chosen Samsung step.
-- **Verified DSP is the continuous normalizer.** DSP normalization becomes active only after **route-scoped differential verification** proves that the session-zero transport measurably changes the current output route. Creating `DynamicsProcessing` alone is not proof.
-- **Unverified DSP is reported honestly.** If differential verification is absent or fails, UI and logs report **Coarse Media fallback** or Safety-only, not “Global DSP active”.
+- **Verified DSP is the continuous normalizer.** DSP normalization becomes active only after differential verification proves that the transport measurably changes the intended output path.
+- **Unverified DSP is reported honestly.** If differential verification is absent or fails, UI and logs do not claim verified DSP authority.
 - **Raw peak is not output authority.** A **source peak alone cannot force Media down**. Ordinary control uses measured/projected output evidence. Hard Media cap and Quiet Now remain separate immediate safety paths.
-- **Coarse Media fallback is deliberately slow.** Each ordinary fallback write is at most one Samsung step, separated by dwell, and requires sustained imbalance. Recovery repays only SoundCeiling-owned attenuation debt and never exceeds the user anchor.
 - **Low-volume authority is explicit.** Media 1/15 and 2/15 are valid user anchors, not automatic normalization destinations. Manual 1→2, 2→3 and 3→2 changes must not snap back.
 - **Diagnostics expose actual control.** Rate-limited summaries include actuator tier, meter domain, DSP state, requested/applied DSP gain, source/output levels, Media anchor/debt/dwell, and decision reason.
 
@@ -85,6 +94,6 @@ Playback-capture/log persistence continues to use the existing **MediaStore**/SA
 
 ## Build and verification
 
-Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, the v0.7.6 architecture contract, the v0.7.6.1 DSP safety contract, the v0.7.6.2 output-domain contract, the v0.7.6.3 DSP attach-evidence and release contracts, the v0.7.7 Samsung 3/15 authority regression, Session DSP telemetry, Android wiring and release contracts, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
+Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, v0.7.7 Samsung 3/15/telemetry/wiring contracts, the v0.7.7.1 neutral Session DSP verification contract, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
 
-Release artifact: **`SoundCeiling-v0.7.7-debug-apk`**, containing `app-debug.apk`.
+Release artifact: **`SoundCeiling-v0.7.7.1-debug-apk`**, containing `app-debug.apk`.
