@@ -2,6 +2,10 @@ package dev.soundceiling.app;
 
 public final class V0771EnhancedSessionReadbackPureTest {
     public static void main(String[] args) {
+        preEnableSanitizedShellVerifies();
+        preEnableAlreadyEnabledRejects();
+        preEnableActiveLimiterRejects();
+        preEnableMissingLimiterRejects();
         exactReadbackHandshakeVerifies();
         disabledLimiterCompatibilityShellVerifies();
         missingEffectControlRejects();
@@ -10,6 +14,34 @@ public final class V0771EnhancedSessionReadbackPureTest {
         restoreReadbackMismatchRejects();
         oneChannelMismatchRejects();
         System.out.println("V0771EnhancedSessionReadbackPureTest: PASS");
+    }
+
+    private static void preEnableSanitizedShellVerifies() {
+        EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
+                snap(false, true, false, false, false, true, new boolean[]{false, false}, 0f, 0f));
+        require(r.verified, "disabled effect with disabled limiter shell must pass pre-enable gate");
+        require("pre_enable_sanitized".equals(r.reason), "pre-enable verified reason");
+    }
+
+    private static void preEnableAlreadyEnabledRejects() {
+        EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
+                snap(true, true, false, false, false, true, new boolean[]{false, false}, 0f, 0f));
+        require(!r.verified, "pre-enable gate must reject an already enabled effect");
+        require(r.reason.contains("pre_enable_effect_already_enabled"), "already enabled reason");
+    }
+
+    private static void preEnableActiveLimiterRejects() {
+        EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
+                snap(false, true, false, false, false, true, new boolean[]{false, true}, 0f, 0f));
+        require(!r.verified, "pre-enable gate must reject any enabled limiter channel");
+        require(r.reason.contains("pre_enable_limiter_still_enabled"), "active limiter reason");
+    }
+
+    private static void preEnableMissingLimiterRejects() {
+        EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
+                snap(false, true, false, false, false, false, new boolean[]{false, false}, 0f, 0f));
+        require(!r.verified, "Samsung pre-enable gate requires the compatibility limiter shell");
+        require(r.reason.contains("pre_enable_limiter_shell_missing"), "missing shell reason");
     }
 
     private static void exactReadbackHandshakeVerifies() {

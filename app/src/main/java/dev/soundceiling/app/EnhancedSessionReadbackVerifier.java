@@ -56,6 +56,25 @@ final class EnhancedSessionReadbackVerifier {
 
     private EnhancedSessionReadbackVerifier() {}
 
+    static Result verifyPreEnableSanitized(Snapshot sanitized) {
+        if (sanitized == null) return reject("pre_enable_readback_missing");
+        if (sanitized.effectEnabled) return reject("pre_enable_effect_already_enabled");
+        if (!sanitized.hasControl) return reject("pre_enable_effect_control_missing");
+        if (sanitized.preEqInUse || sanitized.mbcInUse || sanitized.postEqInUse) {
+            return reject("pre_enable_non_limiter_stage_in_use");
+        }
+        if (!sanitized.limiterInUse) return reject("pre_enable_limiter_shell_missing");
+        int channels = sanitized.inputGainsDb.length;
+        if (channels <= 0 || sanitized.limiterEnabled.length != channels) {
+            return reject("pre_enable_channel_count_mismatch");
+        }
+        for (boolean enabled : sanitized.limiterEnabled) {
+            if (enabled) return reject("pre_enable_limiter_still_enabled");
+        }
+        if (!allNear(sanitized.inputGainsDb, 0f)) return reject("pre_enable_gain_mismatch");
+        return new Result(true, "pre_enable_sanitized");
+    }
+
     static Result verify(Snapshot neutral, Snapshot probe, Snapshot restored) {
         if (neutral == null || probe == null || restored == null) {
             return reject("readback_missing");

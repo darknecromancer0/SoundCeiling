@@ -33,7 +33,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                                                int channelCount, Capability initialCapability,
                                                DspScope initialScope, String initialReason,
                                                boolean allowDefaultConfigFallback,
-                                               boolean disabledLimiterCompatibilityShell) {
+                                               boolean samsungLimiterCompatibilityShell) {
         this.audioSessionId = audioSessionId;
         this.globalSession = globalSession;
         this.capability = initialCapability;
@@ -48,11 +48,11 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                             false, 0,
                             false, 0,
                             false, 0,
-                            disabledLimiterCompatibilityShell)
+                            samsungLimiterCompatibilityShell)
                             .setInputGainAllChannelsTo(0f);
-            if (disabledLimiterCompatibilityShell) {
+            if (samsungLimiterCompatibilityShell) {
                 builder.setLimiterAllChannelsTo(new DynamicsProcessing.Limiter(
-                        true, false, 0, 1f, 60f, 1f, 0f, 0f));
+                        true, true, 0, 1f, 60f, 10f, -1f, 0f));
             }
             DynamicsProcessing.Config config = builder.build();
             effect = initializeCandidate(new DynamicsProcessing(0, audioSessionId, config));
@@ -113,9 +113,11 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                 handle.audioSessionId, false, channelCount,
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
                 DspScope.UNKNOWN,
-                "enhanced_session_input_gain_with_disabled_limiter_shell_unverified",
+                "enhanced_session_samsung_constructor_shell_unverified",
                 false, true);
-        transport.enhancedProbeCandidate = transport.effect != null;
+        if (transport.effect != null && transport.sanitizeEnhancedSessionCandidateBeforeEnable()) {
+            transport.enhancedProbeCandidate = true;
+        }
         return transport;
     }
 
@@ -139,6 +141,43 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
 
     int audioSessionId() { return audioSessionId; }
     float appliedGainDb() { return appliedGainDb; }
+
+    /**
+     * Samsung accepts the historical limiter topology at construction time. The whole effect
+     * remains disabled while the limiter is converted into a disabled compatibility shell.
+     */
+    private boolean sanitizeEnhancedSessionCandidateBeforeEnable() {
+        if (globalSession || effect == null || audioSessionId <= 0) return false;
+        try {
+            effect.setEnabled(false);
+            effect.setInputGainAllChannelsTo(0f);
+            DynamicsProcessing.Config config = effect.getConfig();
+            int channels = effect.getChannelCount();
+            if (!config.isLimiterInUse() || channels <= 0) {
+                downgrade(Capability.UNAVAILABLE,
+                        "pre_enable_sanitize_rejected:limiter_shell_missing");
+                return false;
+            }
+            DynamicsProcessing.Limiter disabledSamsungLimiter = new DynamicsProcessing.Limiter(
+                    true, false, 0, 1f, 60f, 10f, -1f, 0f);
+            for (int channel = 0; channel < channels; channel++) {
+                effect.setLimiterByChannelIndex(channel, disabledSamsungLimiter);
+            }
+            EnhancedSessionReadbackVerifier.Result sanitized =
+                    EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(readbackSnapshot());
+            if (!sanitized.verified) {
+                downgrade(Capability.UNAVAILABLE,
+                        "pre_enable_sanitize_rejected:" + sanitized.reason);
+                return false;
+            }
+            reason = "enhanced_session_pre_enable_sanitized_unverified";
+            return true;
+        } catch (RuntimeException error) {
+            downgrade(Capability.UNAVAILABLE,
+                    "pre_enable_sanitize_failed:" + error.getClass().getSimpleName());
+            return false;
+        }
+    }
 
     DspApplyResult enableNeutralForProbe() {
         if ((!globalSession && !enhancedProbeCandidate) || effect == null) {
@@ -172,10 +211,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     }
 
     /**
-     * v0.7.7.2 Enhanced Session proof. Non-zero session scope is already established by exact
-     * sessionId + UID ownership; this handshake verifies that input gain is the only active
-     * processing. Samsung may require a Limiter stage to exist in the engine architecture, but
-     * it must read back disabled on every channel before authority is granted.
+     * v0.7.7.3 Enhanced Session proof. Before the first enable, the Samsung constructor shell
+     * must read back disabled and neutral. Only then may the 0 -> -0.5 -> 0 dB handshake run.
      */
     EnhancedSessionReadbackVerifier.Result verifyEnhancedSessionReadbackHandshake() {
         if (globalSession || !enhancedProbeCandidate || effect == null || audioSessionId <= 0) {
@@ -184,6 +221,12 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         }
         try {
             effect.setInputGainAllChannelsTo(0f);
+            EnhancedSessionReadbackVerifier.Result preEnable =
+                    EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(readbackSnapshot());
+            if (!preEnable.verified) {
+                reason = "enhanced_session_pre_enable_rejected:" + preEnable.reason;
+                return preEnable;
+            }
             effect.setEnabled(true);
             EnhancedSessionReadbackVerifier.Snapshot neutral = readbackSnapshot();
 
@@ -199,9 +242,15 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                     EnhancedSessionReadbackVerifier.verify(neutral, probe, restored);
             reason = result.verified ? "enhanced_session_readback_verified"
                     : "enhanced_session_readback_rejected:" + result.reason;
+            if (!result.verified) {
+                try { effect.setEnabled(false); }
+                catch (RuntimeException ignored) {}
+            }
             return result;
         } catch (RuntimeException error) {
             try { effect.setInputGainAllChannelsTo(0f); }
+            catch (RuntimeException ignored) {}
+            try { effect.setEnabled(false); }
             catch (RuntimeException ignored) {}
             appliedGainDb = 0f;
             lastApplyAtMs = 0L;
