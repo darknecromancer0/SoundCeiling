@@ -29,16 +29,18 @@ require "$TRANSPORT" 'new DynamicsProcessing(0, audioSessionId, config)'
 require "$TRANSPORT" 'DynamicsProcessing.Config.Builder('
 require "$TRANSPORT" 'setInputGainAllChannelsTo'
 
-# v0.7.7.2 supersedes the all-stages-absent Enhanced Session topology on Samsung.
-# A limiter stage may exist only as an explicitly disabled constructor-compatibility shell;
-# input gain remains the only active processing control. The historical active 10:1 / -1 dBFS
-# limiter is still forbidden, and positive gain remains peak-headroom limited by the planner.
-require "$TRANSPORT" 'disabledLimiterCompatibilityShell'
+# v0.7.7.3 preserves Samsung's historically accepted constructor topology but makes it
+# constructor-only: while the whole effect is disabled, the limiter is immediately sanitized to
+# enabled=false and read back before any Enhanced Session setEnabled(true). Input gain remains
+# the only active processing control once the transport is allowed to run.
+require "$TRANSPORT" 'samsungLimiterCompatibilityShell'
 require "$TRANSPORT" '.setLimiterAllChannelsTo('
-require "$TRANSPORT" 'true, false, 0, 1f, 60f, 1f, 0f, 0f'
-require "$TRANSPORT" 'enhanced_session_input_gain_with_disabled_limiter_shell_unverified'
+require "$TRANSPORT" 'true, true, 0, 1f, 60f, 10f, -1f, 0f'
+require "$TRANSPORT" 'true, false, 0, 1f, 60f, 10f, -1f, 0f'
+require "$TRANSPORT" 'sanitizeEnhancedSessionCandidateBeforeEnable'
+require "$TRANSPORT" 'verifyPreEnableSanitized(readbackSnapshot())'
+require "$TRANSPORT" 'enhanced_session_pre_enable_sanitized_unverified'
 require "$TRANSPORT" 'getLimiterByChannelIndex(channel).isEnabled()'
-reject "$TRANSPORT" 'true, true, 0, 1f, 60f, 10f, -1f, 0f'
 require "$PLANNER" 'positivePeakHeadroomDb'
 require "$PLANNER" 'Reason.PEAK_LIMITED'
 require "$PLANNER" 'input.hardPeakCeilingDbfs() - projectedPeakDbfs'
@@ -107,4 +109,4 @@ require "$SERVICE" 'DspTransport.Capability.VERIFIED_GLOBAL_MIX'
 reject "$SERVICE" 'capability == DspTransport.Capability.AVAILABLE_UNVERIFIED'
 require "$RUNTIME" 'controlCapabilityVerified'
 
-echo "v0.7.1 DSP integration + v0.7.7.2 disabled-shell compatibility contract: PASS"
+echo "v0.7.1 DSP integration + v0.7.7.3 pre-enable sanitation compatibility contract: PASS"
