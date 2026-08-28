@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-need(){ grep -Fq -- "$2" "$1" || { echo "v0.7.7.5 release contract missing: $2" >&2; exit 1; }; }
+need(){ grep -Fq -- "$2" "$1" || { echo "v0.7.7.8 release contract missing: $2" >&2; exit 1; }; }
 python - "$R/app/build.gradle.kts" <<'PY'
 from pathlib import Path
 import re,sys
@@ -16,10 +16,12 @@ need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/check-v0773-preen
 need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/run-v0771-readback-tests.sh'
 need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/check-v0771-readback-wiring-contract.sh'
 need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/check-v0773-release-contract.sh'
-need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java" 'pre_enable_limiter_shell_missing'
-need "$R/app/src/test/java/dev/soundceiling/app/V0771EnhancedSessionReadbackPureTest.java" 'preEnableWithoutLimiterRejects'
+need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java" 'pre_enable_stage_still_enabled'
+need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java" 'stageDisabledOrAbsent'
+need "$R/app/src/test/java/dev/soundceiling/app/V0771EnhancedSessionReadbackPureTest.java" 'preEnableWithoutLimiterVerifies'
+need "$R/app/src/test/java/dev/soundceiling/app/V0771EnhancedSessionReadbackPureTest.java" 'disabledDefaultTopologyHandshakeVerifies'
 need "$R/app/src/main/java/dev/soundceiling/app/DspTransportManager.java" 'enhancedSessionVerificationEpoch'
 need "$R/app/src/main/java/dev/soundceiling/app/DspTransportManager.java" 'enhanced_session_readback_cancelled:service_stopped'
 need "$R/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java" 'sanitizeEnhancedSessionCandidateBeforeEnable'
 need "$R/docs/field-tests/2026-08-27-v0.7.7.3-samsung-checklist.md" 'Media to 3/15'
-echo 'v0.7.7.5+ historical release contract: PASS'
+echo 'v0.7.7.8 readback-compatible historical release contract: PASS'
