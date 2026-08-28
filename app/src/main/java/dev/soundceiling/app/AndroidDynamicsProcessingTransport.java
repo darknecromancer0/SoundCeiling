@@ -114,7 +114,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
                 DspScope.UNKNOWN,
                 "enhanced_session_samsung_constructor_shell_unverified",
-                false, true);
+                true, true);
         if (transport.effect != null && transport.sanitizeEnhancedSessionCandidateBeforeEnable()) {
             transport.enhancedProbeCandidate = true;
         }
@@ -143,8 +143,9 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     float appliedGainDb() { return appliedGainDb; }
 
     /**
-     * Samsung accepts the historical limiter topology at construction time. The whole effect
-     * remains disabled while the limiter is converted into a disabled compatibility shell.
+     * Enhanced Session candidates remain disabled while every optional processing stage is
+     * converted to bypass. This works for both the Samsung compatibility shell and a default
+     * OEM topology reached only after the custom constructor failed.
      */
     private boolean sanitizeEnhancedSessionCandidateBeforeEnable() {
         if (globalSession || effect == null || audioSessionId <= 0) return false;
@@ -158,11 +159,26 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                         "pre_enable_sanitize_rejected:channel_count_mismatch");
                 return false;
             }
-            if (config.isLimiterInUse()) {
-                DynamicsProcessing.Limiter disabledSamsungLimiter = new DynamicsProcessing.Limiter(
-                        true, false, 0, 1f, 60f, 10f, -1f, 0f);
-                for (int channel = 0; channel < channels; channel++) {
-                    effect.setLimiterByChannelIndex(channel, disabledSamsungLimiter);
+            for (int channel = 0; channel < channels; channel++) {
+                if (config.isPreEqInUse()) {
+                    DynamicsProcessing.Eq preEq = effect.getPreEqByChannelIndex(channel);
+                    preEq.setEnabled(false);
+                    effect.setPreEqByChannelIndex(channel, preEq);
+                }
+                if (config.isMbcInUse()) {
+                    DynamicsProcessing.Mbc mbc = effect.getMbcByChannelIndex(channel);
+                    mbc.setEnabled(false);
+                    effect.setMbcByChannelIndex(channel, mbc);
+                }
+                if (config.isPostEqInUse()) {
+                    DynamicsProcessing.Eq postEq = effect.getPostEqByChannelIndex(channel);
+                    postEq.setEnabled(false);
+                    effect.setPostEqByChannelIndex(channel, postEq);
+                }
+                if (config.isLimiterInUse()) {
+                    DynamicsProcessing.Limiter limiter = effect.getLimiterByChannelIndex(channel);
+                    limiter.setEnabled(false);
+                    effect.setLimiterByChannelIndex(channel, limiter);
                 }
             }
             EnhancedSessionReadbackVerifier.Result sanitized =
@@ -213,8 +229,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     }
 
     /**
-     * v0.7.7.3 Enhanced Session proof. Before the first enable, the Samsung constructor shell
-     * must read back disabled and neutral. Only then may the 0 -> -0.5 -> 0 dB handshake run.
+     * Enhanced Session proof. Before the first enable, every in-use optional stage must read
+     * back bypassed and input gain must be neutral. Only then may 0 -> -0.5 -> 0 dB run.
      */
     EnhancedSessionReadbackVerifier.Result verifyEnhancedSessionReadbackHandshake() {
         if (globalSession || !enhancedProbeCandidate || effect == null || audioSessionId <= 0) {
@@ -265,9 +281,21 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         DynamicsProcessing.Config config = effect.getConfig();
         int channels = effect.getChannelCount();
         float[] gains = new float[Math.max(0, channels)];
+        boolean[] preEqEnabled = new boolean[gains.length];
+        boolean[] mbcEnabled = new boolean[gains.length];
+        boolean[] postEqEnabled = new boolean[gains.length];
         boolean[] limiterEnabled = new boolean[gains.length];
         for (int channel = 0; channel < gains.length; channel++) {
             gains[channel] = effect.getInputGainByChannelIndex(channel);
+            if (config.isPreEqInUse()) {
+                preEqEnabled[channel] = effect.getPreEqByChannelIndex(channel).isEnabled();
+            }
+            if (config.isMbcInUse()) {
+                mbcEnabled[channel] = effect.getMbcByChannelIndex(channel).isEnabled();
+            }
+            if (config.isPostEqInUse()) {
+                postEqEnabled[channel] = effect.getPostEqByChannelIndex(channel).isEnabled();
+            }
             if (config.isLimiterInUse()) {
                 limiterEnabled[channel] = effect.getLimiterByChannelIndex(channel).isEnabled();
             }
@@ -275,7 +303,8 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         return new EnhancedSessionReadbackVerifier.Snapshot(
                 effect.getEnabled(), effect.hasControl(),
                 config.isPreEqInUse(), config.isMbcInUse(),
-                config.isPostEqInUse(), config.isLimiterInUse(), limiterEnabled, gains);
+                config.isPostEqInUse(), config.isLimiterInUse(),
+                preEqEnabled, mbcEnabled, postEqEnabled, limiterEnabled, gains);
     }
 
     boolean authorizeVerifiedPolicyScoped() {
