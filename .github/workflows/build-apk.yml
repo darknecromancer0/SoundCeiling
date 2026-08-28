@@ -6,7 +6,7 @@ permissions:
   contents: write
 jobs:
   build:
-    if: github.event.head_commit.message == 'ci: activate v0.7.7.7 materializer'
+    if: "github.event.head_commit.message == 'ci: activate v0.7.7.7 materializer retry'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
