@@ -30,6 +30,8 @@ final class DspTransportManager implements AutoCloseable {
     private DspScopeProbe.Evidence globalProof;
     private String routeIdentity = "";
     private String reason = "no_verified_dsp";
+    private volatile long enhancedSessionVerificationEpoch = 1L;
+    private volatile boolean enhancedSessionVerificationStopped;
 
     DspTransportManager(int channelCount) {
         this.channelCount = Math.max(1, channelCount);
@@ -75,6 +77,11 @@ final class DspTransportManager implements AutoCloseable {
 
     /** v0.7.7.1 deterministic Enhanced Session authority: exact session ownership + API readback. */
     boolean verifyEnhancedSessionReadback(DspEndpointHandle handle, boolean allowedMediaActive) {
+        if (enhancedSessionVerificationStopped) {
+            reason = "enhanced_session_readback_cancelled:service_stopped";
+            return false;
+        }
+        final long verificationEpoch = enhancedSessionVerificationEpoch;
         if (!allowedMediaActive || handle == null || !handle.isEnhancedSession()
                 || handle.audioSessionId <= 0) {
             reason = "enhanced_session_readback_rejected:invalid_handle_or_inactive";
@@ -88,6 +95,12 @@ final class DspTransportManager implements AutoCloseable {
         cancelEnhancedSessionProbe("readback_handshake");
         AndroidDynamicsProcessingTransport transport =
                 AndroidDynamicsProcessingTransport.forEnhancedSessionProbe(handle, channelCount);
+        if (enhancedSessionVerificationStopped
+                || verificationEpoch != enhancedSessionVerificationEpoch) {
+            reason = "enhanced_session_readback_cancelled:service_stopped";
+            neutralizeAndClose(transport);
+            return false;
+        }
         if (transport.capability() == DspTransport.Capability.UNAVAILABLE) {
             reason = transport.reason();
             neutralizeAndClose(transport);
@@ -96,6 +109,12 @@ final class DspTransportManager implements AutoCloseable {
 
         EnhancedSessionReadbackVerifier.Result readback =
                 transport.verifyEnhancedSessionReadbackHandshake();
+        if (enhancedSessionVerificationStopped
+                || verificationEpoch != enhancedSessionVerificationEpoch) {
+            reason = "enhanced_session_readback_cancelled:service_stopped";
+            neutralizeAndClose(transport);
+            return false;
+        }
         boolean verified = readback.verified && transport.authorizeVerifiedPolicyScoped();
         if (!verified) {
             reason = "enhanced_session_readback_rejected:" + readback.reason;
@@ -103,6 +122,12 @@ final class DspTransportManager implements AutoCloseable {
             return false;
         }
 
+        if (enhancedSessionVerificationStopped
+                || verificationEpoch != enhancedSessionVerificationEpoch) {
+            reason = "enhanced_session_readback_cancelled:service_stopped";
+            neutralizeAndClose(transport);
+            return false;
+        }
         closeEnhancedScoped();
         scoped.put(handle, transport);
         reason = "verified_enhanced_session_readback";
@@ -543,6 +568,8 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     void onServiceStopped() {
+        enhancedSessionVerificationStopped = true;
+        enhancedSessionVerificationEpoch++;
         cancelEnhancedSessionProbe("service_stopped");
         neutralizeAll();
         closeScoped();

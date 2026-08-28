@@ -63,15 +63,13 @@ final class EnhancedSessionReadbackVerifier {
         if (sanitized.preEqInUse || sanitized.mbcInUse || sanitized.postEqInUse) {
             return reject("pre_enable_non_limiter_stage_in_use");
         }
+        if (!sanitized.limiterInUse) return reject("pre_enable_limiter_shell_missing");
         int channels = sanitized.inputGainsDb.length;
-        if (channels <= 0) return reject("pre_enable_channel_count_mismatch");
-        if (sanitized.limiterInUse) {
-            if (sanitized.limiterEnabled.length != channels) {
-                return reject("pre_enable_channel_count_mismatch");
-            }
-            for (boolean enabled : sanitized.limiterEnabled) {
-                if (enabled) return reject("pre_enable_limiter_still_enabled");
-            }
+        if (channels <= 0 || sanitized.limiterEnabled.length != channels) {
+            return reject("pre_enable_channel_count_mismatch");
+        }
+        for (boolean enabled : sanitized.limiterEnabled) {
+            if (enabled) return reject("pre_enable_limiter_still_enabled");
         }
         if (!allNear(sanitized.inputGainsDb, 0f)) return reject("pre_enable_gain_mismatch");
         return new Result(true, "pre_enable_sanitized");

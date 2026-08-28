@@ -5,7 +5,7 @@ public final class V0771EnhancedSessionReadbackPureTest {
         preEnableSanitizedShellVerifies();
         preEnableAlreadyEnabledRejects();
         preEnableActiveLimiterRejects();
-        preEnableWithoutLimiterVerifies();
+        preEnableWithoutLimiterRejects();
         exactReadbackHandshakeVerifies();
         disabledLimiterCompatibilityShellVerifies();
         missingEffectControlRejects();
@@ -37,11 +37,11 @@ public final class V0771EnhancedSessionReadbackPureTest {
         require(r.reason.contains("pre_enable_limiter_still_enabled"), "active limiter reason");
     }
 
-    private static void preEnableWithoutLimiterVerifies() {
+    private static void preEnableWithoutLimiterRejects() {
         EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
                 snap(false, true, false, false, false, false, new boolean[]{false, false}, 0f, 0f));
-        require(r.verified, "OEM default topology with no processing stages must pass pre-enable gate");
-        require("pre_enable_sanitized".equals(r.reason), "no-limiter pre-enable reason");
+        require(!r.verified, "Enhanced Session must reject topology without the explicit disabled limiter shell");
+        require(r.reason.contains("pre_enable_limiter_shell_missing"), "missing limiter shell reason");
     }
 
     private static void exactReadbackHandshakeVerifies() {

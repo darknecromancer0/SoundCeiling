@@ -114,7 +114,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
                 DspScope.UNKNOWN,
                 "enhanced_session_samsung_constructor_shell_unverified",
-                true, true);
+                false, true);
         if (transport.effect != null && transport.sanitizeEnhancedSessionCandidateBeforeEnable()) {
             transport.enhancedProbeCandidate = true;
         }
