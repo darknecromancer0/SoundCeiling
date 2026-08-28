@@ -25,6 +25,7 @@ final class VolumeWriteTracker {
         APP_WRITE_ACK,
         APP_WRITE_STALE,
         APP_WRITE_MISMATCH,
+        REJECTED_HARD_CAP_OVERSHOOT,
         USER_CHANGE,
         UNCHANGED
     }
@@ -61,6 +62,9 @@ final class VolumeWriteTracker {
             // Only a timely expected-index acknowledgement is app-owned. A stale arrival or a
             // mismatch can be a real user/system volume decision racing our pending write, so it
             // must become external authority rather than permission to fight the user.
+            if (kind == ObservationKind.REJECTED_HARD_CAP_OVERSHOOT) {
+                return VolumeWriteOrigin.HARD_PEAK_SAFETY;
+            }
             if (kind == ObservationKind.USER_CHANGE
                     || kind == ObservationKind.APP_WRITE_STALE
                     || kind == ObservationKind.APP_WRITE_MISMATCH) return VolumeWriteOrigin.USER;
@@ -121,8 +125,21 @@ final class VolumeWriteTracker {
     }
 
     Observation observe(int index, long nowMs) {
+        return observe(index, nowMs, Integer.MAX_VALUE);
+    }
+
+    Observation observe(int index, long nowMs, int hardMaxIndex) {
         expirePending(nowMs);
         pruneStale(nowMs);
+
+        int safeHardMax = Math.max(0, hardMaxIndex);
+        if (index > safeHardMax) {
+            int previous = lastObserved;
+            while (!pendingWrites.isEmpty()) staleWrites.addLast(pendingWrites.removeFirst());
+            lastObserved = index;
+            return new Observation(ObservationKind.REJECTED_HARD_CAP_OVERSHOOT,
+                    WriteOrigin.HARD_CAP, previous, safeHardMax, index, 0L);
+        }
 
         if (index == lastObserved) {
             PendingWrite pending = pendingWrites.peekFirst();

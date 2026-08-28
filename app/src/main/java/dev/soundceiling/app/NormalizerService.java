@@ -46,6 +46,7 @@ public class NormalizerService extends Service {
     private final AtomicBoolean stopping = new AtomicBoolean();
     private final LoudnessControlPolicy.State loudnessState = new LoudnessControlPolicy.State();
     private final NormalizerControlCoordinator controlCoordinator = new NormalizerControlCoordinator();
+    private final HardCapLatch hardCapLatch = new HardCapLatch();
     private final LiveCaptureReference liveCaptureReference = new LiveCaptureReference();
     private AudioManager audio;
     private MediaProjection projection;
@@ -152,6 +153,7 @@ public class NormalizerService extends Service {
                 .message(fastOnlyMode ? "Запуск Safe fallback…" : "Запуск Smart PCM…")
                 .build();
         RuntimeStateStore.publish(starting);
+        StrictSafetyState.setEngineRunning(this, true);
         updateNotification(starting);
 
         stopping.set(false);
@@ -558,11 +560,61 @@ public class NormalizerService extends Service {
         int current;
         try { current = audio.getStreamVolume(AudioManager.STREAM_MUSIC); }
         catch (RuntimeException e) { return safetySettings.minIndex; }
-        VolumeWriteTracker.Observation observation = writeTracker.observe(current, now);
+
+        int hardMax = safetySettings.hardMax();
+        VolumeWriteTracker.Observation observation = writeTracker.observe(current, now, hardMax);
+        logVolumeObservation(observation, current, hardMax);
+        HardCapLatch.Decision latch = hardCapLatch.update(current, hardMax, now);
+        if (latch.entered) {
+            DiagnosticLog.event("hard_cap_latch_enter", "observed=" + current
+                    + " hardMax=" + hardMax + " authority=safety_only");
+        }
+
+        int attempts = 0;
+        while (latch.shouldWrite && current > hardMax && attempts < 3) {
+            int before = current;
+            long writeAt = SystemClock.elapsedRealtime();
+            int applied = safeVolume.enforceHardMax(before, safetySettings, writeAt);
+            attempts++;
+            DiagnosticLog.event("hard_cap_latch_write", "attempt=" + attempts
+                    + " observed=" + before + " target=" + hardMax + " applied=" + applied);
+            current = applied;
+            long observedAt = SystemClock.elapsedRealtime();
+            observation = writeTracker.observe(current, observedAt, hardMax);
+            logVolumeObservation(observation, current, hardMax);
+            latch = hardCapLatch.update(current, hardMax, observedAt);
+        }
+
+        if (latch.latched && current <= hardMax && latch.confirmationCount > 0) {
+            DiagnosticLog.transition("hard_cap_latch_confirm",
+                    latch.confirmationCount + ":" + current + ":" + hardMax,
+                    "count=" + latch.confirmationCount + "/" + HardCapLatch.REQUIRED_CONFIRMATIONS
+                            + " observed=" + current + " hardMax=" + hardMax);
+        }
+        if (latch.released) {
+            DiagnosticLog.event("hard_cap_latch_release", "observed=" + current
+                    + " hardMax=" + hardMax + " confirmations=" + latch.confirmationCount);
+        }
+
         lastVolumeObservation = observation;
         unexpectedZeroThisPoll = UnexpectedZeroPolicy.isUnexpectedZero(current,
                 controlCurve.minIndex(), lastAppliedNonzero, observation);
-        if (observation.kind == VolumeWriteTracker.ObservationKind.USER_CHANGE) {
+        if (unexpectedZeroThisPoll) {
+            DiagnosticLog.event("external_zero_detected", "previous=" + lastAppliedNonzero
+                    + " current=" + current + " reason=write_mismatch");
+        }
+        if (current > controlCurve.minIndex()) lastAppliedNonzero = current;
+        return current;
+    }
+
+    private void logVolumeObservation(VolumeWriteTracker.Observation observation, int current,
+                                      int hardMax) {
+        if (observation == null) return;
+        if (observation.kind == VolumeWriteTracker.ObservationKind.REJECTED_HARD_CAP_OVERSHOOT) {
+            DiagnosticLog.event("hard_cap_overshoot_rejected",
+                    "previous=" + observation.previousIndex + " observed=" + current
+                            + " hardMax=" + hardMax + " authority=safety_only");
+        } else if (observation.kind == VolumeWriteTracker.ObservationKind.USER_CHANGE) {
             DiagnosticLog.event("user_volume_change", "previous=" + observation.previousIndex
                     + " index=" + current + " authority=coordinator_pending");
         } else if (observation.kind == VolumeWriteTracker.ObservationKind.APP_WRITE_ACK) {
@@ -581,12 +633,6 @@ public class NormalizerService extends Service {
                     + " observed=" + observation.observedIndex
                     + " latencyMs=" + observation.latencyMs + " authority=coordinator_only");
         }
-        if (unexpectedZeroThisPoll) {
-            DiagnosticLog.event("external_zero_detected", "previous=" + lastAppliedNonzero
-                    + " current=" + current + " reason=write_mismatch");
-        }
-        if (current > controlCurve.minIndex()) lastAppliedNonzero = current;
-        return current;
     }
 
     private NormalizerControlCoordinator.Frame controlFrame(long now, int current,
@@ -640,6 +686,8 @@ public class NormalizerService extends Service {
             case APP_WRITE_ACK: return NormalizerControlCoordinator.VolumeObservation.APP_ACK;
             case APP_WRITE_STALE: return NormalizerControlCoordinator.VolumeObservation.APP_STALE;
             case APP_WRITE_MISMATCH: return NormalizerControlCoordinator.VolumeObservation.APP_MISMATCH;
+            case REJECTED_HARD_CAP_OVERSHOOT:
+                return NormalizerControlCoordinator.VolumeObservation.REJECTED_HARD_CAP_OVERSHOOT;
             case UNCHANGED:
             default: return NormalizerControlCoordinator.VolumeObservation.UNCHANGED;
         }
@@ -1293,7 +1341,7 @@ public class NormalizerService extends Service {
     private void openLogger() throws IOException {
         MeasurementVolumeCurve.Snapshot m = measurementCurve.snapshot(currentDeviceType);
         String header = String.format(Locale.US,
-                "HEADER version=0.6.0 manufacturer=%s model=%s sdk=%d route=%s backend=%s min=%d max=%d current=%d safetyLock=%s safetyIndex=%d quiet=%d preset=%s targetLoudness=%.1f tolerance=%.1f peakThreshold=%.1f manualOffsetDb=%.2f splMode=%s targetSpl=%.1f splCeiling=%.1f rawCurve=%s measuredCurve=%s controlCurve=%s",
+                "HEADER version=" + BuildConfig.VERSION_NAME + " manufacturer=%s model=%s sdk=%d route=%s backend=%s min=%d max=%d current=%d safetyLock=%s safetyIndex=%d quiet=%d preset=%s targetLoudness=%.1f tolerance=%.1f peakThreshold=%.1f manualOffsetDb=%.2f splMode=%s targetSpl=%.1f splCeiling=%.1f rawCurve=%s measuredCurve=%s controlCurve=%s",
                 clean(Build.MANUFACTURER), clean(Build.MODEL), Build.VERSION.SDK_INT,
                 clean(DeviceDetector.label(currentDevice)), clean(backendStatus.label()),
                 safetySettings.minIndex, safetySettings.maxIndex,
@@ -1440,8 +1488,10 @@ public class NormalizerService extends Service {
 
     private synchronized void stopSafe(String reason, boolean error) {
         if (!stopping.compareAndSet(false, true)) return;
+        StrictSafetyState.setEngineRunning(this, false);
         workerRunning.set(false);
         controlCoordinator.onStopped();
+        hardCapLatch.reset();
         resetGlobalDifferentialState();
         if (enhancedSessionDsp != null) enhancedSessionDsp.onStopped();
         if (optionalDsp != null) optionalDsp.onServiceStopped();
@@ -1474,8 +1524,10 @@ public class NormalizerService extends Service {
     }
 
     @Override public void onDestroy() {
+        StrictSafetyState.setEngineRunning(this, false);
         workerRunning.set(false);
         controlCoordinator.onStopped();
+        hardCapLatch.reset();
         resetGlobalDifferentialState();
         if (enhancedSessionDsp != null) enhancedSessionDsp.onStopped();
         if (optionalDsp != null) optionalDsp.onServiceStopped();

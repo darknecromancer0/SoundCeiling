@@ -52,6 +52,19 @@
         </service>
 
         <service
+            android:name=".VolumeKeySafetyService"
+            android:exported="true"
+            android:label="SoundCeiling Strict Safety"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/volume_key_safety_service" />
+        </service>
+
+        <service
             android:name=".SoundCeilingNotificationListener"
             android:exported="false"
             android:label="SoundCeiling playback source detection"

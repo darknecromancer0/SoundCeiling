@@ -10,7 +10,7 @@ import java.util.Objects;
 public final class NormalizerControlCoordinator {
     private static final float BOUNDED_GLOBAL_DSP_PROBE_GAIN_DB = DspDifferentialVerifier.REQUESTED_PROBE_DB;
 
-    public enum VolumeObservation { UNCHANGED, USER, APP_ACK, APP_STALE, APP_MISMATCH }
+    public enum VolumeObservation { UNCHANGED, USER, APP_ACK, APP_STALE, APP_MISMATCH, REJECTED_HARD_CAP_OVERSHOOT }
 
     /** Immutable evidence collected by the Android service before a control tick. */
     public static final class Frame {

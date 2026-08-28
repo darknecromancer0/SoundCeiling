@@ -63,6 +63,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ManualThresholdFollower.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AdaptiveVolumeEnvelope.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/HardCapLatch.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeKeySafetyPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/UnexpectedZeroPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PeakSafetyDetector.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/TransientGuard.java" \
@@ -140,6 +142,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V076CoarseMediaFallbackPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V076ArchitectureRegressionPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V076TelemetryPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V0776StrictSafetyPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -227,5 +230,6 @@ java -cp "$OUT" dev.soundceiling.app.V076ContinuousDspPureTest
 java -cp "$OUT" dev.soundceiling.app.V076CoarseMediaFallbackPureTest
 java -cp "$OUT" dev.soundceiling.app.V076ArchitectureRegressionPureTest
 java -cp "$OUT" dev.soundceiling.app.V076TelemetryPureTest
+java -cp "$OUT" dev.soundceiling.app.V0776StrictSafetyPureTest
 java -cp "$OUT" dev.soundceiling.app.V072GlobalDspProbePureTest
 java -cp "$OUT" dev.soundceiling.app.V072ResetDefaultsPureTest

@@ -28,9 +28,11 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
     private final Switch globalDsp, linkedLock;
     private final TextView globalStatus, linkedHint, lowerLabel, upperLabel, safetyLabel, normalizeLabel;
     private final TextView sessionDspSetupStatus;
+    private final TextView strictSafetyStatus;
     private final SeekBar lowerSeek, upperSeek, safetySeek;
     private final Button startStop;
     private final Button sourceAccess;
+    private final Button strictSafetyAccess;
     private final Button copySessionDspCommand;
     private final Button resetDefaults;
     private final StatusCardView statusCard;
@@ -125,6 +127,22 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
+
+        strictSafetyStatus = secondary("", 13);
+        strictSafetyStatus.setPadding(0, dp(4), 0, dp(6));
+        root.addView(strictSafetyStatus);
+        strictSafetyAccess = new Button(context);
+        strictSafetyAccess.setAllCaps(false);
+        strictSafetyAccess.setText("Включить Strict Safety (Accessibility)");
+        strictSafetyAccess.setOnClickListener(v -> {
+            try { getContext().startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
+            catch (RuntimeException ignored) {}
+        });
+        LinearLayout.LayoutParams strictLp = new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(50));
+        strictLp.bottomMargin = dp(8);
+        root.addView(strictSafetyAccess, strictLp);
+        refreshStrictSafety();
 
         normalizeLabel = section(); normalizeLabel.setPadding(0, dp(14), 0, 0); root.addView(normalizeLabel);
         SeekBar normalization = new SeekBar(context); normalization.setMin(0); normalization.setMax(100);
@@ -224,7 +242,16 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         sourceAccess.setVisibility(runtime.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING
                 ? View.VISIBLE : View.GONE);
         refreshEnhancedSessionSetup();
+        refreshStrictSafety();
         refreshSharedControls();
+    }
+
+    private void refreshStrictSafety() {
+        boolean enabled = StrictSafetyState.isAccessibilityServiceEnabled(getContext());
+        strictSafetyStatus.setText(enabled
+                ? "Strict Safety: включено · аппаратная Volume Up блокируется у Safety Maximum"
+                : "Strict Safety: реактивный clamp активен, но для гарантии аппаратной Volume Up нужен Accessibility-доступ");
+        strictSafetyAccess.setVisibility(enabled ? View.GONE : View.VISIBLE);
     }
 
     private void refreshEnhancedSessionSetup() {

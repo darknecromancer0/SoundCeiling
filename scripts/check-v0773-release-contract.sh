@@ -2,8 +2,12 @@
 set -euo pipefail
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 need(){ grep -Fq -- "$2" "$1" || { echo "v0.7.7.5 release contract missing: $2" >&2; exit 1; }; }
-need "$R/app/build.gradle.kts" 'versionCode=29'
-need "$R/app/build.gradle.kts" 'versionName="0.7.7.5"'
+python - "$R/app/build.gradle.kts" <<'PY'
+from pathlib import Path
+import re,sys
+s=Path(sys.argv[1]).read_text(); m=re.search(r'versionCode=(\d+)',s)
+if not m or int(m.group(1)) < 29: raise SystemExit('v0.7.7.5+ release contract: expected versionCode >= 29')
+PY
 need "$R/app/build.gradle.kts" 'signingConfig = signingConfigs.getByName("soundCeilingDev")'
 need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/check-stable-debug-signing-contract.sh'
 need "$R/.github/workflows/build-apk.yml" 'name: Verify stable APK signer'
@@ -18,4 +22,4 @@ need "$R/app/src/main/java/dev/soundceiling/app/DspTransportManager.java" 'enhan
 need "$R/app/src/main/java/dev/soundceiling/app/DspTransportManager.java" 'enhanced_session_readback_cancelled:service_stopped'
 need "$R/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java" 'sanitizeEnhancedSessionCandidateBeforeEnable'
 need "$R/docs/field-tests/2026-08-27-v0.7.7.3-samsung-checklist.md" 'Media to 3/15'
-echo 'v0.7.7.5 release contract: PASS'
+echo 'v0.7.7.5+ historical release contract: PASS'

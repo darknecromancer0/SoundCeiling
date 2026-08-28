@@ -4,10 +4,12 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -32,7 +34,9 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private final LinearLayout root;
     private final TextView modeInfo, profileInfo, liveDetails, decisionDetails, globalDspStatus, linkedLockHint;
     private final TextView sessionDspSetupStatus;
+    private final TextView strictSafetyStatus;
     private final Button copySessionDspCommand;
+    private final Button strictSafetyAccess;
     private final Button startStop;
     private final StatusCardView statusCard;
     private final FrequencyMeterView frequencyMeter;
@@ -131,6 +135,16 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                 v -> edit(Prefs.SAFETY_LOCK_ENABLED, v));
         safetyPercent = addSlider("Safety Lock ceiling", HelpText.SAFETY_LOCK, 1, 100,
                 Prefs.safetyLockPercent(context), p -> p + "%", p -> editBound(Prefs.SAFETY_LOCK_PERCENT, p));
+        strictSafetyStatus = secondary("", 13);
+        strictSafetyStatus.setPadding(0, dp(4), 0, dp(6));
+        root.addView(strictSafetyStatus);
+        strictSafetyAccess = button("Включить Strict Safety (Accessibility)");
+        strictSafetyAccess.setOnClickListener(v -> {
+            try { getContext().startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
+            catch (RuntimeException ignored) {}
+        });
+        root.addView(strictSafetyAccess, fullButton());
+        refreshStrictSafety();
         quietIndex = addSlider("Quiet Now level", HelpText.QUIET_LEVEL, 0, 100,
                 MediaLevelScale.percentForIndex(Prefs.quietIndex(context), streamMin, streamMax),
                 p -> p + "% · фактически " + MediaLevelScale.indexForPercent(p, streamMin, streamMax) + "/" + streamMax,
@@ -213,10 +227,19 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         loading = true; refreshControlsFromPrefs(); loading = false;
     }
 
+    private void refreshStrictSafety() {
+        boolean enabled = StrictSafetyState.isAccessibilityServiceEnabled(getContext());
+        strictSafetyStatus.setText(enabled
+                ? "Strict Safety: включено · аппаратная Volume Up блокируется у hard ceiling"
+                : "Strict Safety: без Accessibility аппаратная Volume Up защищена только реактивным clamp");
+        strictSafetyAccess.setVisibility(enabled ? View.GONE : View.VISIBLE);
+    }
+
     @Override public void render(RuntimeState state) {
         if (state != null) runtime = state;
         startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderState(runtime);
         refreshEnhancedSessionSetup();
+        refreshStrictSafety();
         refreshSharedOutputControls();
         state = runtime;
         String source = state.sourcePackage.isEmpty() ? "не определён" : state.sourcePackage;
