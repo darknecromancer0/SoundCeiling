@@ -1,6 +1,6 @@
 plugins { id("com.android.application") }
 android { namespace="dev.soundceiling.app"; compileSdk=35
- defaultConfig { applicationId="dev.soundceiling.app"; minSdk=29; targetSdk=35; versionCode=31; versionName="0.7.7.7" }
+ defaultConfig { applicationId="dev.soundceiling.app"; minSdk=29; targetSdk=35; versionCode=32; versionName="0.7.7.8" }
  buildFeatures { buildConfig = true }
  signingConfigs {
   create("soundCeilingDev") {
