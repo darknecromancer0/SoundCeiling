@@ -3,11 +3,14 @@ package dev.soundceiling.app;
 public final class V0771EnhancedSessionReadbackPureTest {
     public static void main(String[] args) {
         preEnableSanitizedShellVerifies();
+        preEnableDisabledDefaultTopologyVerifies();
         preEnableAlreadyEnabledRejects();
         preEnableActiveLimiterRejects();
-        preEnableWithoutLimiterRejects();
+        preEnableEnabledDefaultStageRejects();
+        preEnableWithoutLimiterVerifies();
         exactReadbackHandshakeVerifies();
         disabledLimiterCompatibilityShellVerifies();
+        disabledDefaultTopologyHandshakeVerifies();
         missingEffectControlRejects();
         activeLimiterRejects();
         probeReadbackMismatchRejects();
@@ -23,6 +26,15 @@ public final class V0771EnhancedSessionReadbackPureTest {
         require("pre_enable_sanitized".equals(r.reason), "pre-enable verified reason");
     }
 
+    private static void preEnableDisabledDefaultTopologyVerifies() {
+        EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
+                snapDetailed(false, true, true, true, true, true,
+                        new boolean[]{false, false}, new boolean[]{false, false},
+                        new boolean[]{false, false}, new boolean[]{false, false}, 0f, 0f));
+        require(r.verified,
+                "default topology is safe before enable when every in-use processing stage reads back disabled");
+    }
+
     private static void preEnableAlreadyEnabledRejects() {
         EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
                 snap(true, true, false, false, false, true, new boolean[]{false, false}, 0f, 0f));
@@ -34,21 +46,30 @@ public final class V0771EnhancedSessionReadbackPureTest {
         EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
                 snap(false, true, false, false, false, true, new boolean[]{false, true}, 0f, 0f));
         require(!r.verified, "pre-enable gate must reject any enabled limiter channel");
-        require(r.reason.contains("pre_enable_limiter_still_enabled"), "active limiter reason");
+        require(r.reason.contains("pre_enable_stage_still_enabled"), "active limiter reason");
     }
 
-    private static void preEnableWithoutLimiterRejects() {
+    private static void preEnableEnabledDefaultStageRejects() {
         EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
-                snap(false, true, false, false, false, false, new boolean[]{false, false}, 0f, 0f));
-        require(!r.verified, "Enhanced Session must reject topology without the explicit disabled limiter shell");
-        require(r.reason.contains("pre_enable_limiter_shell_missing"), "missing limiter shell reason");
+                snapDetailed(false, true, true, true, true, true,
+                        new boolean[]{false, true}, new boolean[]{false, false},
+                        new boolean[]{false, false}, new boolean[]{false, false}, 0f, 0f));
+        require(!r.verified, "an enabled PreEQ channel must fail closed before the effect is enabled");
+        require(r.reason.contains("pre_enable_stage_still_enabled"), "enabled default stage reason");
+    }
+
+    private static void preEnableWithoutLimiterVerifies() {
+        EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
+                snap(false, true, false, false, false, false, new boolean[0], 0f, 0f));
+        require(r.verified,
+                "a topology with no optional stage in use is already input-gain-only and must pass sanitation");
     }
 
     private static void exactReadbackHandshakeVerifies() {
         EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verify(
-                snap(true, true, false, false, false, false, new boolean[]{false, false}, 0f, 0f),
-                snap(true, true, false, false, false, false, new boolean[]{false, false}, -.5f, -.5f),
-                snap(true, true, false, false, false, false, new boolean[]{false, false}, 0f, 0f));
+                snap(true, true, false, false, false, false, new boolean[0], 0f, 0f),
+                snap(true, true, false, false, false, false, new boolean[0], -.5f, -.5f),
+                snap(true, true, false, false, false, false, new boolean[0], 0f, 0f));
         require(r.verified, "0 -> -0.5 -> 0 input-gain readback must verify");
         require("readback_verified".equals(r.reason), "verified reason");
     }
@@ -59,6 +80,21 @@ public final class V0771EnhancedSessionReadbackPureTest {
                 snap(true, true, false, false, false, true, new boolean[]{false, false}, -.5f, -.5f),
                 snap(true, true, false, false, false, true, new boolean[]{false, false}, 0f, 0f));
         require(r.verified, "disabled limiter may exist only as Samsung architecture compatibility shell");
+    }
+
+    private static void disabledDefaultTopologyHandshakeVerifies() {
+        EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verify(
+                snapDetailed(true, true, true, true, true, true,
+                        new boolean[]{false, false}, new boolean[]{false, false},
+                        new boolean[]{false, false}, new boolean[]{false, false}, 0f, 0f),
+                snapDetailed(true, true, true, true, true, true,
+                        new boolean[]{false, false}, new boolean[]{false, false},
+                        new boolean[]{false, false}, new boolean[]{false, false}, -.5f, -.5f),
+                snapDetailed(true, true, true, true, true, true,
+                        new boolean[]{false, false}, new boolean[]{false, false},
+                        new boolean[]{false, false}, new boolean[]{false, false}, 0f, 0f));
+        require(r.verified,
+                "default DSP topology may remain declared only when every processing stage stays bypassed");
     }
 
     private static void missingEffectControlRejects() {
@@ -112,6 +148,16 @@ public final class V0771EnhancedSessionReadbackPureTest {
             boolean[] limiterEnabled, float... gains) {
         return new EnhancedSessionReadbackVerifier.Snapshot(
                 enabled, hasControl, preEq, mbc, postEq, limiterInUse, limiterEnabled, gains);
+    }
+
+    private static EnhancedSessionReadbackVerifier.Snapshot snapDetailed(
+            boolean enabled, boolean hasControl,
+            boolean preEq, boolean mbc, boolean postEq, boolean limiterInUse,
+            boolean[] preEqEnabled, boolean[] mbcEnabled, boolean[] postEqEnabled,
+            boolean[] limiterEnabled, float... gains) {
+        return new EnhancedSessionReadbackVerifier.Snapshot(
+                enabled, hasControl, preEq, mbc, postEq, limiterInUse,
+                preEqEnabled, mbcEnabled, postEqEnabled, limiterEnabled, gains);
     }
 
     private static void require(boolean value, String message) {
