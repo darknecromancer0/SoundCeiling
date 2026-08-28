@@ -20,6 +20,7 @@ jobs:
             app
             docs
             gradle
+            ci
             scripts
             tests
             build.gradle.kts
@@ -33,6 +34,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Check stable debug signing contract
+        run: bash ./scripts/check-stable-debug-signing-contract.sh
       - name: Run pure logic tests
         run: ./scripts/run-pure-tests.sh
       - name: Check v0.4 storage contract
@@ -142,6 +145,13 @@ jobs:
           "$SDKMANAGER" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
       - name: Build debug APK
         run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
+      - name: Verify stable APK signer
+        run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -x "$APKSIGNER"
+          apksigner_output="$("$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk)"
+          printf '%s\n' "$apksigner_output"
+          echo "$apksigner_output" | grep -Fqi 'Signer #1 certificate SHA-256 digest: 5aa109027b8ae7675ce543eaf26402a2890bca97510bc2018661ea2231516be2'
       - name: APK checksum
         working-directory: app/build/outputs/apk/debug
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
