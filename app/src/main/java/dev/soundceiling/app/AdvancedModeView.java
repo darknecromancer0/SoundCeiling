@@ -229,9 +229,16 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
 
     private void refreshStrictSafety() {
         boolean enabled = StrictSafetyState.isAccessibilityServiceEnabled(getContext());
-        strictSafetyStatus.setText(enabled
-                ? "Strict Safety: включено · аппаратная Volume Up блокируется у hard ceiling"
-                : "Strict Safety: без Accessibility аппаратная Volume Up защищена только реактивным clamp");
+        boolean connected = StrictSafetyState.accessibilityConnected();
+        long now = android.os.SystemClock.elapsedRealtime();
+        boolean keySeen = StrictSafetyState.keyEventSeenRecently(now);
+        strictSafetyStatus.setText(!enabled
+                ? "Strict Safety: без Accessibility аппаратная Volume Up защищена только реактивным clamp"
+                : !connected
+                ? "Strict Safety: Accessibility включён, сервис не подключён"
+                : keySeen
+                ? "Strict Safety: активно · Volume Up полностью перехватывается"
+                : "Strict Safety: подключено · ожидается проверочный Volume Up");
         strictSafetyAccess.setVisibility(enabled ? View.GONE : View.VISIBLE);
     }
 

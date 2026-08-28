@@ -18,10 +18,6 @@ need "$MANIFEST" 'android.permission.BIND_ACCESSIBILITY_SERVICE'
 need "$XML" 'android:accessibilityFlags="flagRequestFilterKeyEvents"'
 need "$XML" 'android:canRequestFilterKeyEvents="true"'
 need "$POLICY" 'if (keyCode == KEY_VOLUME_DOWN) return false;'
-need "$POLICY" 'return Math.max(0, currentIndex) >= Math.max(0, hardMaxIndex);'
-if grep -Fq 'setStreamVolume' "$SERVICE"; then
-  fail 'Accessibility key gate must never write Media; it may only consume unsafe Volume-Up'
-fi
 need "$TRACKER" 'REJECTED_HARD_CAP_OVERSHOOT'
 need "$TRACKER" 'Observation observe(int index, long nowMs, int hardMaxIndex)'
 need "$LATCH" 'static final int REQUIRED_CONFIRMATIONS = 3;'

@@ -248,9 +248,16 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
 
     private void refreshStrictSafety() {
         boolean enabled = StrictSafetyState.isAccessibilityServiceEnabled(getContext());
-        strictSafetyStatus.setText(enabled
-                ? "Strict Safety: включено · аппаратная Volume Up блокируется у Safety Maximum"
-                : "Strict Safety: реактивный clamp активен, но для гарантии аппаратной Volume Up нужен Accessibility-доступ");
+        boolean connected = StrictSafetyState.accessibilityConnected();
+        long now = android.os.SystemClock.elapsedRealtime();
+        boolean keySeen = StrictSafetyState.keyEventSeenRecently(now);
+        strictSafetyStatus.setText(!enabled
+                ? "Strict Safety: реактивный clamp активен, но для аппаратной Volume Up нужен Accessibility-доступ"
+                : !connected
+                ? "Strict Safety: доступ включён, но сервис ещё не подключён"
+                : keySeen
+                ? "Strict Safety: активно · SoundCeiling владеет аппаратной Volume Up до Safety Maximum"
+                : "Strict Safety: подключено · нажми Volume Up для проверки перехвата");
         strictSafetyAccess.setVisibility(enabled ? View.GONE : View.VISIBLE);
     }
 

@@ -154,6 +154,7 @@ public class NormalizerService extends Service {
                 .build();
         RuntimeStateStore.publish(starting);
         StrictSafetyState.setEngineRunning(this, true);
+        DiagnosticLog.event("strict_safety_runtime", StrictSafetyState.runtimeSummary(this));
         updateNotification(starting);
 
         stopping.set(false);
@@ -1341,12 +1342,13 @@ public class NormalizerService extends Service {
     private void openLogger() throws IOException {
         MeasurementVolumeCurve.Snapshot m = measurementCurve.snapshot(currentDeviceType);
         String header = String.format(Locale.US,
-                "HEADER version=" + BuildConfig.VERSION_NAME + " manufacturer=%s model=%s sdk=%d route=%s backend=%s min=%d max=%d current=%d safetyLock=%s safetyIndex=%d quiet=%d preset=%s targetLoudness=%.1f tolerance=%.1f peakThreshold=%.1f manualOffsetDb=%.2f splMode=%s targetSpl=%.1f splCeiling=%.1f rawCurve=%s measuredCurve=%s controlCurve=%s",
+                "HEADER version=" + BuildConfig.VERSION_NAME + " manufacturer=%s model=%s sdk=%d route=%s backend=%s min=%d max=%d current=%d safetyLock=%s safetyIndex=%d strictSafety=%s quiet=%d preset=%s targetLoudness=%.1f tolerance=%.1f peakThreshold=%.1f manualOffsetDb=%.2f splMode=%s targetSpl=%.1f splCeiling=%.1f rawCurve=%s measuredCurve=%s controlCurve=%s",
                 clean(Build.MANUFACTURER), clean(Build.MODEL), Build.VERSION.SDK_INT,
                 clean(DeviceDetector.label(currentDevice)), clean(backendStatus.label()),
                 safetySettings.minIndex, safetySettings.maxIndex,
                 audio.getStreamVolume(AudioManager.STREAM_MUSIC), safetySettings.safetyLockEnabled,
-                safetySettings.safetyLockIndex, controlProfile.quietIndex,
+                safetySettings.safetyLockIndex, clean(StrictSafetyState.runtimeSummary(this)),
+                controlProfile.quietIndex,
                 controlProfile.normalizationPreset.key, controlProfile.targetLoudness,
                 controlProfile.toleranceLu, controlProfile.sourcePeakThresholdDbfs,
                 0f, Prefs.splMode(this), Prefs.targetSpl(this),

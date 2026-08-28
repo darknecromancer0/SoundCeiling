@@ -12,10 +12,20 @@ final class VolumeKeySafetyPolicy {
                                  boolean strictSafetyEnabled, int currentIndex, int hardMaxIndex) {
         if (!engineRunning || !strictSafetyEnabled) return false;
         if (action != ACTION_DOWN && action != ACTION_UP) return false;
-        // Never intercept Volume-Down. A user's request for less sound has absolute authority.
+        // Volume-Down is never intercepted. A request for less sound always belongs to the user.
         if (keyCode == KEY_VOLUME_DOWN) return false;
         if (keyCode != KEY_VOLUME_UP) return false;
-        return Math.max(0, currentIndex) >= Math.max(0, hardMaxIndex);
+        // Own the complete Volume-Up stream, including events below the ceiling. Passing even one
+        // repeat to Samsung lets AudioService race several physical steps ahead before the next
+        // Accessibility callback. The service advances one bounded step itself on ACTION_DOWN.
+        return true;
+    }
+
+    static int targetIndexOnVolumeUp(int currentIndex, int hardMaxIndex) {
+        int hardMax = Math.max(0, hardMaxIndex);
+        int current = Math.max(0, currentIndex);
+        if (current >= hardMax) return hardMax;
+        return Math.min(hardMax, current + 1);
     }
 
     private VolumeKeySafetyPolicy() {}

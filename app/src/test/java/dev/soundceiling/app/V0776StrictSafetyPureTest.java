@@ -6,7 +6,7 @@ public final class V0776StrictSafetyPureTest {
         coordinatorIgnoresIllegalOvershootAnchor();
         legalUserDownStillOwnsAnchor();
         hardCapLatchRequiresThreeLegalReadbacks();
-        volumeKeyPolicyBlocksOnlyUnsafeVolumeUp();
+        volumeKeyPolicyOwnsAllVolumeUpWhileRunning();
         System.out.println("V0776StrictSafetyPureTest: PASS");
     }
 
@@ -72,10 +72,10 @@ public final class V0776StrictSafetyPureTest {
         }
     }
 
-    private static void volumeKeyPolicyBlocksOnlyUnsafeVolumeUp() {
-        eq(false, VolumeKeySafetyPolicy.shouldConsume(
+    private static void volumeKeyPolicyOwnsAllVolumeUpWhileRunning() {
+        eq(true, VolumeKeySafetyPolicy.shouldConsume(
                 VolumeKeySafetyPolicy.KEY_VOLUME_UP, VolumeKeySafetyPolicy.ACTION_DOWN,
-                true, true, 3, 4), "up below ceiling must pass through");
+                true, true, 3, 4), "strict safety must own up below ceiling so Samsung never races ahead");
         eq(true, VolumeKeySafetyPolicy.shouldConsume(
                 VolumeKeySafetyPolicy.KEY_VOLUME_UP, VolumeKeySafetyPolicy.ACTION_DOWN,
                 true, true, 4, 4), "up at ceiling must be consumed");
@@ -91,6 +91,12 @@ public final class V0776StrictSafetyPureTest {
         eq(false, VolumeKeySafetyPolicy.shouldConsume(
                 VolumeKeySafetyPolicy.KEY_VOLUME_UP, VolumeKeySafetyPolicy.ACTION_DOWN,
                 true, false, 4, 4), "disabled strict safety must not consume keys");
+        eq(4, VolumeKeySafetyPolicy.targetIndexOnVolumeUp(3, 4),
+                "owned up below ceiling must advance exactly one step");
+        eq(4, VolumeKeySafetyPolicy.targetIndexOnVolumeUp(4, 4),
+                "owned up at ceiling must hold");
+        eq(4, VolumeKeySafetyPolicy.targetIndexOnVolumeUp(15, 4),
+                "owned up from illegal state must clamp");
     }
 
     private static NormalizerControlCoordinator.Frame frame(long at, int previous, int current,

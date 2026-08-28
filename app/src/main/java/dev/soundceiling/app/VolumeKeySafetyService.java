@@ -1,14 +1,16 @@
 package dev.soundceiling.app;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.media.AudioManager;
+import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
 /**
- * Strict Safety hardware-key gate. It never raises or lowers Media itself; it only prevents
- * Android from handling Volume-Up when the active SoundCeiling hard ceiling is already reached.
- * Volume-Down is deliberately never consumed.
+ * Strict Safety hardware-key gate. Volume-Up is fully owned while SoundCeiling is running:
+ * Samsung never receives the original Up event, and SoundCeiling advances Media by one bounded
+ * step itself. Volume-Down is deliberately never consumed.
  */
 public final class VolumeKeySafetyService extends AccessibilityService {
     private AudioManager audio;
@@ -16,11 +18,20 @@ public final class VolumeKeySafetyService extends AccessibilityService {
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
         audio = (AudioManager) getSystemService(AUDIO_SERVICE);
-        DiagnosticLog.event("strict_safety_accessibility", "state=connected keyFilter=true");
+        AccessibilityServiceInfo info = getServiceInfo();
+        if (info != null) {
+            info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
+            setServiceInfo(info);
+        }
+        StrictSafetyState.setAccessibilityConnected(true);
+        DiagnosticLog.event("strict_safety_accessibility",
+                "state=connected keyFilterRequested=true capability="
+                        + hasKeyFilterCapability(info));
     }
 
     @Override protected boolean onKeyEvent(KeyEvent event) {
         if (event == null) return false;
+        StrictSafetyState.noteKeyEvent(SystemClock.elapsedRealtime());
         AudioManager manager = audio;
         if (manager == null) {
             manager = (AudioManager) getSystemService(AUDIO_SERVICE);
@@ -36,9 +47,29 @@ public final class VolumeKeySafetyService extends AccessibilityService {
         boolean consume = VolumeKeySafetyPolicy.shouldConsume(event.getKeyCode(), event.getAction(),
                 running, true, current, hardMax);
         if (consume) {
-            DiagnosticLog.transition("strict_safety_volume_up", "blocked:" + current + ':' + hardMax,
-                    "action=" + event.getAction() + " current=" + current + " hardMax=" + hardMax
-                            + " engineRunning=" + running);
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                int target = VolumeKeySafetyPolicy.targetIndexOnVolumeUp(current, hardMax);
+                try {
+                    if (current != target) {
+                        manager.setStreamVolume(AudioManager.STREAM_MUSIC, target,
+                                AudioManager.FLAG_SHOW_UI);
+                    } else if (current > hardMax) {
+                        manager.setStreamVolume(AudioManager.STREAM_MUSIC, hardMax,
+                                AudioManager.FLAG_SHOW_UI);
+                    }
+                    StrictSafetyState.noteOwnedVolumeUp(SystemClock.elapsedRealtime());
+                    DiagnosticLog.transition("strict_safety_volume_up",
+                            "owned:" + current + ':' + target + ':' + hardMax,
+                            "action=" + event.getAction() + " current=" + current
+                                    + " target=" + target + " hardMax=" + hardMax
+                                    + " engineRunning=" + running + " authority=safety_gate");
+                } catch (RuntimeException error) {
+                    DiagnosticLog.event("strict_safety_volume_up_error",
+                            "current=" + current + " target=" + target + " hardMax=" + hardMax
+                                    + " error=" + error.getClass().getSimpleName());
+                }
+            }
+            // Consume both DOWN and UP to keep the event stream well formed.
             return true;
         }
         if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN) {
@@ -48,6 +79,11 @@ public final class VolumeKeySafetyService extends AccessibilityService {
         return false;
     }
 
+    private static boolean hasKeyFilterCapability(AccessibilityServiceInfo info) {
+        return info != null && (info.getCapabilities()
+                & AccessibilityServiceInfo.CAPABILITY_CAN_REQUEST_FILTER_KEY_EVENTS) != 0;
+    }
+
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
 
     @Override public void onInterrupt() {
@@ -55,6 +91,7 @@ public final class VolumeKeySafetyService extends AccessibilityService {
     }
 
     @Override public void onDestroy() {
+        StrictSafetyState.setAccessibilityConnected(false);
         DiagnosticLog.event("strict_safety_accessibility", "state=disconnected");
         super.onDestroy();
     }
