@@ -14,6 +14,9 @@ final class EnhancedSessionReadbackVerifier {
         final boolean mbcInUse;
         final boolean postEqInUse;
         final boolean limiterInUse;
+        final boolean[] preEqEnabled;
+        final boolean[] mbcEnabled;
+        final boolean[] postEqEnabled;
         final boolean[] limiterEnabled;
         final float[] inputGainsDb;
 
@@ -21,26 +24,61 @@ final class EnhancedSessionReadbackVerifier {
                  boolean preEqInUse, boolean mbcInUse,
                  boolean postEqInUse, boolean limiterInUse,
                  boolean[] limiterEnabled, float[] inputGainsDb) {
+            this(effectEnabled, hasControl, preEqInUse, mbcInUse, postEqInUse, limiterInUse,
+                    new boolean[0], new boolean[0], new boolean[0],
+                    limiterEnabled, inputGainsDb);
+        }
+
+        Snapshot(boolean effectEnabled, boolean hasControl,
+                 boolean preEqInUse, boolean mbcInUse,
+                 boolean postEqInUse, boolean limiterInUse,
+                 boolean[] preEqEnabled, boolean[] mbcEnabled, boolean[] postEqEnabled,
+                 boolean[] limiterEnabled, float[] inputGainsDb) {
             this.effectEnabled = effectEnabled;
             this.hasControl = hasControl;
             this.preEqInUse = preEqInUse;
             this.mbcInUse = mbcInUse;
             this.postEqInUse = postEqInUse;
             this.limiterInUse = limiterInUse;
-            this.limiterEnabled = limiterEnabled == null
-                    ? new boolean[0] : Arrays.copyOf(limiterEnabled, limiterEnabled.length);
+            this.preEqEnabled = copy(preEqEnabled);
+            this.mbcEnabled = copy(mbcEnabled);
+            this.postEqEnabled = copy(postEqEnabled);
+            this.limiterEnabled = copy(limiterEnabled);
             this.inputGainsDb = inputGainsDb == null
                     ? new float[0] : Arrays.copyOf(inputGainsDb, inputGainsDb.length);
         }
 
+        boolean stageArraysMatchChannels() {
+            int channels = inputGainsDb.length;
+            if (channels <= 0) return false;
+            return matchesStage(preEqInUse, preEqEnabled, channels)
+                    && matchesStage(mbcInUse, mbcEnabled, channels)
+                    && matchesStage(postEqInUse, postEqEnabled, channels)
+                    && matchesStage(limiterInUse, limiterEnabled, channels);
+        }
+
         boolean inputGainOnly() {
-            if (preEqInUse || mbcInUse || postEqInUse) return false;
-            if (!limiterInUse) return true;
-            if (limiterEnabled.length != inputGainsDb.length || limiterEnabled.length == 0) {
-                return false;
-            }
-            for (boolean enabled : limiterEnabled) if (enabled) return false;
+            int channels = inputGainsDb.length;
+            return channels > 0
+                    && stageDisabledOrAbsent(preEqInUse, preEqEnabled, channels)
+                    && stageDisabledOrAbsent(mbcInUse, mbcEnabled, channels)
+                    && stageDisabledOrAbsent(postEqInUse, postEqEnabled, channels)
+                    && stageDisabledOrAbsent(limiterInUse, limiterEnabled, channels);
+        }
+
+        private static boolean matchesStage(boolean inUse, boolean[] enabled, int channels) {
+            return !inUse || enabled.length == channels;
+        }
+
+        private static boolean stageDisabledOrAbsent(boolean inUse, boolean[] enabled, int channels) {
+            if (!inUse) return true;
+            if (enabled.length != channels) return false;
+            for (boolean stageEnabled : enabled) if (stageEnabled) return false;
             return true;
+        }
+
+        private static boolean[] copy(boolean[] value) {
+            return value == null ? new boolean[0] : Arrays.copyOf(value, value.length);
         }
     }
 
@@ -60,17 +98,10 @@ final class EnhancedSessionReadbackVerifier {
         if (sanitized == null) return reject("pre_enable_readback_missing");
         if (sanitized.effectEnabled) return reject("pre_enable_effect_already_enabled");
         if (!sanitized.hasControl) return reject("pre_enable_effect_control_missing");
-        if (sanitized.preEqInUse || sanitized.mbcInUse || sanitized.postEqInUse) {
-            return reject("pre_enable_non_limiter_stage_in_use");
-        }
-        if (!sanitized.limiterInUse) return reject("pre_enable_limiter_shell_missing");
-        int channels = sanitized.inputGainsDb.length;
-        if (channels <= 0 || sanitized.limiterEnabled.length != channels) {
+        if (!sanitized.stageArraysMatchChannels()) {
             return reject("pre_enable_channel_count_mismatch");
         }
-        for (boolean enabled : sanitized.limiterEnabled) {
-            if (enabled) return reject("pre_enable_limiter_still_enabled");
-        }
+        if (!sanitized.inputGainOnly()) return reject("pre_enable_stage_still_enabled");
         if (!allNear(sanitized.inputGainsDb, 0f)) return reject("pre_enable_gain_mismatch");
         return new Result(true, "pre_enable_sanitized");
     }
