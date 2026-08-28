@@ -29,17 +29,23 @@ require "$TRANSPORT" 'new DynamicsProcessing(0, audioSessionId, config)'
 require "$TRANSPORT" 'DynamicsProcessing.Config.Builder('
 require "$TRANSPORT" 'setInputGainAllChannelsTo'
 
-# v0.7.7.3 preserves Samsung's historically accepted constructor topology but makes it
-# constructor-only: while the whole effect is disabled, the limiter is immediately sanitized to
-# enabled=false and read back before any Enhanced Session setEnabled(true). Input gain remains
-# the only active processing control once the transport is allowed to run.
+# v0.7.7.8 keeps Samsung's historically accepted constructor topology first. If that constructor
+# fails, the framework default topology is allowed only while the whole effect remains disabled.
+# Every in-use processing stage is explicitly bypassed and read back before any Enhanced Session
+# setEnabled(true); input gain remains the only active processing control after authorization.
 require "$TRANSPORT" 'samsungLimiterCompatibilityShell'
 require "$TRANSPORT" '.setLimiterAllChannelsTo('
 require "$TRANSPORT" 'true, true, 0, 1f, 60f, 10f, -1f, 0f'
-require "$TRANSPORT" 'true, false, 0, 1f, 60f, 10f, -1f, 0f'
 require "$TRANSPORT" 'sanitizeEnhancedSessionCandidateBeforeEnable'
+require "$TRANSPORT" 'preEq.setEnabled(false)'
+require "$TRANSPORT" 'mbc.setEnabled(false)'
+require "$TRANSPORT" 'postEq.setEnabled(false)'
+require "$TRANSPORT" 'limiter.setEnabled(false)'
 require "$TRANSPORT" 'verifyPreEnableSanitized(readbackSnapshot())'
 require "$TRANSPORT" 'enhanced_session_pre_enable_sanitized_unverified'
+require "$TRANSPORT" 'getPreEqByChannelIndex(channel).isEnabled()'
+require "$TRANSPORT" 'getMbcByChannelIndex(channel).isEnabled()'
+require "$TRANSPORT" 'getPostEqByChannelIndex(channel).isEnabled()'
 require "$TRANSPORT" 'getLimiterByChannelIndex(channel).isEnabled()'
 require "$PLANNER" 'positivePeakHeadroomDb'
 require "$PLANNER" 'Reason.PEAK_LIMITED'
@@ -109,4 +115,4 @@ require "$SERVICE" 'DspTransport.Capability.VERIFIED_GLOBAL_MIX'
 reject "$SERVICE" 'capability == DspTransport.Capability.AVAILABLE_UNVERIFIED'
 require "$RUNTIME" 'controlCapabilityVerified'
 
-echo "v0.7.1 DSP integration + v0.7.7.3 pre-enable sanitation compatibility contract: PASS"
+echo "v0.7.1 DSP integration + v0.7.7.8 stage-neutral sanitation compatibility contract: PASS"
