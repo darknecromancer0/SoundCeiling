@@ -5,10 +5,13 @@ PKG="$ROOT/app/src/main/java/dev/soundceiling/app"
 mapfile -t files < <(grep -RIl 'setStreamVolume(' "$PKG" || true)
 for file in "${files[@]}"; do
   case "$(basename "$file")" in
-    VolumeApplier.java|ToneController.java|SystemStreamController.java) ;;
+    VolumeApplier.java|ToneController.java|SystemStreamController.java|VolumeKeySafetyService.java) ;;
     *) echo "Unexpected setStreamVolume call: $file" >&2; exit 1 ;;
   esac
 done
+# v0.7.7.7 exception: Strict Safety owns hardware Volume-Up and writes one bounded Media step itself.
+# The service is the only accessibility writer; its dedicated contract locks Volume-Down pass-through
+# and targetIndexOnVolumeUp(current, hardMax) before setStreamVolume.
 for file in SafeVolumeController.java GlobalVisualizerBackend.java AudioBackendStatus.java OptionalDspController.java; do
   [[ -f "$PKG/$file" ]] || { echo "Missing v0.4 service component: $file" >&2; exit 1; }
 done
