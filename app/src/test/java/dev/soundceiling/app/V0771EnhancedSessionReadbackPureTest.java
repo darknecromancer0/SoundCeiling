@@ -5,7 +5,7 @@ public final class V0771EnhancedSessionReadbackPureTest {
         preEnableSanitizedShellVerifies();
         preEnableAlreadyEnabledRejects();
         preEnableActiveLimiterRejects();
-        preEnableMissingLimiterRejects();
+        preEnableWithoutLimiterVerifies();
         exactReadbackHandshakeVerifies();
         disabledLimiterCompatibilityShellVerifies();
         missingEffectControlRejects();
@@ -37,11 +37,11 @@ public final class V0771EnhancedSessionReadbackPureTest {
         require(r.reason.contains("pre_enable_limiter_still_enabled"), "active limiter reason");
     }
 
-    private static void preEnableMissingLimiterRejects() {
+    private static void preEnableWithoutLimiterVerifies() {
         EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
                 snap(false, true, false, false, false, false, new boolean[]{false, false}, 0f, 0f));
-        require(!r.verified, "Samsung pre-enable gate requires the compatibility limiter shell");
-        require(r.reason.contains("pre_enable_limiter_shell_missing"), "missing shell reason");
+        require(r.verified, "OEM default topology with no processing stages must pass pre-enable gate");
+        require("pre_enable_sanitized".equals(r.reason), "no-limiter pre-enable reason");
     }
 
     private static void exactReadbackHandshakeVerifies() {

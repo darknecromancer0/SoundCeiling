@@ -114,7 +114,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
                 DspScope.UNKNOWN,
                 "enhanced_session_samsung_constructor_shell_unverified",
-                false, true);
+                true, true);
         if (transport.effect != null && transport.sanitizeEnhancedSessionCandidateBeforeEnable()) {
             transport.enhancedProbeCandidate = true;
         }
@@ -153,15 +153,17 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
             effect.setInputGainAllChannelsTo(0f);
             DynamicsProcessing.Config config = effect.getConfig();
             int channels = effect.getChannelCount();
-            if (!config.isLimiterInUse() || channels <= 0) {
+            if (channels <= 0) {
                 downgrade(Capability.UNAVAILABLE,
-                        "pre_enable_sanitize_rejected:limiter_shell_missing");
+                        "pre_enable_sanitize_rejected:channel_count_mismatch");
                 return false;
             }
-            DynamicsProcessing.Limiter disabledSamsungLimiter = new DynamicsProcessing.Limiter(
-                    true, false, 0, 1f, 60f, 10f, -1f, 0f);
-            for (int channel = 0; channel < channels; channel++) {
-                effect.setLimiterByChannelIndex(channel, disabledSamsungLimiter);
+            if (config.isLimiterInUse()) {
+                DynamicsProcessing.Limiter disabledSamsungLimiter = new DynamicsProcessing.Limiter(
+                        true, false, 0, 1f, 60f, 10f, -1f, 0f);
+                for (int channel = 0; channel < channels; channel++) {
+                    effect.setLimiterByChannelIndex(channel, disabledSamsungLimiter);
+                }
             }
             EnhancedSessionReadbackVerifier.Result sanitized =
                     EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(readbackSnapshot());

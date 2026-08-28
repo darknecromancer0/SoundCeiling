@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 T="$ROOT/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java"
 V="$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java"
-fail(){ echo "v0.7.7.3 Samsung pre-enable sanitation contract: $*" >&2; exit 1; }
+fail(){ echo "v0.7.7.4 OEM fallback pre-enable sanitation contract: $*" >&2; exit 1; }
 [[ -f "$T" ]] || fail "missing transport"
 [[ -f "$V" ]] || fail "missing verifier"
 
@@ -21,14 +21,15 @@ required_transport = [
     'setLimiterByChannelIndex(channel, disabledSamsungLimiter)',
     'verifyPreEnableSanitized(readbackSnapshot())',
     'enhanced_session_pre_enable_sanitized_unverified',
+    'if (effect == null && allowDefaultConfigFallback)',
+    'effect = initializeCandidate(new DynamicsProcessing(audioSessionId))',
 ]
 for needle in required_transport:
     if needle not in t:
-        raise SystemExit('v0.7.7.3 Samsung pre-enable sanitation contract missing: ' + needle)
+        raise SystemExit('v0.7.7.4 OEM fallback pre-enable sanitation contract missing: ' + needle)
 for needle in [
     'verifyPreEnableSanitized',
     'pre_enable_effect_already_enabled',
-    'pre_enable_limiter_shell_missing',
     'pre_enable_limiter_still_enabled',
     'pre_enable_sanitized',
 ]:
@@ -37,6 +38,8 @@ for needle in [
 
 factory = t[t.index('static AndroidDynamicsProcessingTransport forEnhancedSessionProbe'):
             t.index('static AndroidDynamicsProcessingTransport forNeutralGlobalProbe')]
+if '"enhanced_session_samsung_constructor_shell_unverified",\n                true, true);' not in factory:
+    raise SystemExit('v0.7.7.4 Enhanced Session must allow OEM default fallback after custom constructor rejection')
 if factory.index('sanitizeEnhancedSessionCandidateBeforeEnable') > factory.index('enhancedProbeCandidate = true'):
     raise SystemExit('v0.7.7.3 factory can authorize probe candidate before sanitation')
 
@@ -53,4 +56,4 @@ if sanitizer.index('setLimiterByChannelIndex') > sanitizer.index('verifyPreEnabl
     raise SystemExit('v0.7.7.3 sanitizer verifies before disabling limiter')
 PY
 
-echo 'v0.7.7.3 Samsung pre-enable sanitation contract: PASS'
+echo 'v0.7.7.4 OEM fallback pre-enable sanitation contract: PASS'
