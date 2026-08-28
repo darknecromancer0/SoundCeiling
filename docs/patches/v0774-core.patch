@@ -1,0 +1,137 @@
+diff --git a/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java b/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java
+index 236a12f..0dc660c 100644
+--- a/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java
++++ b/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java
+@@ -114,7 +114,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
+                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
+                 DspScope.UNKNOWN,
+                 "enhanced_session_samsung_constructor_shell_unverified",
+-                false, true);
++                true, true);
+         if (transport.effect != null && transport.sanitizeEnhancedSessionCandidateBeforeEnable()) {
+             transport.enhancedProbeCandidate = true;
+         }
+@@ -153,15 +153,17 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
+             effect.setInputGainAllChannelsTo(0f);
+             DynamicsProcessing.Config config = effect.getConfig();
+             int channels = effect.getChannelCount();
+-            if (!config.isLimiterInUse() || channels <= 0) {
++            if (channels <= 0) {
+                 downgrade(Capability.UNAVAILABLE,
+-                        "pre_enable_sanitize_rejected:limiter_shell_missing");
++                        "pre_enable_sanitize_rejected:channel_count_mismatch");
+                 return false;
+             }
+-            DynamicsProcessing.Limiter disabledSamsungLimiter = new DynamicsProcessing.Limiter(
+-                    true, false, 0, 1f, 60f, 10f, -1f, 0f);
+-            for (int channel = 0; channel < channels; channel++) {
+-                effect.setLimiterByChannelIndex(channel, disabledSamsungLimiter);
++            if (config.isLimiterInUse()) {
++                DynamicsProcessing.Limiter disabledSamsungLimiter = new DynamicsProcessing.Limiter(
++                        true, false, 0, 1f, 60f, 10f, -1f, 0f);
++                for (int channel = 0; channel < channels; channel++) {
++                    effect.setLimiterByChannelIndex(channel, disabledSamsungLimiter);
++                }
+             }
+             EnhancedSessionReadbackVerifier.Result sanitized =
+                     EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(readbackSnapshot());
+diff --git a/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java b/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java
+index 6500ebf..cdb15fd 100644
+--- a/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java
++++ b/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java
+@@ -63,13 +63,15 @@ final class EnhancedSessionReadbackVerifier {
+         if (sanitized.preEqInUse || sanitized.mbcInUse || sanitized.postEqInUse) {
+             return reject("pre_enable_non_limiter_stage_in_use");
+         }
+-        if (!sanitized.limiterInUse) return reject("pre_enable_limiter_shell_missing");
+         int channels = sanitized.inputGainsDb.length;
+-        if (channels <= 0 || sanitized.limiterEnabled.length != channels) {
+-            return reject("pre_enable_channel_count_mismatch");
+-        }
+-        for (boolean enabled : sanitized.limiterEnabled) {
+-            if (enabled) return reject("pre_enable_limiter_still_enabled");
++        if (channels <= 0) return reject("pre_enable_channel_count_mismatch");
++        if (sanitized.limiterInUse) {
++            if (sanitized.limiterEnabled.length != channels) {
++                return reject("pre_enable_channel_count_mismatch");
++            }
++            for (boolean enabled : sanitized.limiterEnabled) {
++                if (enabled) return reject("pre_enable_limiter_still_enabled");
++            }
+         }
+         if (!allNear(sanitized.inputGainsDb, 0f)) return reject("pre_enable_gain_mismatch");
+         return new Result(true, "pre_enable_sanitized");
+diff --git a/app/src/test/java/dev/soundceiling/app/V0771EnhancedSessionReadbackPureTest.java b/app/src/test/java/dev/soundceiling/app/V0771EnhancedSessionReadbackPureTest.java
+index 892eb0e..50e1b44 100644
+--- a/app/src/test/java/dev/soundceiling/app/V0771EnhancedSessionReadbackPureTest.java
++++ b/app/src/test/java/dev/soundceiling/app/V0771EnhancedSessionReadbackPureTest.java
+@@ -5,7 +5,7 @@ public final class V0771EnhancedSessionReadbackPureTest {
+         preEnableSanitizedShellVerifies();
+         preEnableAlreadyEnabledRejects();
+         preEnableActiveLimiterRejects();
+-        preEnableMissingLimiterRejects();
++        preEnableWithoutLimiterVerifies();
+         exactReadbackHandshakeVerifies();
+         disabledLimiterCompatibilityShellVerifies();
+         missingEffectControlRejects();
+@@ -37,11 +37,11 @@ public final class V0771EnhancedSessionReadbackPureTest {
+         require(r.reason.contains("pre_enable_limiter_still_enabled"), "active limiter reason");
+     }
+ 
+-    private static void preEnableMissingLimiterRejects() {
++    private static void preEnableWithoutLimiterVerifies() {
+         EnhancedSessionReadbackVerifier.Result r = EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
+                 snap(false, true, false, false, false, false, new boolean[]{false, false}, 0f, 0f));
+-        require(!r.verified, "Samsung pre-enable gate requires the compatibility limiter shell");
+-        require(r.reason.contains("pre_enable_limiter_shell_missing"), "missing shell reason");
++        require(r.verified, "OEM default topology with no processing stages must pass pre-enable gate");
++        require("pre_enable_sanitized".equals(r.reason), "no-limiter pre-enable reason");
+     }
+ 
+     private static void exactReadbackHandshakeVerifies() {
+diff --git a/scripts/check-v0773-preenable-sanitization-contract.sh b/scripts/check-v0773-preenable-sanitization-contract.sh
+index 7328079..3823730 100755
+--- a/scripts/check-v0773-preenable-sanitization-contract.sh
++++ b/scripts/check-v0773-preenable-sanitization-contract.sh
+@@ -3,7 +3,7 @@ set -euo pipefail
+ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ T="$ROOT/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java"
+ V="$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java"
+-fail(){ echo "v0.7.7.3 Samsung pre-enable sanitation contract: $*" >&2; exit 1; }
++fail(){ echo "v0.7.7.4 OEM fallback pre-enable sanitation contract: $*" >&2; exit 1; }
+ [[ -f "$T" ]] || fail "missing transport"
+ [[ -f "$V" ]] || fail "missing verifier"
+ 
+@@ -21,14 +21,15 @@ required_transport = [
+     'setLimiterByChannelIndex(channel, disabledSamsungLimiter)',
+     'verifyPreEnableSanitized(readbackSnapshot())',
+     'enhanced_session_pre_enable_sanitized_unverified',
++    'if (effect == null && allowDefaultConfigFallback)',
++    'effect = initializeCandidate(new DynamicsProcessing(audioSessionId))',
+ ]
+ for needle in required_transport:
+     if needle not in t:
+-        raise SystemExit('v0.7.7.3 Samsung pre-enable sanitation contract missing: ' + needle)
++        raise SystemExit('v0.7.7.4 OEM fallback pre-enable sanitation contract missing: ' + needle)
+ for needle in [
+     'verifyPreEnableSanitized',
+     'pre_enable_effect_already_enabled',
+-    'pre_enable_limiter_shell_missing',
+     'pre_enable_limiter_still_enabled',
+     'pre_enable_sanitized',
+ ]:
+@@ -37,6 +38,8 @@ for needle in [
+ 
+ factory = t[t.index('static AndroidDynamicsProcessingTransport forEnhancedSessionProbe'):
+             t.index('static AndroidDynamicsProcessingTransport forNeutralGlobalProbe')]
++if '"enhanced_session_samsung_constructor_shell_unverified",\n                true, true);' not in factory:
++    raise SystemExit('v0.7.7.4 Enhanced Session must allow OEM default fallback after custom constructor rejection')
+ if factory.index('sanitizeEnhancedSessionCandidateBeforeEnable') > factory.index('enhancedProbeCandidate = true'):
+     raise SystemExit('v0.7.7.3 factory can authorize probe candidate before sanitation')
+ 
+@@ -53,4 +56,4 @@ if sanitizer.index('setLimiterByChannelIndex') > sanitizer.index('verifyPreEnabl
+     raise SystemExit('v0.7.7.3 sanitizer verifies before disabling limiter')
+ PY
+ 
+-echo 'v0.7.7.3 Samsung pre-enable sanitation contract: PASS'
++echo 'v0.7.7.4 OEM fallback pre-enable sanitation contract: PASS'
