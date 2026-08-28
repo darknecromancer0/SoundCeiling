@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 T="$ROOT/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java"
 V="$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java"
 M="$ROOT/app/src/main/java/dev/soundceiling/app/DspTransportManager.java"
-fail(){ echo "v0.7.7.8 Enhanced Session safety contract: $*" >&2; exit 1; }
+fail(){ echo "v0.7.7.8 Enhanced Session default-fallback contract: $*" >&2; exit 1; }
 [[ -f "$T" ]] || fail "missing transport"
 [[ -f "$V" ]] || fail "missing verifier"
 [[ -f "$M" ]] || fail "missing manager"
@@ -13,8 +13,29 @@ from pathlib import Path
 import sys
 t=Path(sys.argv[1]).read_text(); v=Path(sys.argv[2]).read_text(); m=Path(sys.argv[3]).read_text()
 factory=t[t.index('static AndroidDynamicsProcessingTransport forEnhancedSessionProbe'):t.index('static AndroidDynamicsProcessingTransport forNeutralGlobalProbe')]
-if '"enhanced_session_samsung_constructor_shell_unverified",\n                false, true);' not in factory:
-    raise SystemExit('runtime fallback expectation changed before the v0.7.7.8 transport test is introduced')
+if '"enhanced_session_samsung_constructor_shell_unverified",\n                true, true);' not in factory:
+    raise SystemExit('Enhanced Session must permit the default constructor only as the post-custom fail-closed fallback')
+
+sanitize=t[t.index('private boolean sanitizeEnhancedSessionCandidateBeforeEnable()'):t.index('DspApplyResult enableNeutralForProbe()', t.index('private boolean sanitizeEnhancedSessionCandidateBeforeEnable()'))]
+for needle in ['effect.setEnabled(false)', 'effect.setInputGainAllChannelsTo(0f)',
+               'getPreEqByChannelIndex', 'setPreEqByChannelIndex',
+               'getMbcByChannelIndex', 'setMbcByChannelIndex',
+               'getPostEqByChannelIndex', 'setPostEqByChannelIndex',
+               'getLimiterByChannelIndex', 'setLimiterByChannelIndex',
+               'verifyPreEnableSanitized(readbackSnapshot())']:
+    if needle not in sanitize:
+        raise SystemExit('pre-enable sanitizer missing: '+needle)
+if 'effect.setEnabled(true)' in sanitize:
+    raise SystemExit('pre-enable sanitizer must never enable the effect')
+
+readback=t[t.index('private EnhancedSessionReadbackVerifier.Snapshot readbackSnapshot()'):t.index('boolean authorizeVerifiedPolicyScoped()', t.index('private EnhancedSessionReadbackVerifier.Snapshot readbackSnapshot()'))]
+for needle in ['getPreEqByChannelIndex(channel).isEnabled()',
+               'getMbcByChannelIndex(channel).isEnabled()',
+               'getPostEqByChannelIndex(channel).isEnabled()',
+               'getLimiterByChannelIndex(channel).isEnabled()']:
+    if needle not in readback:
+        raise SystemExit('readback missing disabled-stage proof: '+needle)
+
 for needle in ['pre_enable_stage_still_enabled','pre_enable_channel_count_mismatch','pre_enable_sanitized']:
     if needle not in v: raise SystemExit('missing fail-closed pre-enable verifier rule: '+needle)
 for needle in ['enhancedSessionVerificationEpoch','enhancedSessionVerificationStopped']:
@@ -28,4 +49,4 @@ if stop.index('enhancedSessionVerificationStopped = true') > stop.index('closeSc
 if stop.index('enhancedSessionVerificationEpoch++') > stop.index('closeScoped()'):
     raise SystemExit('service stop increments verification epoch too late')
 PY
-echo 'v0.7.7.8 Enhanced Session verifier compatibility contract: PASS'
+echo 'v0.7.7.8 Enhanced Session default-fallback contract: PASS'
