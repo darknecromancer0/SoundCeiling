@@ -1,0 +1,25 @@
+name: Materialize v0.7.7.4 source patch
+on:
+  push:
+    branches: [ "feature/v0.7-adaptive-envelope" ]
+    paths: [ "docs/patches/v0774-core.patch" ]
+permissions:
+  contents: write
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/v0.7-adaptive-envelope
+          fetch-depth: 0
+      - name: Apply verified source patch
+        run: |
+          git apply --check docs/patches/v0774-core.patch
+          git apply docs/patches/v0774-core.patch
+          rm docs/patches/v0774-core.patch .github/workflows/materialize-v0774.yml
+          git config user.name "SoundCeiling CI"
+          git config user.email "soundceiling-ci@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: sanitize OEM default Session DSP before enable"
+          git push origin HEAD:feature/v0.7-adaptive-envelope
