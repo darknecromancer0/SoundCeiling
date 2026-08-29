@@ -41,6 +41,13 @@ final class EnhancedSessionDspRuntime {
             release("session_route_changed", true);
             routeIdentity = route;
         }
+        if (EnhancedSessionSetup.RUNTIME_QUARANTINED) {
+            release("session_dsp_emergency_quarantine", false);
+            DiagnosticLog.transition("session_dsp_unavailable",
+                    "session_dsp_emergency_quarantine",
+                    "authority=emergency_fail_closed");
+            return;
+        }
         if (!enabled) {
             release("session_dsp_disabled", false);
             return;
