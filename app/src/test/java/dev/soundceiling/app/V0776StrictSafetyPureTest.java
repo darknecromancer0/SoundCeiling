@@ -5,7 +5,8 @@ public final class V0776StrictSafetyPureTest {
         hardCapOvershootNeverBecomesUserAuthority();
         coordinatorIgnoresIllegalOvershootAnchor();
         legalUserDownStillOwnsAnchor();
-        hardCapLatchRequiresThreeLegalReadbacks();
+        hardCapLatchRequiresQuietWindowThenThreeLegalReadbacks();
+        hardCapLatchSurvivesSamsungSliderBurst();
         volumeKeyPolicyOwnsAllVolumeUpWhileRunning();
         System.out.println("V0776StrictSafetyPureTest: PASS");
     }
@@ -57,19 +58,52 @@ public final class V0776StrictSafetyPureTest {
         eq(3, c.mediaAnchorState().userAnchorIndex(), "legal user down must rebase anchor");
     }
 
-    private static void hardCapLatchRequiresThreeLegalReadbacks() {
+    private static void hardCapLatchRequiresQuietWindowThenThreeLegalReadbacks() {
         HardCapLatch latch = new HardCapLatch();
-        int[] sequence = {4, 5, 7, 11, 15, 4, 5, 4, 4, 4};
-        boolean[] shouldWrite = {false, true, true, true, true, false, true, false, false, false};
-        boolean[] latched = {false, true, true, true, true, true, true, true, true, false};
-        int[] confirmations = {0, 0, 0, 0, 0, 1, 0, 1, 2, 3};
-        for (int i = 0; i < sequence.length; i++) {
-            HardCapLatch.Decision d = latch.update(sequence[i], 4, i * 10L);
-            eq(shouldWrite[i], d.shouldWrite, "latch write at step " + i);
-            eq(latched[i], d.latched, "latch state at step " + i);
-            eq(confirmations[i], d.confirmationCount, "latch confirmations at step " + i);
-            eq(4, d.targetIndex, "latch target at step " + i);
-        }
+        HardCapLatch.Decision d = latch.update(15, 4, 40L);
+        eq(true, d.shouldWrite, "first overshoot must clamp");
+        eq(true, d.entered, "first overshoot must enter latch");
+
+        d = latch.update(4, 4, 50L);
+        eq(true, d.latched, "early legal readback must keep latch");
+        eq(0, d.confirmationCount, "early legal readback must not confirm during slider burst");
+        d = latch.update(4, 4, 219L);
+        eq(0, d.confirmationCount, "quiet window has not elapsed yet");
+
+        d = latch.update(4, 4, 220L);
+        eq(1, d.confirmationCount, "first stable confirmation");
+        d = latch.update(4, 4, 230L);
+        eq(2, d.confirmationCount, "second stable confirmation");
+        d = latch.update(4, 4, 240L);
+        eq(false, d.latched, "third stable confirmation releases latch");
+        eq(true, d.released, "third stable confirmation reports release");
+        eq(3, d.confirmationCount, "release reports all confirmations");
+    }
+
+    private static void hardCapLatchSurvivesSamsungSliderBurst() {
+        HardCapLatch latch = new HardCapLatch();
+        HardCapLatch.Decision d = latch.update(13, 4, 0L);
+        eq(true, d.entered, "burst starts one latch");
+        eq(true, d.shouldWrite, "burst overshoot must clamp");
+
+        // SoundCeiling briefly wins, but SystemUI keeps emitting delayed drag writes.
+        latch.update(4, 4, 10L);
+        latch.update(4, 4, 20L);
+        latch.update(4, 4, 30L);
+        d = latch.update(9, 4, 60L);
+        eq(false, d.entered, "delayed SystemUI write must stay in the same latch");
+        eq(true, d.shouldWrite, "delayed SystemUI overshoot must clamp again");
+
+        // User moving down is always allowed and must never cause SoundCeiling to write upward.
+        d = latch.update(2, 4, 80L);
+        eq(false, d.shouldWrite, "user down must not be counter-written");
+        eq(true, d.latched, "latch may remain armed harmlessly during the quiet window");
+
+        d = latch.update(4, 4, 240L);
+        eq(1, d.confirmationCount, "first post-burst stable readback");
+        latch.update(4, 4, 250L);
+        d = latch.update(4, 4, 260L);
+        eq(true, d.released, "same latch releases only after the burst is over");
     }
 
     private static void volumeKeyPolicyOwnsAllVolumeUpWhileRunning() {
