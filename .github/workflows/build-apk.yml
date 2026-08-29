@@ -146,6 +146,10 @@ jobs:
         run: bash ./scripts/check-v0778-release-contract.sh
       - name: Check v0.7.7.9 release contract
         run: bash ./scripts/check-v0779-release-contract.sh
+      - name: Check v0.7.7.10 emergency DSP quarantine pure test
+        run: bash ./scripts/run-v07710-emergency-dsp-quarantine-test.sh
+      - name: Check v0.7.7.10 emergency DSP quarantine contract
+        run: bash ./scripts/check-v07710-release-contract.sh
       - name: Install Android SDK 35 packages
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
@@ -169,6 +173,6 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.7.7.9-debug-apk
+          name: SoundCeiling-v0.7.7.10-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
