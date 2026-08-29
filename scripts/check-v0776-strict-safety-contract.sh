@@ -31,6 +31,6 @@ need "$R/app/src/main/java/dev/soundceiling/app/SimpleModeView.java" 'Strict Saf
 need "$R/app/src/main/java/dev/soundceiling/app/AdvancedModeView.java" 'Strict Safety'
 # v0.7.7.4 OEM-default Enhanced Session fallback remains quarantined.
 need "$R/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java" 'default_fallback_disabled'
-need "$R/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java" '"enhanced_session_samsung_constructor_shell_unverified"'
+need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" 'OEM_DEFAULT_RUNTIME_QUARANTINED = true'
 
 echo 'v0.7.7.6 strict safety contract: PASS'

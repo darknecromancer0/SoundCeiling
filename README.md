@@ -1,6 +1,33 @@
-# Sound Ceiling for Android - v0.7.7.2
+# Sound Ceiling for Android - v0.8.0
 
-SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.7.7.2 is a Samsung `DynamicsProcessing` creation compatibility corrective on top of the deterministic Enhanced Session DSP verification introduced in v0.7.7.1.
+SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.8.0 is the first bounded
+Samsung Session DSP compatibility-matrix field build: Samsung Media remains the user master while
+only an exact, custom-configured non-zero session may receive continuous gain.
+
+## v0.8.0 safe Samsung Session DSP matrix
+
+- **OEM-default Enhanced Session DSP stays quarantined.** The unsafe one-argument
+  `DynamicsProcessing(sessionId)` constructor is never used for third-party sessions. v0.7.7.9
+  proved that plausible readback of an unknown Samsung topology was not enough to make it safe.
+- **Three explicit stereo candidates are tried in a fixed order.** The first mirrors Android CTS:
+  frequency-resolution, 9.5 ms frames, two bands in PreEQ/MBC/PostEQ and a limiter, with every
+  optional stage disabled. Two simpler frequency-resolution bypass profiles follow. The historical
+  field-rejected time-resolution topology and mono guesses are excluded.
+- **Topology identity is part of authority.** Variant, frame duration, channel count, stage-in-use
+  flags, band counts, disabled state, control ownership and per-channel gains must all read back
+  exactly before the bounded `0 -> -0.5 -> 0 dB` handshake can promote a candidate.
+- **Positive gain is a `+3 dB` field pilot.** Attenuation retains the existing range and immediate
+  hard-safety path, but quiet-program gain cannot exceed `+3 dB` in this build. Requested and
+  actually applied gain remain distinct in telemetry.
+- **Contradictory output fails closed.** If a positive Session gain coincides with near-full-scale
+  actual output while the PRE_VOLUME projection remains safely below the hard ceiling, the session
+  is neutralized, disabled, released and suppressed until the session or route changes.
+- **Samsung Media remains untouched by ordinary normalization.** Manual moves rebase the anchor;
+  normal Media UP remains debt-only; hard cap and Quiet Now retain their explicit safety authority.
+  If all custom candidates fail, ordinary normalization truthfully holds instead of reviving a
+  coarse target-chasing fallback.
+
+Samsung physical acceptance: `docs/field-tests/2026-08-29-v0.8.0-samsung-checklist.md`.
 
 ## v0.7.7.2 Samsung Session DSP compatibility corrective
 
@@ -109,4 +136,4 @@ Playback-capture/log persistence continues to use the existing **MediaStore**/SA
 
 Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, Samsung 3/15/telemetry/wiring contracts, the v0.7.7.2 disabled-limiter compatibility topology contract, deterministic readback pure/wiring contracts, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
 
-Release artifact: **`SoundCeiling-v0.7.7.2-debug-apk`**, containing `app-debug.apk`.
+Release artifact: **`SoundCeiling-v0.8.0-debug-apk`**, containing `app-debug.apk`.

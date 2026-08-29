@@ -41,11 +41,11 @@ final class EnhancedSessionDspRuntime {
             release("session_route_changed", true);
             routeIdentity = route;
         }
-        if (EnhancedSessionSetup.RUNTIME_QUARANTINED) {
-            release("session_dsp_emergency_quarantine", false);
+        if (!EnhancedSessionSetup.SAFE_CUSTOM_MATRIX_ENABLED) {
+            release("session_dsp_custom_matrix_disabled", false);
             DiagnosticLog.transition("session_dsp_unavailable",
-                    "session_dsp_emergency_quarantine",
-                    "authority=emergency_fail_closed");
+                    "session_dsp_custom_matrix_disabled",
+                    "authority=custom_matrix_fail_closed");
             return;
         }
         if (!enabled) {
@@ -105,7 +105,7 @@ final class EnhancedSessionDspRuntime {
         int verifiedSession = dsp.enhancedSessionId();
         if (verifiedSession > 0) {
             if (dsp.hasVerifiedEnhancedSession(wanted)) {
-                reason = "session_dsp_active";
+                reason = "session_dsp_active:" + dsp.enhancedSessionProfileId();
                 return;
             }
             release("session_changed", true);
@@ -142,10 +142,13 @@ final class EnhancedSessionDspRuntime {
                         + " package=" + wanted.sourcePackage + " verified=" + verified
                         + " reason=" + detail);
         if (verified && dsp.enhancedSessionId() > 0) {
-            reason = "session_dsp_active";
+            reason = "session_dsp_active:" + dsp.enhancedSessionProfileId();
             DiagnosticLog.transition("session_dsp_attached", "verified_readback",
                     "session=" + dsp.enhancedSessionId() + " uid=" + dsp.enhancedSessionUid()
-                            + " package=" + dsp.enhancedSessionPackage());
+                            + " package=" + dsp.enhancedSessionPackage()
+                            + " profile=" + dsp.enhancedSessionProfileId()
+                            + " positivePilotMaxDb="
+                            + EnhancedSessionGainPolicy.MAX_POSITIVE_GAIN_DB);
             return;
         }
 
@@ -158,6 +161,7 @@ final class EnhancedSessionDspRuntime {
     int sessionId() { return dsp.enhancedSessionId(); }
     int sessionUid() { return dsp.enhancedSessionUid(); }
     String sessionPackage() { return dsp.enhancedSessionPackage(); }
+    String profileId() { return dsp.enhancedSessionProfileId(); }
     boolean active() { return dsp.enhancedSessionId() > 0; }
 
     void onCaptureReplaced() { release("session_capture_replaced", false); }
@@ -167,6 +171,14 @@ final class EnhancedSessionDspRuntime {
         String actual = why == null || why.isEmpty() ? "session_dsp_apply_failed" : why;
         release(actual, false);
         DiagnosticLog.transition("session_dsp_unavailable", actual, "applyFailed=true");
+    }
+
+    void onOutputAnomaly(String detail) {
+        int badSession = dsp.enhancedSessionId();
+        suppressAndRelease(badSession, "session_output_guard_suppressed");
+        DiagnosticLog.transition("session_dsp_output_guard",
+                badSession + ":session_output_guard_suppressed",
+                "session=" + badSession + " " + (detail == null ? "" : detail));
     }
 
     void onStopped() { release("session_service_stopped", true); }

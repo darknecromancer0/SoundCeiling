@@ -331,6 +331,27 @@ public class NormalizerService extends Service {
                             controlCurve.gainDbForIndex(current), verifiedGainDb,
                             liveCaptureReference.mode(), outputMix.peakDbfs, outputMix.rmsDbfs,
                             outputMixEvidence));
+            EnhancedSessionOutputGuard.Result outputGuard = EnhancedSessionOutputGuard.evaluate(
+                    verifiedGainDb, levels.projectedOutputPeakDbfs, levels.outputProjectionValid,
+                    outputMix.peakDbfs, outputMixEvidence,
+                    effectiveProfile.sourcePeakThresholdDbfs);
+            if (outputGuard.tripped && enhancedSessionDsp != null
+                    && enhancedSessionDsp.active()) {
+                String guardDetail = String.format(Locale.US,
+                        "profile=%s appliedGainDb=%.2f actualPeakDbfs=%.2f "
+                                + "projectedPeakDbfs=%.2f hardPeakCeilingDbfs=%.2f residualDb=%.2f",
+                        enhancedSessionDsp.profileId(), verifiedGainDb, outputMix.peakDbfs,
+                        levels.projectedOutputPeakDbfs, effectiveProfile.sourcePeakThresholdDbfs,
+                        outputGuard.residualDb);
+                DiagnosticLog.event("enhanced_session_output_anomaly", guardDetail);
+                enhancedSessionDsp.onOutputAnomaly(guardDetail);
+                verifiedGainDb = 0f;
+                levels = OutputLevelModel.evaluate(
+                        new OutputLevelModel.Input(blockPeak, loud.controlLoudnessDb,
+                                controlCurve.gainDbForIndex(current), 0f,
+                                liveCaptureReference.mode(), outputMix.peakDbfs,
+                                outputMix.rmsDbfs, outputMixEvidence));
+            }
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.maxMediaPercent);
             ControlCommand command = controlCoordinator.onFrame(controlFrame(now, current, levels,
                     signal, hybridSnapshot.policy, effectiveProfile, hybridSnapshot.sources.confidence,

@@ -28,40 +28,31 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     private boolean wholeOutputConsent;
     private boolean globalGainAuthorized;
     private boolean enhancedProbeCandidate;
+    private final EnhancedSessionCandidateMatrix.Profile enhancedProfile;
 
     private AndroidDynamicsProcessingTransport(int audioSessionId, boolean globalSession,
                                                int channelCount, Capability initialCapability,
                                                DspScope initialScope, String initialReason,
                                                boolean allowDefaultConfigFallback,
-                                               boolean samsungLimiterCompatibilityShell) {
+                                               EnhancedSessionCandidateMatrix.Profile enhancedProfile) {
         this.audioSessionId = audioSessionId;
         this.globalSession = globalSession;
         this.capability = initialCapability;
         this.scope = initialScope;
         this.reason = initialReason;
+        this.enhancedProfile = enhancedProfile;
         String configuredFailure = "";
         try {
-            DynamicsProcessing.Config.Builder builder =
-                    new DynamicsProcessing.Config.Builder(
-                            DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION,
-                            Math.max(1, channelCount),
-                            false, 0,
-                            false, 0,
-                            false, 0,
-                            samsungLimiterCompatibilityShell)
-                            .setInputGainAllChannelsTo(0f);
-            if (samsungLimiterCompatibilityShell) {
-                builder.setLimiterAllChannelsTo(new DynamicsProcessing.Limiter(
-                        true, true, 0, 1f, 60f, 10f, -1f, 0f));
-            }
-            DynamicsProcessing.Config config = builder.build();
+            DynamicsProcessing.Config config = buildConfiguredCandidate(
+                    channelCount, enhancedProfile);
             effect = initializeCandidate(new DynamicsProcessing(0, audioSessionId, config));
         } catch (RuntimeException configuredError) {
             configuredFailure = configuredError.getClass().getSimpleName();
             effect = null;
         }
 
-        if (effect == null && allowDefaultConfigFallback) {
+        boolean defaultFallbackAllowed = allowDefaultConfigFallback && enhancedProfile == null;
+        if (effect == null && defaultFallbackAllowed) {
             try {
                 effect = initializeCandidate(new DynamicsProcessing(audioSessionId));
                 reason = initialReason + ":default_config_fallback"
@@ -80,10 +71,56 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         appliedGainDb = 0f;
     }
 
+    private static DynamicsProcessing.Config buildConfiguredCandidate(
+            int channelCount, EnhancedSessionCandidateMatrix.Profile profile) {
+        if (profile == null) {
+            DynamicsProcessing.Config.Builder builder =
+                    new DynamicsProcessing.Config.Builder(
+                            DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION,
+                            Math.max(1, channelCount),
+                            false, 0,
+                            false, 0,
+                            false, 0,
+                            false)
+                            .setInputGainAllChannelsTo(0f);
+            return builder.build();
+        }
+
+        int variant = profile.variant
+                == EnhancedSessionCandidateMatrix.Variant.FREQUENCY_RESOLUTION
+                ? DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION
+                : DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION;
+        DynamicsProcessing.Config.Builder builder = new DynamicsProcessing.Config.Builder(
+                variant, profile.channelCount,
+                profile.preEqInUse(), profile.preEqBandCount,
+                profile.mbcInUse(), profile.mbcBandCount,
+                profile.postEqInUse(), profile.postEqBandCount,
+                profile.limiterInUse)
+                .setPreferredFrameDuration(profile.preferredFrameDurationMs)
+                .setInputGainAllChannelsTo(0f);
+        if (profile.preEqInUse()) {
+            builder.setPreEqAllChannelsTo(
+                    new DynamicsProcessing.Eq(true, false, profile.preEqBandCount));
+        }
+        if (profile.mbcInUse()) {
+            builder.setMbcAllChannelsTo(
+                    new DynamicsProcessing.Mbc(true, false, profile.mbcBandCount));
+        }
+        if (profile.postEqInUse()) {
+            builder.setPostEqAllChannelsTo(
+                    new DynamicsProcessing.Eq(true, false, profile.postEqBandCount));
+        }
+        if (profile.limiterInUse) {
+            builder.setLimiterAllChannelsTo(new DynamicsProcessing.Limiter(
+                    true, false, 0, 1f, 60f, 10f, -1f, 0f));
+        }
+        return builder.build();
+    }
+
     private static DynamicsProcessing initializeCandidate(DynamicsProcessing candidate) {
         try {
-            candidate.setInputGainAllChannelsTo(0f);
             candidate.setEnabled(false);
+            candidate.setInputGainAllChannelsTo(0f);
             return candidate;
         } catch (RuntimeException error) {
             try { candidate.release(); }
@@ -101,20 +138,30 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         }
         return new AndroidDynamicsProcessingTransport(handle.audioSessionId, false, channelCount,
                 DspTransport.Capability.VERIFIED_POLICY_SCOPED,
-                DspScope.POLICY_SCOPED, "trusted_policy_scoped_handle", true, false);
+                DspScope.POLICY_SCOPED, "trusted_policy_scoped_handle", true, null);
     }
 
     static AndroidDynamicsProcessingTransport forEnhancedSessionProbe(DspEndpointHandle handle,
                                                                        int channelCount) {
+        return forEnhancedSessionProbe(handle,
+                EnhancedSessionCandidateMatrix.orderedProfiles().get(0));
+    }
+
+    static AndroidDynamicsProcessingTransport forEnhancedSessionProbe(
+            DspEndpointHandle handle, EnhancedSessionCandidateMatrix.Profile profile) {
         if (handle == null || !handle.isEnhancedSession() || handle.audioSessionId <= 0) {
             return unavailable("enhanced_session_handle_untrusted");
         }
+        if (!EnhancedSessionSetup.SAFE_CUSTOM_MATRIX_ENABLED || profile == null
+                || !profile.explicitConfig) {
+            return unavailable("enhanced_session_custom_matrix_disabled");
+        }
         AndroidDynamicsProcessingTransport transport = new AndroidDynamicsProcessingTransport(
-                handle.audioSessionId, false, channelCount,
+                handle.audioSessionId, false, profile.channelCount,
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
                 DspScope.UNKNOWN,
-                "enhanced_session_samsung_constructor_shell_unverified",
-                false, true);
+                "enhanced_session_custom_candidate_unverified:" + profile.id,
+                false, profile);
         if (transport.effect != null && transport.sanitizeEnhancedSessionCandidateBeforeEnable()) {
             transport.enhancedProbeCandidate = true;
         }
@@ -124,7 +171,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     static AndroidDynamicsProcessingTransport forNeutralGlobalProbe(int channelCount) {
         return new AndroidDynamicsProcessingTransport(0, true, channelCount,
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
-                DspScope.UNKNOWN, "global_session_neutral_unverified", true, false);
+                DspScope.UNKNOWN, "global_session_neutral_unverified", true, null);
     }
 
     private static AndroidDynamicsProcessingTransport unavailable(String reason) {
@@ -137,15 +184,14 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         capability = Capability.UNAVAILABLE;
         scope = DspScope.NONE;
         reason = unavailableReason;
+        enhancedProfile = null;
     }
 
     int audioSessionId() { return audioSessionId; }
     float appliedGainDb() { return appliedGainDb; }
+    String enhancedProfileId() { return enhancedProfile == null ? "" : enhancedProfile.id; }
 
-    /**
-     * Samsung accepts the historical limiter topology at construction time. The whole effect
-     * remains disabled while the limiter is converted into a disabled compatibility shell.
-     */
+    /** Reasserts disabled optional stages before any custom candidate may be enabled. */
     private boolean sanitizeEnhancedSessionCandidateBeforeEnable() {
         if (globalSession || effect == null || audioSessionId <= 0) return false;
         try {
@@ -158,21 +204,44 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
                         "pre_enable_sanitize_rejected:channel_count_mismatch");
                 return false;
             }
+            for (int channel = 0; channel < channels; channel++) {
+                if (config.isPreEqInUse()) {
+                    DynamicsProcessing.Eq preEq = effect.getPreEqByChannelIndex(channel);
+                    preEq.setEnabled(false);
+                    effect.setPreEqByChannelIndex(channel, preEq);
+                }
+                if (config.isMbcInUse()) {
+                    DynamicsProcessing.Mbc mbc = effect.getMbcByChannelIndex(channel);
+                    mbc.setEnabled(false);
+                    effect.setMbcByChannelIndex(channel, mbc);
+                }
+                if (config.isPostEqInUse()) {
+                    DynamicsProcessing.Eq postEq = effect.getPostEqByChannelIndex(channel);
+                    postEq.setEnabled(false);
+                    effect.setPostEqByChannelIndex(channel, postEq);
+                }
+            }
             if (config.isLimiterInUse()) {
-                DynamicsProcessing.Limiter disabledSamsungLimiter = new DynamicsProcessing.Limiter(
-                        true, false, 0, 1f, 60f, 10f, -1f, 0f);
                 for (int channel = 0; channel < channels; channel++) {
-                    effect.setLimiterByChannelIndex(channel, disabledSamsungLimiter);
+                    DynamicsProcessing.Limiter limiter =
+                            effect.getLimiterByChannelIndex(channel);
+                    limiter.setEnabled(false);
+                    effect.setLimiterByChannelIndex(channel, limiter);
                 }
             }
             EnhancedSessionReadbackVerifier.Result sanitized =
-                    EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(readbackSnapshot());
+                    enhancedProfile == null
+                            ? EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
+                                    readbackSnapshot())
+                            : EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(enhancedProfile,
+                                    readbackSnapshot());
             if (!sanitized.verified) {
                 downgrade(Capability.UNAVAILABLE,
                         "pre_enable_sanitize_rejected:" + sanitized.reason);
                 return false;
             }
-            reason = "enhanced_session_pre_enable_sanitized_unverified";
+            reason = "enhanced_session_pre_enable_sanitized_unverified:"
+                    + enhancedProfileId();
             return true;
         } catch (RuntimeException error) {
             downgrade(Capability.UNAVAILABLE,
@@ -224,7 +293,11 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         try {
             effect.setInputGainAllChannelsTo(0f);
             EnhancedSessionReadbackVerifier.Result preEnable =
-                    EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(readbackSnapshot());
+                    enhancedProfile == null
+                            ? EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(
+                                    readbackSnapshot())
+                            : EnhancedSessionReadbackVerifier.verifyPreEnableSanitized(enhancedProfile,
+                                    readbackSnapshot());
             if (!preEnable.verified) {
                 reason = "enhanced_session_pre_enable_rejected:" + preEnable.reason;
                 return preEnable;
@@ -241,8 +314,12 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
             lastApplyAtMs = 0L;
 
             EnhancedSessionReadbackVerifier.Result result =
-                    EnhancedSessionReadbackVerifier.verify(neutral, probe, restored);
-            reason = result.verified ? "enhanced_session_readback_verified"
+                    enhancedProfile == null
+                            ? EnhancedSessionReadbackVerifier.verify(neutral, probe, restored)
+                            : EnhancedSessionReadbackVerifier.verify(
+                                    enhancedProfile, neutral, probe, restored);
+            reason = result.verified ? "enhanced_session_readback_verified:"
+                    + enhancedProfileId()
                     : "enhanced_session_readback_rejected:" + result.reason;
             if (!result.verified) {
                 try { effect.setEnabled(false); }
@@ -265,9 +342,24 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         DynamicsProcessing.Config config = effect.getConfig();
         int channels = effect.getChannelCount();
         float[] gains = new float[Math.max(0, channels)];
+        boolean[] preEqEnabled = config.isPreEqInUse()
+                ? new boolean[gains.length] : new boolean[0];
+        boolean[] mbcEnabled = config.isMbcInUse()
+                ? new boolean[gains.length] : new boolean[0];
+        boolean[] postEqEnabled = config.isPostEqInUse()
+                ? new boolean[gains.length] : new boolean[0];
         boolean[] limiterEnabled = new boolean[gains.length];
         for (int channel = 0; channel < gains.length; channel++) {
             gains[channel] = effect.getInputGainByChannelIndex(channel);
+            if (config.isPreEqInUse()) {
+                preEqEnabled[channel] = effect.getPreEqByChannelIndex(channel).isEnabled();
+            }
+            if (config.isMbcInUse()) {
+                mbcEnabled[channel] = effect.getMbcByChannelIndex(channel).isEnabled();
+            }
+            if (config.isPostEqInUse()) {
+                postEqEnabled[channel] = effect.getPostEqByChannelIndex(channel).isEnabled();
+            }
             if (config.isLimiterInUse()) {
                 limiterEnabled[channel] = effect.getLimiterByChannelIndex(channel).isEnabled();
             }
@@ -275,7 +367,21 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         return new EnhancedSessionReadbackVerifier.Snapshot(
                 effect.getEnabled(), effect.hasControl(),
                 config.isPreEqInUse(), config.isMbcInUse(),
-                config.isPostEqInUse(), config.isLimiterInUse(), limiterEnabled, gains);
+                config.isPostEqInUse(), config.isLimiterInUse(),
+                preEqEnabled, mbcEnabled, postEqEnabled, limiterEnabled, gains,
+                toPureVariant(config.getVariant()), config.getPreferredFrameDuration(), channels,
+                config.getPreEqBandCount(), config.getMbcBandCount(),
+                config.getPostEqBandCount());
+    }
+
+    private static EnhancedSessionCandidateMatrix.Variant toPureVariant(int variant) {
+        if (variant == DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION) {
+            return EnhancedSessionCandidateMatrix.Variant.FREQUENCY_RESOLUTION;
+        }
+        if (variant == DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION) {
+            return EnhancedSessionCandidateMatrix.Variant.TIME_RESOLUTION;
+        }
+        return null;
     }
 
     boolean authorizeVerifiedPolicyScoped() {
@@ -289,7 +395,7 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
             lastApplyAtMs = 0L;
             capability = DspTransport.Capability.VERIFIED_POLICY_SCOPED;
             scope = DspScope.POLICY_SCOPED;
-            reason = "verified_enhanced_session_input_gain_only";
+            reason = "verified_enhanced_session_input_gain_only:" + enhancedProfileId();
             enhancedProbeCandidate = false;
             return true;
         } catch (RuntimeException error) {
@@ -438,7 +544,10 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
         enhancedProbeCandidate = false;
     }
 
-    private static float clampGain(float gainDb) {
+    private float clampGain(float gainDb) {
+        if (enhancedProfile != null) {
+            return EnhancedSessionGainPolicy.clampForPilot(gainDb);
+        }
         return Math.max(MIN_INPUT_GAIN_DB, Math.min(MAX_INPUT_GAIN_DB, gainDb));
     }
 }

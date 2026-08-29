@@ -47,6 +47,10 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CalibrationPreferenceState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/RuntimeState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionCandidateMatrix.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionGainPolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionOutputGuard.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/StatusText.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/HelpText.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/LogFormatter.java" \
@@ -143,6 +147,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V076ArchitectureRegressionPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V076TelemetryPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V0776StrictSafetyPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V080SafeCustomMatrixPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -231,5 +236,6 @@ java -cp "$OUT" dev.soundceiling.app.V076CoarseMediaFallbackPureTest
 java -cp "$OUT" dev.soundceiling.app.V076ArchitectureRegressionPureTest
 java -cp "$OUT" dev.soundceiling.app.V076TelemetryPureTest
 java -cp "$OUT" dev.soundceiling.app.V0776StrictSafetyPureTest
+java -cp "$OUT" dev.soundceiling.app.V080SafeCustomMatrixPureTest
 java -cp "$OUT" dev.soundceiling.app.V072GlobalDspProbePureTest
 java -cp "$OUT" dev.soundceiling.app.V072ResetDefaultsPureTest

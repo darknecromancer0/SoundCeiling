@@ -2,13 +2,13 @@ package dev.soundceiling.app;
 
 public final class V07710EmergencyDspQuarantinePureTest {
     public static void main(String[] args) {
-        enhancedSessionRuntimeMustBeQuarantined();
+        enhancedSessionOemDefaultMustStayQuarantined();
         System.out.println("V07710EmergencyDspQuarantinePureTest: PASS");
     }
 
-    private static void enhancedSessionRuntimeMustBeQuarantined() {
-        if (!EnhancedSessionSetup.RUNTIME_QUARANTINED) {
-            throw new AssertionError("third-party Enhanced Session DSP must be quarantined in emergency hotfix");
+    private static void enhancedSessionOemDefaultMustStayQuarantined() {
+        if (!EnhancedSessionSetup.OEM_DEFAULT_RUNTIME_QUARANTINED) {
+            throw new AssertionError("unknown OEM-default Enhanced Session DSP must stay quarantined");
         }
     }
 }

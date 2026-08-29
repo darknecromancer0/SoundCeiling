@@ -101,6 +101,7 @@ final class OptionalDspController implements AutoCloseable {
     int enhancedSessionId() { return transports.enhancedSessionId(); }
     int enhancedSessionUid() { return transports.enhancedSessionUid(); }
     String enhancedSessionPackage() { return transports.enhancedSessionPackage(); }
+    String enhancedSessionProfileId() { return transports.enhancedSessionProfileId(); }
 
     boolean hasVerifiedEnhancedSession(DspEndpointHandle handle) {
         return transports.hasVerifiedEnhancedSession(handle);

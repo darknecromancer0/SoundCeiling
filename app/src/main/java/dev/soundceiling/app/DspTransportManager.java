@@ -75,7 +75,7 @@ final class DspTransportManager implements AutoCloseable {
         reason = scoped.isEmpty() ? "no_trusted_dsp_handles" : "trusted_scoped_dsp_ready";
     }
 
-    /** v0.7.7.1 deterministic Enhanced Session authority: exact session ownership + API readback. */
+    /** v0.8 deterministic authority over the first exact custom Config that reads back exactly. */
     boolean verifyEnhancedSessionReadback(DspEndpointHandle handle, boolean allowedMediaActive) {
         if (enhancedSessionVerificationStopped) {
             reason = "enhanced_session_readback_cancelled:service_stopped";
@@ -93,45 +93,71 @@ final class DspTransportManager implements AutoCloseable {
         }
 
         cancelEnhancedSessionProbe("readback_handshake");
-        AndroidDynamicsProcessingTransport transport =
-                AndroidDynamicsProcessingTransport.forEnhancedSessionProbe(handle, channelCount);
-        if (enhancedSessionVerificationStopped
-                || verificationEpoch != enhancedSessionVerificationEpoch) {
-            reason = "enhanced_session_readback_cancelled:service_stopped";
-            neutralizeAndClose(transport);
-            return false;
-        }
-        if (transport.capability() == DspTransport.Capability.UNAVAILABLE) {
-            reason = transport.reason();
-            neutralizeAndClose(transport);
-            return false;
-        }
+        String lastFailure = "no_custom_candidates";
+        for (EnhancedSessionCandidateMatrix.Profile profile
+                : EnhancedSessionCandidateMatrix.orderedProfiles()) {
+            DiagnosticLog.transition("session_dsp_candidate_attempt",
+                    handle.audioSessionId + ":" + profile.id,
+                    "session=" + handle.audioSessionId + " profile=" + profile.id
+                            + " explicitConfig=" + profile.explicitConfig);
+            AndroidDynamicsProcessingTransport transport =
+                    AndroidDynamicsProcessingTransport.forEnhancedSessionProbe(handle, profile);
+            if (enhancedSessionVerificationStopped
+                    || verificationEpoch != enhancedSessionVerificationEpoch) {
+                reason = "enhanced_session_readback_cancelled:service_stopped";
+                neutralizeAndClose(transport);
+                return false;
+            }
+            if (transport.capability() == DspTransport.Capability.UNAVAILABLE) {
+                lastFailure = transport.reason();
+                DiagnosticLog.transition("session_dsp_candidate_result",
+                        handle.audioSessionId + ":" + profile.id + ":false:" + lastFailure,
+                        "session=" + handle.audioSessionId + " profile=" + profile.id
+                                + " verified=false reason=" + lastFailure);
+                neutralizeAndClose(transport);
+                continue;
+            }
 
-        EnhancedSessionReadbackVerifier.Result readback =
-                transport.verifyEnhancedSessionReadbackHandshake();
-        if (enhancedSessionVerificationStopped
-                || verificationEpoch != enhancedSessionVerificationEpoch) {
-            reason = "enhanced_session_readback_cancelled:service_stopped";
-            neutralizeAndClose(transport);
-            return false;
-        }
-        boolean verified = readback.verified && transport.authorizeVerifiedPolicyScoped();
-        if (!verified) {
-            reason = "enhanced_session_readback_rejected:" + readback.reason;
-            neutralizeAndClose(transport);
-            return false;
-        }
+            EnhancedSessionReadbackVerifier.Result readback =
+                    transport.verifyEnhancedSessionReadbackHandshake();
+            if (enhancedSessionVerificationStopped
+                    || verificationEpoch != enhancedSessionVerificationEpoch) {
+                reason = "enhanced_session_readback_cancelled:service_stopped";
+                neutralizeAndClose(transport);
+                return false;
+            }
+            boolean verified = readback.verified && transport.authorizeVerifiedPolicyScoped();
+            if (!verified) {
+                lastFailure = readback.verified ? transport.reason() : readback.reason;
+                DiagnosticLog.transition("session_dsp_candidate_result",
+                        handle.audioSessionId + ":" + profile.id + ":false:" + lastFailure,
+                        "session=" + handle.audioSessionId + " profile=" + profile.id
+                                + " verified=false reason=" + lastFailure);
+                neutralizeAndClose(transport);
+                continue;
+            }
 
-        if (enhancedSessionVerificationStopped
-                || verificationEpoch != enhancedSessionVerificationEpoch) {
-            reason = "enhanced_session_readback_cancelled:service_stopped";
-            neutralizeAndClose(transport);
-            return false;
+            if (enhancedSessionVerificationStopped
+                    || verificationEpoch != enhancedSessionVerificationEpoch) {
+                reason = "enhanced_session_readback_cancelled:service_stopped";
+                neutralizeAndClose(transport);
+                return false;
+            }
+            closeEnhancedScoped();
+            scoped.put(handle, transport);
+            reason = "verified_enhanced_session_readback:" + profile.id;
+            DiagnosticLog.transition("session_dsp_candidate_result",
+                    handle.audioSessionId + ":" + profile.id + ":true",
+                    "session=" + handle.audioSessionId + " profile=" + profile.id
+                            + " verified=true positivePilotMaxDb="
+                            + EnhancedSessionGainPolicy.MAX_POSITIVE_GAIN_DB);
+            DiagnosticLog.transition("session_dsp_candidate_selected",
+                    handle.audioSessionId + ":" + profile.id,
+                    "session=" + handle.audioSessionId + " profile=" + profile.id);
+            return true;
         }
-        closeEnhancedScoped();
-        scoped.put(handle, transport);
-        reason = "verified_enhanced_session_readback";
-        return true;
+        reason = "enhanced_session_matrix_exhausted:" + lastFailure;
+        return false;
     }
 
     // -------------------------------------------------------------------------
@@ -296,6 +322,16 @@ final class DspTransportManager implements AutoCloseable {
         return "";
     }
 
+    String enhancedSessionProfileId() {
+        for (Map.Entry<DspEndpointHandle, AndroidDynamicsProcessingTransport> entry
+                : scoped.entrySet()) {
+            if (entry.getKey().isEnhancedSession()) {
+                return entry.getValue().enhancedProfileId();
+            }
+        }
+        return "";
+    }
+
     void releaseEnhancedSession(String releaseReason) {
         cancelEnhancedSessionProbe(releaseReason == null ? "enhanced_session_release" : releaseReason);
         closeEnhancedScoped();
@@ -347,7 +383,9 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     String reason() {
-        if (enhancedSessionId() > 0) return "verified_enhanced_session_readback";
+        if (enhancedSessionId() > 0) {
+            return "verified_enhanced_session_readback:" + enhancedSessionProfileId();
+        }
         if (enhancedSessionProbeActive()) return reason;
         if (effectiveCapability() == DspTransport.Capability.VERIFIED_POLICY_SCOPED) {
             return "verified_policy_scoped";

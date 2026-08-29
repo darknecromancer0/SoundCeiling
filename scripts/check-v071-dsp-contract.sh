@@ -29,27 +29,23 @@ require "$TRANSPORT" 'new DynamicsProcessing(0, audioSessionId, config)'
 require "$TRANSPORT" 'DynamicsProcessing.Config.Builder('
 require "$TRANSPORT" 'setInputGainAllChannelsTo'
 
-# v0.7.7.8 introduced stage-neutral sanitation for the OEM-default Enhanced Session fallback.
-# v0.7.7.10 emergency quarantine intentionally restores the stricter pre-v0.7.7.8 boundary:
-# third-party Enhanced Session runtime is unreachable and its OEM-default constructor fallback is off.
-require "$TRANSPORT" 'samsungLimiterCompatibilityShell'
-require "$TRANSPORT" '.setLimiterAllChannelsTo('
-require "$TRANSPORT" 'true, true, 0, 1f, 60f, 10f, -1f, 0f'
+# v0.8 keeps the OEM-default Enhanced Session constructor quarantined and replaces it only with
+# explicit custom Config candidates whose optional stages start disabled.
+require "$PKG/EnhancedSessionSetup.java" 'OEM_DEFAULT_RUNTIME_QUARANTINED = true'
+require "$TRANSPORT" 'EnhancedSessionCandidateMatrix.Profile profile'
+require "$TRANSPORT" 'DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION'
+require "$TRANSPORT" 'new DynamicsProcessing.Eq(true, false, profile.preEqBandCount)'
+require "$TRANSPORT" 'new DynamicsProcessing.Mbc(true, false, profile.mbcBandCount)'
+require "$TRANSPORT" 'true, false, 0, 1f, 60f, 10f, -1f, 0f'
 require "$TRANSPORT" 'sanitizeEnhancedSessionCandidateBeforeEnable'
-if grep -Fq 'static final boolean RUNTIME_QUARANTINED = true;' "$PKG/EnhancedSessionSetup.java"; then
-  require "$TRANSPORT" '"enhanced_session_samsung_constructor_shell_unverified",'
-  require "$TRANSPORT" 'false, true);'
-  require "$PKG/EnhancedSessionDspRuntime.java" 'session_dsp_emergency_quarantine'
-else
-  require "$TRANSPORT" 'preEq.setEnabled(false)'
-  require "$TRANSPORT" 'mbc.setEnabled(false)'
-  require "$TRANSPORT" 'postEq.setEnabled(false)'
-  require "$TRANSPORT" 'limiter.setEnabled(false)'
-  require "$TRANSPORT" 'getPreEqByChannelIndex(channel).isEnabled()'
-  require "$TRANSPORT" 'getMbcByChannelIndex(channel).isEnabled()'
-  require "$TRANSPORT" 'getPostEqByChannelIndex(channel).isEnabled()'
-fi
-require "$TRANSPORT" 'verifyPreEnableSanitized(readbackSnapshot())'
+require "$TRANSPORT" 'preEq.setEnabled(false)'
+require "$TRANSPORT" 'mbc.setEnabled(false)'
+require "$TRANSPORT" 'postEq.setEnabled(false)'
+require "$TRANSPORT" 'limiter.setEnabled(false)'
+require "$TRANSPORT" 'getPreEqByChannelIndex(channel).isEnabled()'
+require "$TRANSPORT" 'getMbcByChannelIndex(channel).isEnabled()'
+require "$TRANSPORT" 'getPostEqByChannelIndex(channel).isEnabled()'
+require "$TRANSPORT" 'verifyPreEnableSanitized('
 require "$TRANSPORT" 'enhanced_session_pre_enable_sanitized_unverified'
 require "$TRANSPORT" 'getLimiterByChannelIndex(channel).isEnabled()'
 require "$PLANNER" 'positivePeakHeadroomDb'

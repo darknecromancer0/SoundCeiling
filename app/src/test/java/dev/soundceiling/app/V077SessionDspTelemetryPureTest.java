@@ -4,6 +4,7 @@ public final class V077SessionDspTelemetryPureTest {
     public static void main(String[] args) {
         missingPermissionExposesExactSetupCommand();
         activeSessionPublishesIdentityAndGain();
+        activeV080StatusExposesProfileAndPilotCap();
         zeroSessionCannotClaimActiveDsp();
         diagnosticsCopyPreservesSessionTelemetry();
         System.out.println("V077SessionDspTelemetryPureTest: PASS");
@@ -50,6 +51,19 @@ public final class V077SessionDspTelemetryPureTest {
                 .build();
         require(!state.sessionDspActive,
                 "session 0 is never an active Enhanced Session DSP transport");
+    }
+
+    private static void activeV080StatusExposesProfileAndPilotCap() {
+        RuntimeState state = new RuntimeState.Builder()
+                .running(true)
+                .enhancedSession(true, true, 240, 10292, "ru.yandex.music", 12f, 3f,
+                        "session_dsp_active:cts_frequency_full_bypass_stereo")
+                .build();
+        String status = StatusText.sessionDsp(state);
+        require(status.contains("cts_frequency_full_bypass_stereo"),
+                "v0.8 active status must expose selected custom profile");
+        require(status.contains("pilot max +3.00 dB"),
+                "v0.8 active status must expose the bounded positive-gain pilot");
     }
 
     private static void diagnosticsCopyPreservesSessionTelemetry() {

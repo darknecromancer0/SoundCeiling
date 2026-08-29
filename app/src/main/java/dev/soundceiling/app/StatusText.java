@@ -38,9 +38,15 @@ final class StatusText {
         }
         if (s.sessionDspActive && s.sessionId > 0) {
             String pkg = s.sessionPackage.isEmpty() ? "unknown" : s.sessionPackage;
+            String activePrefix = "session_dsp_active:";
+            String profile = s.sessionDspReason != null
+                    && s.sessionDspReason.startsWith(activePrefix)
+                    ? s.sessionDspReason.substring(activePrefix.length()) : "unknown_profile";
             return String.format(java.util.Locale.US,
-                    "Session DSP %d · %s · requested %+.2f dB · applied %+.2f dB",
-                    s.sessionId, pkg, s.sessionDspRequestedGainDb, s.sessionDspAppliedGainDb);
+                    "Session DSP %d · %s · profile %s · requested %+.2f dB · applied %+.2f dB"
+                            + " · pilot max %+.2f dB",
+                    s.sessionId, pkg, profile, s.sessionDspRequestedGainDb,
+                    s.sessionDspAppliedGainDb, EnhancedSessionGainPolicy.MAX_POSITIVE_GAIN_DB);
         }
         String reason = s.sessionDspReason == null || s.sessionDspReason.isEmpty()
                 ? "session_dsp_unavailable" : s.sessionDspReason;

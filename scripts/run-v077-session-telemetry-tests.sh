@@ -27,6 +27,7 @@ javac -Xlint:all -Werror -d "$OUT" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/RuntimeState.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/StatusText.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" \
+  "$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionGainPolicy.java" \
   "$ROOT/app/src/test/java/dev/soundceiling/app/V077SessionDspTelemetryPureTest.java"
 
 java -cp "$OUT" dev.soundceiling.app.V077SessionDspTelemetryPureTest

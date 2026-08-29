@@ -19,6 +19,12 @@ final class EnhancedSessionReadbackVerifier {
         final boolean[] postEqEnabled;
         final boolean[] limiterEnabled;
         final float[] inputGainsDb;
+        final EnhancedSessionCandidateMatrix.Variant variant;
+        final float preferredFrameDurationMs;
+        final int configuredChannelCount;
+        final int preEqBandCount;
+        final int mbcBandCount;
+        final int postEqBandCount;
 
         Snapshot(boolean effectEnabled, boolean hasControl,
                  boolean preEqInUse, boolean mbcInUse,
@@ -34,6 +40,20 @@ final class EnhancedSessionReadbackVerifier {
                  boolean postEqInUse, boolean limiterInUse,
                  boolean[] preEqEnabled, boolean[] mbcEnabled, boolean[] postEqEnabled,
                  boolean[] limiterEnabled, float[] inputGainsDb) {
+            this(effectEnabled, hasControl, preEqInUse, mbcInUse, postEqInUse, limiterInUse,
+                    preEqEnabled, mbcEnabled, postEqEnabled, limiterEnabled, inputGainsDb,
+                    null, Float.NaN, inputGainsDb == null ? 0 : inputGainsDb.length,
+                    -1, -1, -1);
+        }
+
+        Snapshot(boolean effectEnabled, boolean hasControl,
+                 boolean preEqInUse, boolean mbcInUse,
+                 boolean postEqInUse, boolean limiterInUse,
+                 boolean[] preEqEnabled, boolean[] mbcEnabled, boolean[] postEqEnabled,
+                 boolean[] limiterEnabled, float[] inputGainsDb,
+                 EnhancedSessionCandidateMatrix.Variant variant,
+                 float preferredFrameDurationMs, int configuredChannelCount,
+                 int preEqBandCount, int mbcBandCount, int postEqBandCount) {
             this.effectEnabled = effectEnabled;
             this.hasControl = hasControl;
             this.preEqInUse = preEqInUse;
@@ -46,6 +66,12 @@ final class EnhancedSessionReadbackVerifier {
             this.limiterEnabled = copy(limiterEnabled);
             this.inputGainsDb = inputGainsDb == null
                     ? new float[0] : Arrays.copyOf(inputGainsDb, inputGainsDb.length);
+            this.variant = variant;
+            this.preferredFrameDurationMs = preferredFrameDurationMs;
+            this.configuredChannelCount = configuredChannelCount;
+            this.preEqBandCount = preEqBandCount;
+            this.mbcBandCount = mbcBandCount;
+            this.postEqBandCount = postEqBandCount;
         }
 
         boolean stageArraysMatchChannels() {
@@ -106,6 +132,13 @@ final class EnhancedSessionReadbackVerifier {
         return new Result(true, "pre_enable_sanitized");
     }
 
+    static Result verifyPreEnableSanitized(EnhancedSessionCandidateMatrix.Profile expected,
+                                           Snapshot sanitized) {
+        Result generic = verifyPreEnableSanitized(sanitized);
+        if (!generic.verified) return generic;
+        return verifyExactTopology(expected, sanitized);
+    }
+
     static Result verify(Snapshot neutral, Snapshot probe, Snapshot restored) {
         if (neutral == null || probe == null || restored == null) {
             return reject("readback_missing");
@@ -128,6 +161,56 @@ final class EnhancedSessionReadbackVerifier {
         if (!allNear(probe.inputGainsDb, PROBE_GAIN_DB)) return reject("probe_gain_mismatch");
         if (!allNear(restored.inputGainsDb, 0f)) return reject("restore_gain_mismatch");
         return new Result(true, "readback_verified");
+    }
+
+    static Result verify(EnhancedSessionCandidateMatrix.Profile expected,
+                         Snapshot neutral, Snapshot probe, Snapshot restored) {
+        Result generic = verify(neutral, probe, restored);
+        if (!generic.verified) return generic;
+        Result neutralTopology = verifyExactTopology(expected, neutral);
+        if (!neutralTopology.verified) return neutralTopology;
+        Result probeTopology = verifyExactTopology(expected, probe);
+        if (!probeTopology.verified) return probeTopology;
+        Result restoredTopology = verifyExactTopology(expected, restored);
+        if (!restoredTopology.verified) return restoredTopology;
+        return new Result(true, "readback_verified");
+    }
+
+    private static Result verifyExactTopology(EnhancedSessionCandidateMatrix.Profile expected,
+                                              Snapshot actual) {
+        if (expected == null || actual == null) return reject("topology_readback_missing");
+        if (actual.variant != expected.variant) return reject("topology_variant_mismatch");
+        if (!Float.isFinite(actual.preferredFrameDurationMs)
+                || Math.abs(actual.preferredFrameDurationMs
+                - expected.preferredFrameDurationMs) > GAIN_TOLERANCE_DB) {
+            return reject("topology_frame_duration_mismatch");
+        }
+        if (actual.configuredChannelCount != expected.channelCount
+                || actual.inputGainsDb.length != expected.channelCount) {
+            return reject("topology_channel_count_mismatch");
+        }
+        if (actual.preEqInUse != expected.preEqInUse()) {
+            return reject("topology_pre_eq_in_use_mismatch");
+        }
+        if (actual.mbcInUse != expected.mbcInUse()) {
+            return reject("topology_mbc_in_use_mismatch");
+        }
+        if (actual.postEqInUse != expected.postEqInUse()) {
+            return reject("topology_post_eq_in_use_mismatch");
+        }
+        if (actual.limiterInUse != expected.limiterInUse) {
+            return reject("topology_limiter_in_use_mismatch");
+        }
+        if (actual.preEqBandCount != expected.preEqBandCount) {
+            return reject("topology_pre_eq_band_count_mismatch");
+        }
+        if (actual.mbcBandCount != expected.mbcBandCount) {
+            return reject("topology_mbc_band_count_mismatch");
+        }
+        if (actual.postEqBandCount != expected.postEqBandCount) {
+            return reject("topology_post_eq_band_count_mismatch");
+        }
+        return new Result(true, "topology_verified");
     }
 
     private static boolean allNear(float[] values, float expected) {

@@ -16,26 +16,23 @@ import sys
 t=Path(sys.argv[1]).read_text(); v=Path(sys.argv[2]).read_text(); m=Path(sys.argv[3]).read_text()
 s=Path(sys.argv[4]).read_text(); r=Path(sys.argv[5]).read_text()
 factory=t[t.index('static AndroidDynamicsProcessingTransport forEnhancedSessionProbe'):t.index('static AndroidDynamicsProcessingTransport forNeutralGlobalProbe')]
-quarantined='static final boolean RUNTIME_QUARANTINED = true;' in s
-if quarantined:
-    if '"enhanced_session_samsung_constructor_shell_unverified",\n                false, true);' not in factory:
-        raise SystemExit('emergency quarantine must disable Enhanced Session OEM-default constructor fallback')
-    if 'session_dsp_emergency_quarantine' not in r:
-        raise SystemExit('emergency quarantine runtime gate missing')
-else:
-    if '"enhanced_session_samsung_constructor_shell_unverified",\n                true, true);' not in factory:
-        raise SystemExit('Enhanced Session default constructor fallback contract missing')
-    sanitize=t[t.index('private boolean sanitizeEnhancedSessionCandidateBeforeEnable()'):t.index('DspApplyResult enableNeutralForProbe()', t.index('private boolean sanitizeEnhancedSessionCandidateBeforeEnable()'))]
-    for needle in ['effect.setEnabled(false)', 'effect.setInputGainAllChannelsTo(0f)',
-                   'getPreEqByChannelIndex', 'setPreEqByChannelIndex',
-                   'getMbcByChannelIndex', 'setMbcByChannelIndex',
-                   'getPostEqByChannelIndex', 'setPostEqByChannelIndex',
-                   'getLimiterByChannelIndex', 'setLimiterByChannelIndex',
-                   'verifyPreEnableSanitized(readbackSnapshot())']:
-        if needle not in sanitize:
-            raise SystemExit('pre-enable sanitizer missing: '+needle)
-    if 'effect.setEnabled(true)' in sanitize:
-        raise SystemExit('pre-enable sanitizer must never enable the effect')
+if 'OEM_DEFAULT_RUNTIME_QUARANTINED = true' not in s:
+    raise SystemExit('Enhanced Session OEM-default constructor quarantine missing')
+if 'new DynamicsProcessing(audioSessionId)' in factory or 'allowDefaultConfigFallback' in factory:
+    raise SystemExit('Enhanced Session factory must not reach OEM-default constructor fallback')
+if 'EnhancedSessionCandidateMatrix.Profile profile' not in factory:
+    raise SystemExit('explicit custom candidate factory missing')
+sanitize=t[t.index('private boolean sanitizeEnhancedSessionCandidateBeforeEnable()'):t.index('DspApplyResult enableNeutralForProbe()', t.index('private boolean sanitizeEnhancedSessionCandidateBeforeEnable()'))]
+for needle in ['effect.setEnabled(false)', 'effect.setInputGainAllChannelsTo(0f)',
+               'getPreEqByChannelIndex', 'setPreEqByChannelIndex',
+               'getMbcByChannelIndex', 'setMbcByChannelIndex',
+               'getPostEqByChannelIndex', 'setPostEqByChannelIndex',
+               'getLimiterByChannelIndex', 'setLimiterByChannelIndex',
+               'verifyPreEnableSanitized(enhancedProfile,']:
+    if needle not in sanitize:
+        raise SystemExit('pre-enable sanitizer missing: '+needle)
+if 'effect.setEnabled(true)' in sanitize:
+    raise SystemExit('pre-enable sanitizer must never enable the effect')
 
 for needle in ['pre_enable_stage_still_enabled','pre_enable_channel_count_mismatch','pre_enable_sanitized']:
     if needle not in v: raise SystemExit('missing fail-closed pre-enable verifier rule: '+needle)
