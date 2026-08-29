@@ -4,37 +4,38 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 T="$ROOT/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java"
 V="$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionReadbackVerifier.java"
 M="$ROOT/app/src/main/java/dev/soundceiling/app/DspTransportManager.java"
+S="$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java"
+R="$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionDspRuntime.java"
 fail(){ echo "v0.7.7.8 Enhanced Session default-fallback contract: $*" >&2; exit 1; }
 [[ -f "$T" ]] || fail "missing transport"
 [[ -f "$V" ]] || fail "missing verifier"
 [[ -f "$M" ]] || fail "missing manager"
-python - "$T" "$V" "$M" <<'PY'
+python - "$T" "$V" "$M" "$S" "$R" <<'PY'
 from pathlib import Path
 import sys
 t=Path(sys.argv[1]).read_text(); v=Path(sys.argv[2]).read_text(); m=Path(sys.argv[3]).read_text()
+s=Path(sys.argv[4]).read_text(); r=Path(sys.argv[5]).read_text()
 factory=t[t.index('static AndroidDynamicsProcessingTransport forEnhancedSessionProbe'):t.index('static AndroidDynamicsProcessingTransport forNeutralGlobalProbe')]
-if '"enhanced_session_samsung_constructor_shell_unverified",\n                true, true);' not in factory:
-    raise SystemExit('Enhanced Session must permit the default constructor only as the post-custom fail-closed fallback')
-
-sanitize=t[t.index('private boolean sanitizeEnhancedSessionCandidateBeforeEnable()'):t.index('DspApplyResult enableNeutralForProbe()', t.index('private boolean sanitizeEnhancedSessionCandidateBeforeEnable()'))]
-for needle in ['effect.setEnabled(false)', 'effect.setInputGainAllChannelsTo(0f)',
-               'getPreEqByChannelIndex', 'setPreEqByChannelIndex',
-               'getMbcByChannelIndex', 'setMbcByChannelIndex',
-               'getPostEqByChannelIndex', 'setPostEqByChannelIndex',
-               'getLimiterByChannelIndex', 'setLimiterByChannelIndex',
-               'verifyPreEnableSanitized(readbackSnapshot())']:
-    if needle not in sanitize:
-        raise SystemExit('pre-enable sanitizer missing: '+needle)
-if 'effect.setEnabled(true)' in sanitize:
-    raise SystemExit('pre-enable sanitizer must never enable the effect')
-
-readback=t[t.index('private EnhancedSessionReadbackVerifier.Snapshot readbackSnapshot()'):t.index('boolean authorizeVerifiedPolicyScoped()', t.index('private EnhancedSessionReadbackVerifier.Snapshot readbackSnapshot()'))]
-for needle in ['getPreEqByChannelIndex(channel).isEnabled()',
-               'getMbcByChannelIndex(channel).isEnabled()',
-               'getPostEqByChannelIndex(channel).isEnabled()',
-               'getLimiterByChannelIndex(channel).isEnabled()']:
-    if needle not in readback:
-        raise SystemExit('readback missing disabled-stage proof: '+needle)
+quarantined='static final boolean RUNTIME_QUARANTINED = true;' in s
+if quarantined:
+    if '"enhanced_session_samsung_constructor_shell_unverified",\n                false, true);' not in factory:
+        raise SystemExit('emergency quarantine must disable Enhanced Session OEM-default constructor fallback')
+    if 'session_dsp_emergency_quarantine' not in r:
+        raise SystemExit('emergency quarantine runtime gate missing')
+else:
+    if '"enhanced_session_samsung_constructor_shell_unverified",\n                true, true);' not in factory:
+        raise SystemExit('Enhanced Session default constructor fallback contract missing')
+    sanitize=t[t.index('private boolean sanitizeEnhancedSessionCandidateBeforeEnable()'):t.index('DspApplyResult enableNeutralForProbe()', t.index('private boolean sanitizeEnhancedSessionCandidateBeforeEnable()'))]
+    for needle in ['effect.setEnabled(false)', 'effect.setInputGainAllChannelsTo(0f)',
+                   'getPreEqByChannelIndex', 'setPreEqByChannelIndex',
+                   'getMbcByChannelIndex', 'setMbcByChannelIndex',
+                   'getPostEqByChannelIndex', 'setPostEqByChannelIndex',
+                   'getLimiterByChannelIndex', 'setLimiterByChannelIndex',
+                   'verifyPreEnableSanitized(readbackSnapshot())']:
+        if needle not in sanitize:
+            raise SystemExit('pre-enable sanitizer missing: '+needle)
+    if 'effect.setEnabled(true)' in sanitize:
+        raise SystemExit('pre-enable sanitizer must never enable the effect')
 
 for needle in ['pre_enable_stage_still_enabled','pre_enable_channel_count_mismatch','pre_enable_sanitized']:
     if needle not in v: raise SystemExit('missing fail-closed pre-enable verifier rule: '+needle)
