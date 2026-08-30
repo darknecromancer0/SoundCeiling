@@ -50,7 +50,7 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         root.addView(text("Простой режим", 28, true));
-        TextView intro = secondary("Основные настройки выравнивания. Global DSP управляет способом обработки, Default Linked Lock — формой output ceilings.", 14);
+        TextView intro = secondary("Основные настройки безопасности. PCM Shadow в v0.9 только рассчитывает коррекцию и не меняет слышимый звук; Default Linked Lock задаёт форму output ceilings.", 14);
         intro.setPadding(0, dp(6), 0, dp(12));
         root.addView(intro);
 
@@ -73,8 +73,9 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         });
         root.addView(sourceAccess, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50)));
 
-        globalDsp = addSwitchWithHelp("Global DSP", HelpText.GLOBAL_DSP, Prefs.globalDspEnabled(context));
-        globalStatus = secondary("Лучшее выравнивание всего аудиовыхода", 13);
+        globalDsp = addSwitchWithHelp("PCM Shadow (без звука)", HelpText.GLOBAL_DSP,
+                Prefs.globalDspEnabled(context));
+        globalStatus = secondary("Shadow only · audible output blocked", 13);
         globalStatus.setPadding(0, 0, 0, dp(10));
         root.addView(globalStatus);
         globalDsp.setOnCheckedChangeListener((button, checked) -> {

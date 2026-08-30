@@ -172,6 +172,9 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
     }
 
     static AndroidDynamicsProcessingTransport forNeutralGlobalProbe(int channelCount) {
+        if (!EnhancedSessionSetup.runtimeAllowed()) {
+            return unavailable(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON);
+        }
         return new AndroidDynamicsProcessingTransport(0, true, channelCount,
                 DspTransport.Capability.AVAILABLE_UNVERIFIED,
                 DspScope.UNKNOWN, "global_session_neutral_unverified", true, null);

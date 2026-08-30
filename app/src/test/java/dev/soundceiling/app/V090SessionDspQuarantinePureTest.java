@@ -10,6 +10,13 @@ public final class V090SessionDspQuarantinePureTest {
         require("field_quarantined_neutral_media_bypass".equals(
                         EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON),
                 "diagnostics must preserve the proven field failure reason");
+        AudioSessionDiscovery discovery = new QuarantinedAudioSessionDiscovery();
+        AudioSessionDiscovery.Snapshot snapshot = discovery.discover(42L);
+        require(!snapshot.permissionGranted && snapshot.records.isEmpty(),
+                "quarantined discovery must expose no session authority");
+        require(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON.equals(snapshot.reason)
+                        && snapshot.observedAtMs == 42L,
+                "quarantined discovery must return only the canonical field reason");
         System.out.println("V090SessionDspQuarantinePureTest: PASS");
     }
 

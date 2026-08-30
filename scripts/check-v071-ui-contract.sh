@@ -22,12 +22,12 @@ require "$PREFS" 'static void setGlobalDspEnabled(Context c, boolean enabled)'
 require "$MIGRATION" 'values.put(WHOLE_OUTPUT_DSP_CONSENT, true);'
 require "$MIGRATION" 'GLOBAL_DSP_USER_SET'
 reject "$MIGRATION" 'values.put(WHOLE_OUTPUT_DSP_CONSENT, false);'
-require "$SIMPLE" 'addSwitchWithHelp("Global DSP", HelpText.GLOBAL_DSP'
-require "$ADV" 'addSwitch("Global DSP", HelpText.GLOBAL_DSP'
+require "$SIMPLE" 'addSwitchWithHelp("PCM Shadow (без звука)", HelpText.GLOBAL_DSP'
+require "$ADV" 'addSwitch("PCM Shadow (без звука)", HelpText.GLOBAL_DSP'
 require "$SIMPLE" 'Prefs.setGlobalDspEnabled(getContext(), checked)'
 require "$ADV" 'Prefs.setGlobalDspEnabled(getContext(), v)'
 require "$HELP" 'GLOBAL_DSP'
-require "$HELP" 'системные звуки, уведомления, будильники, звонки и System UI'
+require "$HELP" 'audibleOutputAllowed=false'
 
 # v0.7.1 introduced runtime-proven DSP rather than preference==active. v0.7.7 preserves that
 # principle but supersedes session-zero global-mix authority with verified non-zero Session DSP.
@@ -35,7 +35,7 @@ require "$HELP" 'системные звуки, уведомления, буди
 # ordinary normalization as policy-scoped Session DSP and HOLD when that transport is unavailable.
 require "$MODEL" 'boolean globalDspPreferred()'
 require "$MODEL" 'boolean globalDspActive()'
-require "$MODEL" 'Global DSP недоступен · используется совместимый режим'
+require "$MODEL" 'PCM Shadow only · audible output blocked'
 require "$SERVICE" 'updateGlobalDspVerification('
 require "$SERVICE" 'optionalDsp.beginGlobalDifferentialProbe('
 require "$SERVICE" 'optionalDsp.finishGlobalDifferentialProbe('

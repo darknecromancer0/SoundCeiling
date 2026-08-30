@@ -125,7 +125,7 @@ public class NormalizerService extends Service {
         visualizer = new GlobalVisualizerBackend();
         optionalDsp = new OptionalDspController();
         enhancedSessionDsp = new EnhancedSessionDspRuntime(
-                new DumpAudioSessionDiscovery(this), optionalDsp);
+                new QuarantinedAudioSessionDiscovery(), optionalDsp);
         hybridRuntime = new HybridRuntimeResolver(this, audio);
         hybridRuntime.start();
         refreshControlSettings(SystemClock.elapsedRealtime(), true);
@@ -343,15 +343,28 @@ public class NormalizerService extends Service {
                             controlCurve.gainDbForIndex(current), verifiedGainDb,
                             liveCaptureReference.mode(), outputMix.peakDbfs, outputMix.rmsDbfs,
                             outputMixEvidence));
-            pcmShadowEligibilityReason = resolvePcmShadowEligibility(
-                    hybridSnapshot, effectiveProfile, signal, liveCaptureReference.mode());
-            boolean pcmShadowEligible = "eligible_exact_media".equals(
-                    pcmShadowEligibilityReason);
+            PcmShadowEligibility.Verdict pcmShadowEligibility =
+                    PcmShadowEligibility.evaluate(new PcmShadowEligibility.Input(
+                            pcmDspFeasibility, globalDspPreference, signal,
+                            hybridSnapshot == null ? null : hybridSnapshot.pcmState,
+                            hybridSnapshot == null || hybridSnapshot.sources == null
+                                    ? null : hybridSnapshot.sources.confidence,
+                            hybridSnapshot == null || hybridSnapshot.capabilities == null
+                                    ? null : hybridSnapshot.capabilities.metering,
+                            hybridSnapshot == null ? null : hybridSnapshot.exactSource,
+                            hybridSnapshot == null ? null : hybridSnapshot.exactAppPolicy,
+                            hybridSnapshot == null ? null : hybridSnapshot.policy,
+                            effectiveProfile,
+                            hybridSnapshot != null && hybridSnapshot.playback != null
+                                    && hybridSnapshot.playback.active,
+                            hybridSnapshot == null ? null : hybridSnapshot.playbackEndpoints,
+                            liveCaptureReference.mode()));
+            pcmShadowEligibilityReason = pcmShadowEligibility.reason;
             lastPcmShadowResult = pcmShadowDsp.process(
                     now, buffer, n, shadowBuffer, blockPeak, loud.controlLoudnessDb,
                     controlCurve.gainDbForIndex(current), liveCaptureReference.mode(),
                     controlCoordinator.ceilingState(), effectiveProfile,
-                    pcmShadowEligible && signal);
+                    pcmShadowEligibility.eligible);
             logPcmDspFeasibilityOnce("capture_loop");
             logPcmShadow(lastPcmShadowResult, pcmShadowEligibilityReason);
             EnhancedSessionOutputGuard.Result outputGuard = EnhancedSessionOutputGuard.evaluate(
@@ -1373,57 +1386,6 @@ public class NormalizerService extends Service {
                 controlProfile.maxUpSteps, effectivePeak,
                 p.transientWarningDb, p.transientEmergencyDb, controlProfile.autoMute,
                 controlProfile.recoveryIntervalMs);
-    }
-
-    private String resolvePcmShadowEligibility(HybridRuntimeResolver.Snapshot snapshot,
-                                               ControlProfile profile, boolean signalPresent,
-                                               CaptureReferenceEstimator.Mode captureReference) {
-        if (pcmDspFeasibility.mode != PcmDspFeasibility.Mode.SHADOW_ONLY
-                || pcmDspFeasibility.audibleOutputAllowed) {
-            return "pcm_feasibility_not_shadow_only";
-        }
-        if (!globalDspPreference) return "pcm_dsp_preference_disabled";
-        if (!signalPresent) return "pcm_shadow_no_program";
-        if (snapshot == null || snapshot.policy == null) return "pcm_shadow_snapshot_missing";
-        if (snapshot.pcmState != PcmAvailabilityState.ACTIVE) return "pcm_not_active";
-        if (snapshot.sources.confidence
-                != EngineCapabilities.SourceIdentityConfidence.EXACT) {
-            return "source_not_exact";
-        }
-        if (snapshot.capabilities.metering
-                != EngineCapabilities.MeteringCapability.PCM_EXACT) {
-            return "pcm_not_exact";
-        }
-        if (snapshot.exactSource == null || snapshot.exactAppPolicy == null) {
-            return "exact_source_policy_missing";
-        }
-        if (!snapshot.exactAppPolicy.allowsDspControl()) return "exact_source_dsp_disabled";
-        if (!snapshot.policy.sourceControlEnabled) return "source_policy_disabled";
-        if (!snapshot.policy.allowBoundedRecovery) {
-            return snapshot.policy.recoveryBlockReason.isEmpty()
-                    ? "positive_control_not_allowed" : snapshot.policy.recoveryBlockReason;
-        }
-        if (profile == null || profile.normalizationPreset == NormalizationPreset.OFF
-                || profile.normalizationStrength <= 0f) {
-            return "normalization_off";
-        }
-        if (snapshot.playback == null || !snapshot.playback.active
-                || !allActiveEndpointsAllowPcmShadow(snapshot.playbackEndpoints)) {
-            return "active_media_scope_unverified";
-        }
-        if (captureReference == null
-                || captureReference == CaptureReferenceEstimator.Mode.UNKNOWN) {
-            return "capture_reference_unknown";
-        }
-        return "eligible_exact_media";
-    }
-
-    private static boolean allActiveEndpointsAllowPcmShadow(
-            java.util.List<PlaybackEndpoint> endpoints) {
-        if (endpoints == null || endpoints.size() != 1) return false;
-        PlaybackEndpoint endpoint = endpoints.get(0);
-        return endpoint != null && endpoint.policyResolved && endpoint.allowsDspControl()
-                && SystemStreamPolicies.defaultEnabledForPublicUsage(endpoint.publicUsage);
     }
 
     private void logPcmShadow(PcmShadowDsp.Result result, String eligibilityReason) {

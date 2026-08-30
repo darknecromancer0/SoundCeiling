@@ -11,7 +11,7 @@ public final class V090PcmShadowDspPureTest {
         loudMaterialReceivesNegativeShadowGain();
         hardPeakAttenuatesOnFirstBlockAndRecoversSlowly();
         digitalHeadroomPreventsClippingDuringPositiveGain();
-        resetClearsGainAndUnknownDomainFailsNeutral();
+        resetClearsGainAndUnknownDomainRejectsWithoutCopying();
         System.out.println("V090PcmShadowDspPureTest: PASS");
     }
 
@@ -96,7 +96,7 @@ public final class V090PcmShadowDspPureTest {
         require(result.clippedSamples == 0, "headroom clamp must prevent every clipped sample");
     }
 
-    private static void resetClearsGainAndUnknownDomainFailsNeutral() {
+    private static void resetClearsGainAndUnknownDomainRejectsWithoutCopying() {
         PcmShadowDsp dsp = new PcmShadowDsp();
         short[] input = constantPcm(32, 16000);
         short[] shadow = new short[input.length];
@@ -108,7 +108,7 @@ public final class V090PcmShadowDspPureTest {
 
         dsp.reset();
         near(dsp.appliedGainDb(), 0f, .0001f, "reset must restore neutral gain");
-        Arrays.fill(shadow, (short) 0);
+        Arrays.fill(shadow, (short) 1234);
         PcmShadowDsp.Result unknown = dsp.process(
                 1010L, input, input.length, shadow,
                 -6f, -8f, 0f, CaptureReferenceEstimator.Mode.UNKNOWN,
@@ -116,8 +116,16 @@ public final class V090PcmShadowDspPureTest {
         require(!unknown.active, "unknown output domain must stay inactive");
         near(unknown.appliedGainDb, 0f, .0001f,
                 "unknown output domain must fail neutral after prior history");
-        require(Arrays.equals(input, shadow),
-                "inactive shadow path must preserve the PCM copy exactly");
+        require(unknown.processedSamples == 0,
+                "rejected PCM must report zero processed samples");
+        require(Float.isNaN(unknown.inputPeakDbfs)
+                        && Float.isNaN(unknown.shadowPcmPeakDbfs)
+                        && Float.isNaN(unknown.projectedOutputPeakDbfs),
+                "rejected PCM must not publish source-derived shadow metrics");
+        for (short sample : shadow) {
+            require(sample == 0,
+                    "rejected PCM must clear the previously populated shadow range");
+        }
     }
 
     private static short[] constantPcm(int count, int amplitude) {

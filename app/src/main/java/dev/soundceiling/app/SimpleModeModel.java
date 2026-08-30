@@ -39,9 +39,8 @@ public final class SimpleModeModel {
     public OutputCeilingState ceilings() { return ceilings; }
 
     public String globalDspStatusText() {
-        if (!globalDspPreferred) return "Global DSP выключен · используется selective/fallback";
-        if (globalDspActive) return "Global DSP active · Verified global mix";
-        return "Global DSP недоступен · используется совместимый режим";
+        if (!globalDspPreferred) return "PCM Shadow выключен · audible output blocked";
+        return "PCM Shadow only · audible output blocked";
     }
 
     public SimpleModeModel withLinked(boolean linked) {

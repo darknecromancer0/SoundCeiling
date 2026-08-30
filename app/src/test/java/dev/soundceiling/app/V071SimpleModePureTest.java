@@ -9,6 +9,7 @@ public final class V071SimpleModePureTest {
         samsungUserDeltaMovesLinkedTargetButOwnedWriteDoesNot();
         helpRegistryCoversEveryVisibleDiagnosticTerm();
         globalDspDefaultAndFallbackStatusStayTruthful();
+        v090PresentationNeverClaimsAudibleGlobalDsp();
         globalDspAndLinkedLockAreIndependentInAllFourStates();
         System.out.println("V071SimpleModePureTest: PASS");
     }
@@ -77,13 +78,30 @@ public final class V071SimpleModePureTest {
         SimpleModeModel fresh = SimpleModeModel.defaults(curve, false);
         assertTrue(fresh.globalDspPreferred(), "Global DSP fresh/default preference must be ON");
         assertFalse(fresh.globalDspActive(), "preference ON is not the same as verified active");
-        assertContains(fresh.globalDspStatusText(), "недоступен",
-                "unverified preference must show compatible fallback, not active");
+        assertContains(fresh.globalDspStatusText(), "audible output blocked",
+                "v0.9 preference must disclose that it is not an audible actuator");
         SimpleModeModel active = new SimpleModeModel(OutputCeilingState.defaultLinked(), curve,
                 true, true, true);
         assertTrue(active.globalDspActive(), "verified global mix can become active");
         assertFalse(active.selectiveControlsEnabled(),
                 "indivisible active global mix disables selective controls");
+    }
+
+    private static void v090PresentationNeverClaimsAudibleGlobalDsp() {
+        ControlVolumeCurve curve = samsungCurve();
+        SimpleModeModel preferred = new SimpleModeModel(
+                OutputCeilingState.defaultLinked(), curve, false, true, false);
+        assertContains(preferred.globalDspStatusText(), "PCM Shadow",
+                "v0.9 preference must be named as a shadow evaluation");
+        assertContains(preferred.globalDspStatusText(), "audible output blocked",
+                "v0.9 preference must disclose the blocked audible route");
+
+        SimpleModeModel staleHistoricalActive = new SimpleModeModel(
+                OutputCeilingState.defaultLinked(), curve, true, true, true);
+        assertContains(staleHistoricalActive.globalDspStatusText(), "audible output blocked",
+                "historical verified state must not become an audible v0.9 claim");
+        assertFalse(staleHistoricalActive.globalDspStatusText().contains("Verified global mix"),
+                "v0.9 UI must not advertise the unreachable legacy global actuator");
     }
 
     private static void globalDspAndLinkedLockAreIndependentInAllFourStates() {

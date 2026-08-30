@@ -23,9 +23,9 @@ final class HelpText {
 
     static String forKey(String key) {
         if (GLOBAL_DSP.equals(key) || WHOLE_OUTPUT_DSP.equals(key)) return tri(
-                "Global DSP обрабатывает общий аудиовыход устройства напрямую через session-zero DSP: gain/leveling и limiter работают до устройства вывода.",
-                "Даёт более плавное выравнивание без постоянного движения Samsung Media slider. Поскольку обрабатывается общий mix, режим может затронуть системные звуки, уведомления, будильники, звонки и System UI. Выключите его, если важнее раздельные правила.",
-                "Статус Active точен только после verified global-mix probe. Само успешное создание DynamicsProcessing не считается доказательством scope.");
+                "PCM Shadow v0.9 рассчитывает gain/leveling на отдельной копии разрешённого targeted PCM только в памяти.",
+                "Влияет только на feasibility-метрики и логи; Samsung Media и слышимый аудиовыход не изменяются.",
+                "Режим всегда SHADOW_ONLY: public playback capture сохраняет исходный звук, поэтому audibleOutputAllowed=false и AudioTrack не создаётся.");
         if (DEFAULT_LINKED_LOCK.equals(key)) return tri(
                 "Default Linked Lock связывает Minimum Output Ceiling и Maximum Output Ceiling в одну точку.",
                 "При ON оба sliders видимы, но заблокированы в Simple и Advanced; пользовательское движение Samsung Media slider сдвигает связанную точку, app-owned Media write её не двигает.",

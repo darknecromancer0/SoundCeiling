@@ -10,6 +10,7 @@ DIAG="$P/DiagnosticsView.java"
 SIMPLE="$P/SimpleModeView.java"
 ADV="$P/AdvancedModeView.java"
 SHADOW="$P/PcmShadowDsp.java"
+ELIGIBILITY="$P/PcmShadowEligibility.java"
 MANIFEST="$R/app/src/main/AndroidManifest.xml"
 
 fail(){ echo "v0.9 PCM shadow runtime contract: $*" >&2; exit 1; }
@@ -19,14 +20,13 @@ reject(){ if grep -Fq -- "$2" "$1"; then fail "forbidden $(basename "$1") -> $2"
 need "$S" 'PcmDspFeasibility.publicPlaybackCapture()'
 need "$S" 'new PcmShadowDsp()'
 need "$S" 'short[] shadowBuffer = new short[CAPTURE_BLOCK_SHORTS]'
+need "$S" 'PcmShadowEligibility.evaluate('
+need "$S" 'pcmShadowEligibility.eligible'
 need "$S" 'pcmShadowDsp.process('
 need "$S" 'pcm_dsp_feasibility'
 need "$S" 'pcm_dsp_shadow'
-need "$S" 'EngineCapabilities.SourceIdentityConfidence.EXACT'
-need "$S" 'EngineCapabilities.MeteringCapability.PCM_EXACT'
-need "$S" 'exactAppPolicy.allowsDspControl()'
-need "$S" 'SystemStreamPolicies.defaultEnabledForPublicUsage(endpoint.publicUsage)'
 need "$S" 'pcmShadowDsp.reset()'
+need "$ELIGIBILITY" 'system_source_excluded'
 
 need "$STATE" 'pcmDspMode'
 need "$STATE" 'pcmDspReason'
@@ -71,6 +71,10 @@ loop = section('    private void loopPlaybackCapture()',
                '    private boolean rebindCaptureOnWorker')
 if loop.index('pcmShadowDsp.process(') > loop.index('controlCoordinator.onFrame('):
     raise SystemExit('shadow feasibility processing must happen before coordinator evaluation')
+if loop.index('PcmShadowEligibility.evaluate(') > loop.index('pcmShadowDsp.process('):
+    raise SystemExit('pure eligibility must reject a block before shadow processing')
+if 'pcmShadowEligibility.eligible' not in loop:
+    raise SystemExit('shadow processor must consume the pure eligibility verdict')
 if 'shadowBuffer' not in loop:
     raise SystemExit('capture loop must own a reusable shadow buffer')
 

@@ -36,10 +36,6 @@ final class StatusText {
             return "Session DSP quarantined · "
                     + EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON;
         }
-        if (!s.enhancedSessionPermissionGranted) {
-            return EnhancedSessionSetup.REQUIRED_STATUS + " · "
-                    + EnhancedSessionSetup.ADB_GRANT_COMMAND;
-        }
         if (s.sessionDspActive && s.sessionId > 0) {
             String pkg = s.sessionPackage.isEmpty() ? "unknown" : s.sessionPackage;
             String activePrefix = "session_dsp_active:";

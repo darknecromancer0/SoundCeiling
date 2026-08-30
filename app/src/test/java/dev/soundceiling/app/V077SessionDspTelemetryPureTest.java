@@ -20,8 +20,8 @@ public final class V077SessionDspTelemetryPureTest {
         require(status.contains("quarantined")
                         && status.contains(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON),
                 "v0.9 field quarantine must preempt every legacy permission state");
-        require(!status.contains(EnhancedSessionSetup.ADB_GRANT_COMMAND),
-                "quarantined runtime must not ask the user for obsolete DUMP setup");
+        require(!status.contains("adb shell") && !status.contains("android.permission.DUMP"),
+                "quarantined runtime must not ask the user for obsolete privileged setup");
         require(!state.sessionDspActive && state.sessionId <= 0,
                 "missing permission cannot claim active Session DSP");
     }

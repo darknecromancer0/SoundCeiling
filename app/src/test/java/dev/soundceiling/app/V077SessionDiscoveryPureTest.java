@@ -9,7 +9,7 @@ public final class V077SessionDiscoveryPureTest {
         parserKeepsOnlyUniqueActiveNonzeroSessions();
         ownershipRequiresExactUidAndSingleFreshSession();
         enhancedHandleCannotBeCreatedWithoutAcceptedOwnership();
-        setupCommandIsExactAndStable();
+        historicalParserCannotRestoreRuntimeDiscovery();
         System.out.println("V077SessionDiscoveryPureTest: PASS");
     }
 
@@ -75,16 +75,12 @@ public final class V077SessionDiscoveryPureTest {
                 "generic handle factory must reject raw enhanced-discovery provenance");
     }
 
-    private static void setupCommandIsExactAndStable() {
-        require("android.permission.DUMP".equals(EnhancedSessionSetup.DUMP_PERMISSION),
-                "DUMP permission name must stay exact");
-        require("adb shell pm grant dev.soundceiling.app android.permission.DUMP".equals(
-                        EnhancedSessionSetup.ADB_GRANT_COMMAND),
-                "UI must expose the exact one-time ADB command");
-        AudioSessionDiscovery.Snapshot missing = AudioSessionDiscovery.Snapshot.permissionMissing(5L);
-        require(!missing.permissionGranted && missing.records.isEmpty()
-                        && "dump_permission_missing".equals(missing.reason),
-                "missing permission snapshot must fail closed");
+    private static void historicalParserCannotRestoreRuntimeDiscovery() {
+        AudioSessionDiscovery.Snapshot quarantined =
+                new QuarantinedAudioSessionDiscovery().discover(5L);
+        require(!quarantined.permissionGranted && quarantined.records.isEmpty()
+                        && EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON.equals(quarantined.reason),
+                "historical parser fixtures must not restore production session discovery");
     }
 
     private static void require(boolean value, String message) {

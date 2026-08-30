@@ -26,8 +26,8 @@ interface AudioSessionDiscovery {
             this.observedAtMs = Math.max(0L, observedAtMs);
         }
 
-        static Snapshot permissionMissing(long nowMs) {
-            return new Snapshot(false, Collections.emptyList(), "dump_permission_missing", nowMs);
+        static Snapshot unavailable(String reason, long nowMs) {
+            return new Snapshot(false, Collections.emptyList(), reason, nowMs);
         }
 
         static Snapshot failed(String reason, long nowMs) {

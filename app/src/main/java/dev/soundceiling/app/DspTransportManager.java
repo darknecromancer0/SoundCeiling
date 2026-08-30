@@ -443,6 +443,10 @@ final class DspTransportManager implements AutoCloseable {
     }
 
     DspTransport.Capability prepareGlobalProbeTransport() {
+        if (!EnhancedSessionSetup.runtimeAllowed()) {
+            invalidateGlobalProof(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON);
+            return DspTransport.Capability.UNAVAILABLE;
+        }
         if (global == null) {
             global = AndroidDynamicsProcessingTransport.forNeutralGlobalProbe(channelCount);
         }

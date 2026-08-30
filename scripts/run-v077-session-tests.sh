@@ -9,9 +9,10 @@ javac -Xlint:all -Werror -d "$OUT" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/AppPolicy.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/SourceDescriptor.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/AudioSessionRecord.java" \
-  "$ROOT/app/src/main/java/dev/soundceiling/app/AudioSessionDumpParser.java" \
+  "$ROOT/app/src/test/java/dev/soundceiling/app/AudioSessionDumpParser.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/AudioSessionDiscovery.java" \
+  "$ROOT/app/src/main/java/dev/soundceiling/app/QuarantinedAudioSessionDiscovery.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/DspEndpointHandle.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/AudioSessionOwnershipResolver.java" \
   "$ROOT/app/src/test/java/dev/soundceiling/app/V077SessionDiscoveryPureTest.java"

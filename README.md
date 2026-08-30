@@ -11,19 +11,22 @@ the user master; hard Media/Safety actions remain separate from ordinary normali
   back correctly. Runtime, facade, manager, and Android factory all reject it with
   `field_quarantined_neutral_media_bypass`. The v0.8 matrix remains only as historical regression
   code and cannot be selected or attached.
-- **The obsolete DUMP setup is removed.** v0.9.0 neither declares `android.permission.DUMP` nor
-  asks the user to run an ADB grant command. Simple, Advanced, Diagnostics, and logs report the
-  field quarantine directly.
+- **The obsolete DUMP path is removed from production.** v0.9.0 neither declares
+  `android.permission.DUMP`, asks for an ADB grant, constructs a dump-backed discovery backend, nor
+  executes `dumpsys`. Historical AudioPolicy fixtures and their parser live only in test source.
+  Simple, Advanced, Diagnostics, and logs report the field quarantine directly.
 - **PCM normalization now runs in an isolated shadow buffer.** For a positively allowed,
   high-confidence targeted MEDIA source with a known output-domain projection, the processor
   calculates continuous positive gain for quiet material and attenuation for loud material/peaks.
   It enforces the configured output peak ceiling and `-0.5 dBFS` PCM headroom with saturating PCM16
-  conversion and lifecycle reset.
+  conversion and lifecycle reset. Rejected/off/unknown/system PCM is not copied into the shadow
+  buffer, reports zero processed samples, and exposes no source-derived shadow peaks.
 - **PCM DSP is deliberately non-audible in this build.** Public Android playback capture keeps the
   original playback rendered. Starting a normal output track from the processed copy would duplicate
   the sound, so the immutable verdict is `SHADOW_ONLY`, `audibleOutputAllowed=false`, reason
   `public_playback_capture_keeps_original_audio`. No audible PCM renderer is created.
-- **The UI and logs do not claim that shadow gain was applied to the speaker.** Telemetry uses
+- **The UI and logs do not claim that shadow gain was applied to the speaker.** The old Global DSP
+  switch presentation is replaced by `PCM Shadow (без звука)`. Telemetry uses
   `pcm_dsp_feasibility`, `pcm_dsp_shadow`, and `pcm_dsp_runtime`, including requested/shadow gain,
   projected/PCM peaks, clipping count, eligibility, and the blocked-output reason.
 - **Safety and user authority are unchanged.** Volume Down wins immediately. Automatic Media UP

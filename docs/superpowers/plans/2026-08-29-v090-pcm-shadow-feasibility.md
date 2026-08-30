@@ -401,6 +401,16 @@ commit. Do not mark PR #8 ready or merge it.
 Review the complete diff from `b20ffcd6a07ff67c1ef2c9882515793b190f20ec` to the v0.9 HEAD against
 the spec. Re-run the full local suite and remote CI after any review fix.
 
+Review hardening implemented before final CI:
+
+- rejected PCM clears the full shadow buffer and reports `processedSamples=0`/no source metrics;
+- `PcmShadowEligibility` has behavioral coverage for exact, OFF, confidence, protected usage,
+  multi-endpoint, source transition, unknown domain, and system-source cases;
+- privileged DUMP discovery and ADB setup are absent from production source; the historical parser
+  is test-only;
+- the historical session-zero constructor is guarded by the same v0.9 field quarantine;
+- Simple/Advanced present the preference as non-audible PCM Shadow rather than active Global DSP.
+
 - [ ] **Step 7: Download and verify the deliverable**
 
 Download `SoundCeiling-v0.9.0-debug-apk`, verify its SHA-256 and signer locally, and provide the APK,

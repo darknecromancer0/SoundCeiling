@@ -82,10 +82,10 @@ final class EnhancedSessionDspRuntime {
                     "reason=" + lastDiscovery.reason + " records=" + lastDiscovery.records.size());
         }
         if (!lastDiscovery.permissionGranted) {
-            release("session_dump_permission_missing", false);
-            reason = "session_dump_permission_missing";
+            release("session_discovery_unavailable:" + lastDiscovery.reason, false);
+            reason = "session_discovery_unavailable:" + lastDiscovery.reason;
             DiagnosticLog.transition("session_dsp_unavailable", reason,
-                    "setup=" + EnhancedSessionSetup.ADB_GRANT_COMMAND);
+                    "authority=field_quarantine setup=removed");
             return;
         }
 

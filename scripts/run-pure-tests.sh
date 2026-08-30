@@ -80,7 +80,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/EngineCapabilities.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PlaybackEndpoint.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AudioSessionRecord.java" \
- "$ROOT/app/src/main/java/dev/soundceiling/app/AudioSessionDumpParser.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/AudioSessionDumpParser.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AudioSessionDiscovery.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/QuarantinedAudioSessionDiscovery.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspEndpointHandle.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspScope.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspApplyResult.java" \
@@ -91,6 +93,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspDifferentialVerifier.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ContinuousDspController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmDspFeasibility.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PcmShadowEligibility.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmShadowDsp.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CoarseMediaFallbackController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspGainSlew.java" \
@@ -153,6 +156,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V090SessionDspQuarantinePureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V090PcmFeasibilityPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V090PcmShadowDspPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V090PcmShadowEligibilityPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -245,5 +249,6 @@ java -cp "$OUT" dev.soundceiling.app.V080SafeCustomMatrixPureTest
 java -cp "$OUT" dev.soundceiling.app.V090SessionDspQuarantinePureTest
 java -cp "$OUT" dev.soundceiling.app.V090PcmFeasibilityPureTest
 java -cp "$OUT" dev.soundceiling.app.V090PcmShadowDspPureTest
+java -cp "$OUT" dev.soundceiling.app.V090PcmShadowEligibilityPureTest
 java -cp "$OUT" dev.soundceiling.app.V072GlobalDspProbePureTest
 java -cp "$OUT" dev.soundceiling.app.V072ResetDefaultsPureTest

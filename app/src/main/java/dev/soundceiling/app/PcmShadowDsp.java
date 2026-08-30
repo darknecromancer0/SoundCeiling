@@ -55,16 +55,15 @@ final class PcmShadowDsp {
                                 OutputCeilingState ceilings, ControlProfile profile,
                                 boolean programActive) {
         validateBuffers(input, sampleCount, shadow);
+        if (!eligibleWithoutPcm(sampleCount, sourceLoudnessDb, mediaRouteGainDb,
+                captureReference, ceilings, profile, programActive)) {
+            return reject(shadow, "pcm_shadow_output_domain_unavailable");
+        }
         float pcmInputPeakDbfs = pcmPeakDbfs(input, sampleCount);
         float effectiveSourcePeakDbfs = conservativePeak(sourcePeakDbfs, pcmInputPeakDbfs);
 
-        if (!eligible(sampleCount, effectiveSourcePeakDbfs, sourceLoudnessDb, mediaRouteGainDb,
-                captureReference, ceilings, profile, programActive)) {
-            reset();
-            Conversion neutral = convert(input, sampleCount, shadow, 0f);
-            return new Result(false, 0f, 0f, pcmInputPeakDbfs, neutral.peakDbfs,
-                    Float.NaN, neutral.clippedSamples, sampleCount,
-                    "pcm_shadow_output_domain_unavailable");
+        if (!Float.isFinite(effectiveSourcePeakDbfs)) {
+            return reject(shadow, "pcm_shadow_output_domain_unavailable");
         }
 
         OutputLevelModel.Snapshot currentLevels = project(
@@ -109,20 +108,28 @@ final class PcmShadowDsp {
         controller.reset();
     }
 
-    private static boolean eligible(int sampleCount, float sourcePeakDbfs,
-                                    float sourceLoudnessDb, float mediaRouteGainDb,
-                                    CaptureReferenceEstimator.Mode captureReference,
-                                    OutputCeilingState ceilings, ControlProfile profile,
-                                    boolean programActive) {
+    private static boolean eligibleWithoutPcm(int sampleCount, float sourceLoudnessDb,
+                                              float mediaRouteGainDb,
+                                              CaptureReferenceEstimator.Mode captureReference,
+                                              OutputCeilingState ceilings,
+                                              ControlProfile profile,
+                                              boolean programActive) {
         if (sampleCount <= 0 || ceilings == null || profile == null || !programActive
                 || profile.normalizationPreset == NormalizationPreset.OFF
-                || !Float.isFinite(sourcePeakDbfs) || !Float.isFinite(sourceLoudnessDb)
+                || !Float.isFinite(sourceLoudnessDb)
                 || captureReference == null
                 || captureReference == CaptureReferenceEstimator.Mode.UNKNOWN) {
             return false;
         }
         return captureReference != CaptureReferenceEstimator.Mode.PRE_VOLUME
                 || Float.isFinite(mediaRouteGainDb);
+    }
+
+    private Result reject(short[] shadow, String reason) {
+        reset();
+        for (int i = 0; i < shadow.length; i++) shadow[i] = 0;
+        return new Result(false, 0f, 0f, Float.NaN, Float.NaN,
+                Float.NaN, 0, 0, reason);
     }
 
     private static OutputLevelModel.Snapshot project(float sourcePeakDbfs,

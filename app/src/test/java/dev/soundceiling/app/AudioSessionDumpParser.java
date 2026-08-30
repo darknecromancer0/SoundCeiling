@@ -8,9 +8,9 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Pure, fail-closed parser for active AudioTrack client rows from AudioPolicy dumps. */
+/** Historical test-only parser for v0.7 Samsung AudioPolicy fixtures. */
 final class AudioSessionDumpParser {
-    private static final String PROVENANCE = "dumpsys_media_audio_policy";
+    private static final String PROVENANCE = "historical_audio_policy_fixture";
     private static final Pattern AOSP_CLIENT = Pattern.compile(
             "^.*Port\\s+ID:\\s*\\d+;\\s*Session\\s+ID:\\s*(-?\\d+);\\s*uid\\s+(-?\\d+);\\s*State:\\s*(Active|Inactive)\\s*$",
             Pattern.CASE_INSENSITIVE);

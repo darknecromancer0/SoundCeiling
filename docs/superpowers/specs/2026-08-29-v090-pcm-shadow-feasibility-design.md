@@ -80,15 +80,19 @@ candidate iteration or effect construction. Defense in depth is intentional. His
 may remain for regression documentation, but it is unreachable from v0.9 runtime.
 
 The app no longer asks the user to grant `android.permission.DUMP`, and the manifest no longer
-declares it. Existing UI setup buttons are hidden. Diagnostics identify the field quarantine instead
-of calling it a missing setup step.
+declares it. Production source contains no dump-backed discovery backend or shell execution; the
+historical AudioPolicy parser is test-only. Existing UI setup buttons are removed. Diagnostics
+identify the field quarantine instead of calling it a missing setup step.
 
 ### 2. PCM shadow DSP
 
 The existing playback capture and source-identity pipeline remains the only audio input. Shadow
 processing is eligible only when the existing policy has positively allowed the source as MEDIA,
 source confidence is sufficient, the output-domain projection is known, and PCM DSP is enabled by
-the selected profile. Unknown or excluded usages remain inactive. For each eligible block, a pure
+the selected profile. A pure `PcmShadowEligibility` gate rejects non-exact, OFF, protected,
+multi-endpoint, source-transition, unknown-domain, and system-source cases. Rejected blocks clear
+the reusable shadow buffer, report zero processed samples, and publish no source-derived metrics.
+For each eligible block, a pure
 `PcmShadowDsp`:
 
 1. constructs the same explicit output-domain projection used by the coordinator;
@@ -128,9 +132,9 @@ Logs include one stable `pcm_dsp_feasibility` event per service/capture lifecycl
   current user anchor.
 - Illegal Samsung panel overshoots never update anchors, Linked Lock ceilings, or debt.
 - `automatic target <= user ceiling <= safety ceiling` remains the setting/runtime ordering.
-- MEDIA is the only default controlled usage. Calls, alarms, ringtone, notifications, DTMF,
-  accessibility, assistant, and system applications remain excluded unless the existing policy says
-  otherwise.
+- MEDIA is the only default controlled stream. Calls, alarms, ringtone, notifications, DTMF,
+  accessibility, assistant, and system applications remain excluded; system applications cannot
+  enter v0.9 shadow processing even if a stale policy says otherwise.
 - Stop, route change, capture replacement, and epoch invalidation remove all DSP/shadow state.
 - No source PCM is saved to logs.
 
@@ -150,7 +154,8 @@ v0.9.0 is acceptable for field testing only when all of the following are true:
 - pure tests show positive shadow gain for quiet material, negative gain for loud material, immediate
   peak attenuation, smoothed recovery, saturating PCM conversion, reset on lifecycle boundaries, and
   no projected peak above the configured ceiling;
-- unknown, low-confidence, disabled, and policy-excluded sources never receive shadow gain;
+- unknown, low-confidence, disabled, protected, multi-endpoint, system, and policy-excluded sources
+  never enter the shadow buffer or receive shadow gain;
 - Android wiring contains no audible PCM renderer in `NormalizerService`;
 - Samsung Media and Safety remain physically authoritative with no Session effect attached;
 - the full historical pure suite, all release contracts, Android API 35 compilation, APK signing,
@@ -159,7 +164,8 @@ v0.9.0 is acceptable for field testing only when all of the following are true:
 ## Implemented v0.9 checkpoint
 
 The v0.9 implementation now enforces the Session quarantine at setup/runtime, facade, manager, and
-Android factory boundaries. It removes DUMP from the manifest and UI, publishes the immutable public
+Android factory boundaries, including the unreachable historical session-zero factory. It removes
+DUMP setup/discovery from production, publishes the immutable public
 playback-capture verdict, runs exact-policy MEDIA PCM through a separate lifecycle-bound shadow
 buffer, and exposes non-audible metrics without granting coordinator or output-sink authority.
 

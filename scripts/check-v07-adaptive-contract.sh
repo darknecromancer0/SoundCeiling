@@ -122,8 +122,8 @@ reject "$PKG/AppPolicyEditorView.java" 'Limiter only · никогда не по
 require "$PKG/AppPolicyStore.java" '"limiterOnly"'
 require "$PKG/AppPolicyStore.java" 'p.downwardOnly'
 
-# v0.7.1 Task 9 supersedes the old Simple intro with shared Global DSP + Linked Lock copy.
-require "$PKG/SimpleModeView.java" 'Global DSP управляет способом обработки'
+# v0.9 supersedes the historical Global DSP promise with truthful shadow-only copy.
+require "$PKG/SimpleModeView.java" 'PCM Shadow в v0.9'
 require "$PKG/SimpleModeView.java" 'Default Linked Lock'
 reject "$PKG/SimpleModeView.java" 'Один one-way движок'
 reject "$PKG/SimpleModeView.java" 'normalizeLabel.setText("Normalization: " + percent + "% · " + word + " · только вниз")'

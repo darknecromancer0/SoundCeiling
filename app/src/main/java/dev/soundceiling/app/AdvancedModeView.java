@@ -67,8 +67,9 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         sessionDspSetupStatus.setPadding(0, dp(8), 0, dp(6));
         root.addView(sessionDspSetupStatus);
 
-        section("Основной actuator");
-        globalDsp = addSwitch("Global DSP", HelpText.GLOBAL_DSP, Prefs.globalDspEnabled(context),
+        section("PCM feasibility");
+        globalDsp = addSwitch("PCM Shadow (без звука)", HelpText.GLOBAL_DSP,
+                Prefs.globalDspEnabled(context),
                 v -> Prefs.setGlobalDspEnabled(getContext(), v));
         globalDspStatus = secondary("", 13); globalDspStatus.setPadding(0, 0, 0, dp(6)); root.addView(globalDspStatus);
         linkedLock = addSwitch("Default Linked Lock", HelpText.DEFAULT_LINKED_LOCK,

@@ -8,8 +8,10 @@ import re,sys
 s=Path(sys.argv[1]).read_text(); m=re.search(r'versionCode=(\d+)',s)
 if not m or int(m.group(1)) < 24: raise SystemExit('v0.7.7 release contract: expected versionCode >= 24')
 PY
-need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" 'android.permission.DUMP'
-need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" 'adb shell pm grant dev.soundceiling.app android.permission.DUMP'
+need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" 'RUNTIME_QUARANTINED = true'
+need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionSetup.java" 'field_quarantined_neutral_media_bypass'
+need "$R/app/src/main/java/dev/soundceiling/app/QuarantinedAudioSessionDiscovery.java" 'Collections.emptyList()'
+need "$R/app/src/test/java/dev/soundceiling/app/AudioSessionDumpParser.java" 'Historical test-only parser'
 need "$R/app/src/main/java/dev/soundceiling/app/AudioSessionOwnershipResolver.java" 'record.sessionId <= 0'
 need "$R/app/src/main/java/dev/soundceiling/app/AudioSessionOwnershipResolver.java" 'record.uid == exactSource.uid'
 need "$R/app/src/main/java/dev/soundceiling/app/EnhancedSessionDspRuntime.java" 'dsp.enhancedSessionId() > 0'
@@ -22,8 +24,7 @@ need "$R/.github/workflows/build-apk.yml" 'run: bash ./scripts/check-v077-releas
 need "$R/README.md" '## v0.7.7 Enhanced Session DSP'
 need "$R/README.md" 'non-zero audio session'
 need "$R/README.md" '3/15'
-need "$R/README.md" 'adb shell pm grant dev.soundceiling.app android.permission.DUMP'
 need "$R/docs/field-tests/2026-08-25-v0.7.7-samsung-checklist.md" 'session_dsp_apply'
 need "$R/docs/field-tests/2026-08-25-v0.7.7-samsung-checklist.md" 'HOLD'
 need "$R/docs/field-tests/2026-08-25-v0.7.7-samsung-checklist.md" 'APK SHA-256'
-echo 'v0.7.7 release contract: PASS'
+echo 'v0.7.7 historical release contract under v0.9 field quarantine: PASS'
