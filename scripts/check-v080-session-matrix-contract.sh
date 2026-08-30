@@ -11,6 +11,8 @@ need(){ grep -Fq -- "$2" "$1" || fail "missing $(basename "$1") -> $2"; }
 
 need "$X" 'OEM_DEFAULT_RUNTIME_QUARANTINED = true'
 need "$X" 'SAFE_CUSTOM_MATRIX_ENABLED = true'
+need "$X" 'RUNTIME_QUARANTINED = true'
+need "$X" 'field_quarantined_neutral_media_bypass'
 need "$T" 'forEnhancedSessionProbe(DspEndpointHandle handle,'
 need "$T" 'EnhancedSessionCandidateMatrix.Profile profile'
 need "$T" 'DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION'
@@ -39,10 +41,12 @@ if init.index('candidate.setEnabled(false)') > init.index('candidate.setInputGai
 start=s.index('static AndroidDynamicsProcessingTransport forEnhancedSessionProbe')
 end=s.index('static AndroidDynamicsProcessingTransport forNeutralGlobalProbe', start)
 factory=s[start:end]
+if factory.index('EnhancedSessionSetup.runtimeAllowed()') > factory.index('new AndroidDynamicsProcessingTransport('):
+    raise SystemExit('v0.9 field quarantine must precede every Enhanced Session constructor')
 if 'new DynamicsProcessing(audioSessionId)' in factory:
     raise SystemExit('Enhanced Session factory must never use the OEM-default constructor')
 if 'allowDefaultConfigFallback' in factory:
     raise SystemExit('Enhanced Session factory must not expose default-config fallback')
 PY
 
-echo 'v0.8 safe custom Session DSP contract: PASS'
+echo 'v0.8 historical custom Session DSP contract under v0.9 quarantine: PASS'

@@ -51,6 +51,13 @@ final class RuntimeState {
     final String sessionPackage, sessionDspReason;
     final float sessionDspRequestedGainDb, sessionDspAppliedGainDb;
 
+    // v0.9 public playback-capture feasibility and non-audible PCM shadow telemetry.
+    final String pcmDspMode, pcmDspReason, pcmShadowReason;
+    final boolean pcmDspAudibleOutputAllowed, pcmShadowActive;
+    final float pcmShadowRequestedGainDb, pcmShadowAppliedGainDb;
+    final float pcmShadowProjectedPeakDbfs, pcmShadowPcmPeakDbfs;
+    final int pcmShadowClippedSamples;
+
     private final float[] bandLevels;
     private final DiagnosticItem[] diagnostics;
 
@@ -100,10 +107,20 @@ final class RuntimeState {
                 ? b.sessionDspRequestedGainDb : 0f;
         sessionDspAppliedGainDb=Float.isFinite(b.sessionDspAppliedGainDb)
                 ? b.sessionDspAppliedGainDb : 0f;
+        pcmDspMode=n(b.pcmDspMode); pcmDspReason=n(b.pcmDspReason);
+        pcmShadowReason=n(b.pcmShadowReason);
+        pcmDspAudibleOutputAllowed=b.pcmDspAudibleOutputAllowed;
+        pcmShadowActive=b.pcmShadowActive;
+        pcmShadowRequestedGainDb=finite(b.pcmShadowRequestedGainDb);
+        pcmShadowAppliedGainDb=finite(b.pcmShadowAppliedGainDb);
+        pcmShadowProjectedPeakDbfs=b.pcmShadowProjectedPeakDbfs;
+        pcmShadowPcmPeakDbfs=b.pcmShadowPcmPeakDbfs;
+        pcmShadowClippedSamples=Math.max(0,b.pcmShadowClippedSamples);
         bandLevels=b.bandLevels.clone(); diagnostics=b.diagnostics.clone();
     }
 
     private static String n(String s){return s==null?"":s;}
+    private static float finite(float value){return Float.isFinite(value)?value:0f;}
     float[] bandLevels(){return bandLevels.clone();}
     DiagnosticItem[] diagnostics(){return diagnostics.clone();}
 
@@ -141,6 +158,10 @@ final class RuntimeState {
                 .enhancedSession(enhancedSessionPermissionGranted, sessionDspActive, sessionId,
                         sessionUid, sessionPackage, sessionDspRequestedGainDb,
                         sessionDspAppliedGainDb, sessionDspReason)
+                .pcmDsp(pcmDspMode, pcmDspReason, pcmDspAudibleOutputAllowed, pcmShadowActive,
+                        pcmShadowRequestedGainDb, pcmShadowAppliedGainDb,
+                        pcmShadowProjectedPeakDbfs, pcmShadowPcmPeakDbfs,
+                        pcmShadowClippedSamples, pcmShadowReason)
                 .bandLevels(bandLevels).diagnostics(items);
         return b.build();
     }
@@ -187,6 +208,13 @@ final class RuntimeState {
         int sessionId=-1, sessionUid=-1;
         String sessionPackage="", sessionDspReason="not_discovered";
         float sessionDspRequestedGainDb, sessionDspAppliedGainDb;
+        String pcmDspMode="SHADOW_ONLY";
+        String pcmDspReason="public_playback_capture_keeps_original_audio";
+        String pcmShadowReason="not_started";
+        boolean pcmDspAudibleOutputAllowed, pcmShadowActive;
+        float pcmShadowRequestedGainDb, pcmShadowAppliedGainDb;
+        float pcmShadowProjectedPeakDbfs=Float.NaN, pcmShadowPcmPeakDbfs=Float.NaN;
+        int pcmShadowClippedSamples;
         float[] bandLevels=new float[5];
         DiagnosticItem[] diagnostics=new DiagnosticItem[0];
 
@@ -260,6 +288,17 @@ final class RuntimeState {
             sessionId=id; sessionUid=uid; sessionPackage=pkg;
             sessionDspRequestedGainDb=requestedGainDb; sessionDspAppliedGainDb=appliedGainDb;
             sessionDspReason=reason; return this;
+        }
+        Builder pcmDsp(String mode, String reason, boolean audibleOutputAllowed,
+                       boolean shadowActive, float requestedGainDb, float appliedGainDb,
+                       float projectedPeakDbfs, float shadowPcmPeakDbfs,
+                       int clippedSamples, String shadowReason) {
+            pcmDspMode=mode; pcmDspReason=reason;
+            pcmDspAudibleOutputAllowed=audibleOutputAllowed; pcmShadowActive=shadowActive;
+            pcmShadowRequestedGainDb=requestedGainDb; pcmShadowAppliedGainDb=appliedGainDb;
+            pcmShadowProjectedPeakDbfs=projectedPeakDbfs;
+            pcmShadowPcmPeakDbfs=shadowPcmPeakDbfs;
+            pcmShadowClippedSamples=clippedSamples; pcmShadowReason=shadowReason; return this;
         }
         Builder bandLevels(float[] v){bandLevels=v==null?new float[5]:v.clone();return this;}
         Builder diagnostics(List<DiagnosticItem> v){diagnostics=v==null?new DiagnosticItem[0]:v.toArray(new DiagnosticItem[0]);return this;}

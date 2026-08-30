@@ -65,6 +65,13 @@ public class NormalizerService extends Service {
     private GlobalVisualizerBackend visualizer;
     private OptionalDspController optionalDsp;
     private EnhancedSessionDspRuntime enhancedSessionDsp;
+    private final PcmShadowDsp pcmShadowDsp = new PcmShadowDsp();
+    private final PcmDspFeasibility.Verdict pcmDspFeasibility =
+            PcmDspFeasibility.publicPlaybackCapture();
+    private volatile PcmShadowDsp.Result lastPcmShadowResult;
+    private volatile String pcmShadowEligibilityReason = "not_started";
+    private boolean pcmDspFeasibilityLogged;
+    private long pcmDspCaptureEpoch;
     private AudioBackendStatus backendStatus = new AudioBackendStatus(
             AudioBackendStatus.Tier.MEDIA_ONLY, true, "not_started");
     private boolean fastOnlyMode;
@@ -145,6 +152,7 @@ public class NormalizerService extends Service {
 
         fastOnlyMode = intent != null && intent.getBooleanExtra(EXTRA_FAST_ONLY, false);
         hybridRuntime.newEpoch();
+        resetPcmShadowState("service_epoch", true);
         startForegroundNow();
         RuntimeState starting = baseState(new RuntimeState.Builder(),
                 audio.getStreamVolume(AudioManager.STREAM_MUSIC))
@@ -202,6 +210,7 @@ public class NormalizerService extends Service {
                     request.targeted() ? "targeted_uid_pcm" : "mixed_pcm_downward_only");
             tryOpenLogger();
             logGlobalDspTransport();
+            logPcmDspFeasibilityOnce("capture_start");
             startWorker(this::loopPlaybackCapture, "SoundCeilingAudio");
             DiagnosticLog.event("service_start", "mode=smart_pcm backend=" + backendStatus.label()
                     + " targetUid=" + request.targetUid);
@@ -213,6 +222,7 @@ public class NormalizerService extends Service {
     }
 
     private void enterFallback(boolean visualizerReady, String reason) {
+        resetPcmShadowState("fallback:" + reason, true);
         fastOnlyMode = true;
         backendStatus = visualizerReady
                 ? new AudioBackendStatus(AudioBackendStatus.Tier.VISUALIZER, true, reason)
@@ -225,6 +235,7 @@ public class NormalizerService extends Service {
 
     private synchronized void switchToFallback(String reason) {
         if (!workerRunning.get()) return;
+        resetPcmShadowState("fallback:" + reason, true);
         if (pcmCapture != null) {
             if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
         if (optionalDsp != null) optionalDsp.onCaptureReplaced();
@@ -250,6 +261,7 @@ public class NormalizerService extends Service {
 
     private void loopPlaybackCapture() {
         short[] buffer = new short[CAPTURE_BLOCK_SHORTS];
+        short[] shadowBuffer = new short[CAPTURE_BLOCK_SHORTS];
         LoudnessTracker tracker = new LoudnessTracker();
         LoudnessMeter loudnessMeter = new LoudnessMeter(SAMPLE_RATE, CHANNELS);
         FrequencyBandTracker bands = new FrequencyBandTracker(SAMPLE_RATE, CHANNELS);
@@ -331,6 +343,17 @@ public class NormalizerService extends Service {
                             controlCurve.gainDbForIndex(current), verifiedGainDb,
                             liveCaptureReference.mode(), outputMix.peakDbfs, outputMix.rmsDbfs,
                             outputMixEvidence));
+            pcmShadowEligibilityReason = resolvePcmShadowEligibility(
+                    hybridSnapshot, effectiveProfile, signal, liveCaptureReference.mode());
+            boolean pcmShadowEligible = "eligible_exact_media".equals(
+                    pcmShadowEligibilityReason);
+            lastPcmShadowResult = pcmShadowDsp.process(
+                    now, buffer, n, shadowBuffer, blockPeak, loud.controlLoudnessDb,
+                    controlCurve.gainDbForIndex(current), liveCaptureReference.mode(),
+                    controlCoordinator.ceilingState(), effectiveProfile,
+                    pcmShadowEligible && signal);
+            logPcmDspFeasibilityOnce("capture_loop");
+            logPcmShadow(lastPcmShadowResult, pcmShadowEligibilityReason);
             EnhancedSessionOutputGuard.Result outputGuard = EnhancedSessionOutputGuard.evaluate(
                     verifiedGainDb, levels.projectedOutputPeakDbfs, levels.outputProjectionValid,
                     outputMix.peakDbfs, outputMixEvidence,
@@ -439,6 +462,7 @@ public class NormalizerService extends Service {
                     + " request=" + requested + " reason=" + decision.reason);
             if (requested.targeted()) DiagnosticLog.transition("target_probe", "open",
                     "uid=" + requested.targetUid);
+            logPcmDspFeasibilityOnce("capture_rebind");
             return true;
         } catch (RuntimeException targetError) {
             if (!requested.targeted()) {
@@ -458,6 +482,7 @@ public class NormalizerService extends Service {
                         "target_open_failed_mixed_pcm");
                 DiagnosticLog.event("capture_rebind", "action=OPEN_MIXED request=" + mixed
                         + " reason=target_open_failed");
+                logPcmDspFeasibilityOnce("capture_rebind_mixed");
                 return true;
             } catch (RuntimeException mixedError) {
                 switchToFallback("target_and_mixed_capture_failed:"
@@ -468,6 +493,7 @@ public class NormalizerService extends Service {
     }
 
     private void resetAfterCaptureRebind() {
+        resetPcmShadowState("capture_replaced", true);
         resetGlobalDifferentialState();
         liveCaptureReference.onCaptureReplaced();
         resetCaptureReferenceSamples();
@@ -1000,6 +1026,7 @@ public class NormalizerService extends Service {
     }
 
     private RuntimeState.Builder baseState(RuntimeState.Builder builder, int volume) {
+        PcmShadowDsp.Result shadow = lastPcmShadowResult;
         RuntimeState.Builder out = builder.volume(volume, controlCurve.maxIndex())
                 .safety(false, safetySettings.maxIndex,
                         safetySettings.safetyLockEnabled, safetySettings.safetyLockIndex)
@@ -1028,7 +1055,18 @@ public class NormalizerService extends Service {
                         enhancedSessionDsp == null ? "" : enhancedSessionDsp.sessionPackage(),
                         controlCoordinator.snapshot().desiredGainDb(),
                         optionalDsp == null ? 0f : optionalDsp.appliedGainDb(),
-                        enhancedSessionDsp == null ? "session_runtime_missing" : enhancedSessionDsp.reason())
+                        enhancedSessionDsp == null ? EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON
+                                : enhancedSessionDsp.reason())
+                .pcmDsp(pcmDspFeasibility.mode.name(), pcmDspFeasibility.reason,
+                        pcmDspFeasibility.audibleOutputAllowed,
+                        shadow != null && shadow.active,
+                        shadow == null ? 0f : shadow.requestedGainDb,
+                        shadow == null ? 0f : shadow.appliedGainDb,
+                        shadow == null ? Float.NaN : shadow.projectedOutputPeakDbfs,
+                        shadow == null ? Float.NaN : shadow.shadowPcmPeakDbfs,
+                        shadow == null ? 0 : shadow.clippedSamples,
+                        shadow == null ? pcmShadowEligibilityReason
+                                : shadow.reason + ":" + pcmShadowEligibilityReason)
                 .unexpectedZero(unexpectedZeroThisPoll);
         if (hybridSnapshot != null) {
             EffectivePolicy policy = hybridSnapshot.policy;
@@ -1337,6 +1375,99 @@ public class NormalizerService extends Service {
                 controlProfile.recoveryIntervalMs);
     }
 
+    private String resolvePcmShadowEligibility(HybridRuntimeResolver.Snapshot snapshot,
+                                               ControlProfile profile, boolean signalPresent,
+                                               CaptureReferenceEstimator.Mode captureReference) {
+        if (pcmDspFeasibility.mode != PcmDspFeasibility.Mode.SHADOW_ONLY
+                || pcmDspFeasibility.audibleOutputAllowed) {
+            return "pcm_feasibility_not_shadow_only";
+        }
+        if (!globalDspPreference) return "pcm_dsp_preference_disabled";
+        if (!signalPresent) return "pcm_shadow_no_program";
+        if (snapshot == null || snapshot.policy == null) return "pcm_shadow_snapshot_missing";
+        if (snapshot.pcmState != PcmAvailabilityState.ACTIVE) return "pcm_not_active";
+        if (snapshot.sources.confidence
+                != EngineCapabilities.SourceIdentityConfidence.EXACT) {
+            return "source_not_exact";
+        }
+        if (snapshot.capabilities.metering
+                != EngineCapabilities.MeteringCapability.PCM_EXACT) {
+            return "pcm_not_exact";
+        }
+        if (snapshot.exactSource == null || snapshot.exactAppPolicy == null) {
+            return "exact_source_policy_missing";
+        }
+        if (!snapshot.exactAppPolicy.allowsDspControl()) return "exact_source_dsp_disabled";
+        if (!snapshot.policy.sourceControlEnabled) return "source_policy_disabled";
+        if (!snapshot.policy.allowBoundedRecovery) {
+            return snapshot.policy.recoveryBlockReason.isEmpty()
+                    ? "positive_control_not_allowed" : snapshot.policy.recoveryBlockReason;
+        }
+        if (profile == null || profile.normalizationPreset == NormalizationPreset.OFF
+                || profile.normalizationStrength <= 0f) {
+            return "normalization_off";
+        }
+        if (snapshot.playback == null || !snapshot.playback.active
+                || !allActiveEndpointsAllowPcmShadow(snapshot.playbackEndpoints)) {
+            return "active_media_scope_unverified";
+        }
+        if (captureReference == null
+                || captureReference == CaptureReferenceEstimator.Mode.UNKNOWN) {
+            return "capture_reference_unknown";
+        }
+        return "eligible_exact_media";
+    }
+
+    private static boolean allActiveEndpointsAllowPcmShadow(
+            java.util.List<PlaybackEndpoint> endpoints) {
+        if (endpoints == null || endpoints.size() != 1) return false;
+        PlaybackEndpoint endpoint = endpoints.get(0);
+        return endpoint != null && endpoint.policyResolved && endpoint.allowsDspControl()
+                && SystemStreamPolicies.defaultEnabledForPublicUsage(endpoint.publicUsage);
+    }
+
+    private void logPcmShadow(PcmShadowDsp.Result result, String eligibilityReason) {
+        if (result == null) return;
+        String state = result.active + ":" + Math.round(result.requestedGainDb * 2f)
+                + ':' + Math.round(result.appliedGainDb * 2f) + ':' + result.reason
+                + ':' + eligibilityReason;
+        DiagnosticLog.transition("pcm_dsp_shadow", state, String.format(Locale.US,
+                "mode=SHADOW_ONLY audibleApplied=false active=%s eligibility=%s "
+                        + "requestedGainDb=%.2f shadowGainDb=%.2f inputPeakDbfs=%.2f "
+                        + "shadowPcmPeakDbfs=%.2f projectedOutputPeakDbfs=%.2f "
+                        + "clippedSamples=%d processedSamples=%d reason=%s",
+                result.active, eligibilityReason, result.requestedGainDb, result.appliedGainDb,
+                result.inputPeakDbfs, result.shadowPcmPeakDbfs,
+                result.projectedOutputPeakDbfs, result.clippedSamples,
+                result.processedSamples, result.reason));
+    }
+
+    private void resetPcmShadowState(String reason, boolean newCaptureLifecycle) {
+        pcmShadowDsp.reset();
+        lastPcmShadowResult = null;
+        pcmShadowEligibilityReason = reason == null ? "reset" : reason;
+        if (newCaptureLifecycle) {
+            pcmDspCaptureEpoch++;
+            pcmDspFeasibilityLogged = false;
+        }
+    }
+
+    private void logPcmDspFeasibilityOnce(String lifecycle) {
+        if (pcmDspFeasibilityLogged) return;
+        String state = pcmDspCaptureEpoch + ":" + pcmDspFeasibility.mode + ':'
+                + pcmDspFeasibility.captureSemantics + ':'
+                + pcmDspFeasibility.duplicatePrevention + ':'
+                + pcmDspFeasibility.audibleOutputAllowed;
+        DiagnosticLog.transition("pcm_dsp_feasibility", state,
+                "epoch=" + pcmDspCaptureEpoch + " lifecycle=" + lifecycle
+                        + " mode=" + pcmDspFeasibility.mode
+                        + " captureSemantics=" + pcmDspFeasibility.captureSemantics
+                        + " duplicatePrevention=" + pcmDspFeasibility.duplicatePrevention
+                        + " audibleOutputAllowed=" + pcmDspFeasibility.audibleOutputAllowed
+                        + " reason=" + pcmDspFeasibility.reason);
+        pcmDspFeasibilityLogged = true;
+    }
+
     private SafetySettings toSafetySettings(ControlProfile profile) {
         int min = DbMath.clamp(profile.minMediaIndex, controlCurve.minIndex(), controlCurve.maxIndex());
         int max = Math.max(min, controlCurve.capIndexFromPercent(profile.maxMediaPercent));
@@ -1391,6 +1522,7 @@ public class NormalizerService extends Service {
         String oldKey = currentDevice == null ? "" : DeviceDetector.key(currentDevice);
         String newKey = DeviceDetector.key(detected);
         if (force || !oldKey.equals(newKey)) {
+            resetPcmShadowState("route_changed", false);
             if (enhancedSessionDsp != null && !oldKey.isEmpty())
                 enhancedSessionDsp.onPolicyChanged();
             if (optionalDsp != null && !oldKey.isEmpty()) optionalDsp.onRouteChanged();
@@ -1516,6 +1648,7 @@ public class NormalizerService extends Service {
         controlCoordinator.onStopped();
         hardCapLatch.reset();
         resetGlobalDifferentialState();
+        resetPcmShadowState("service_stopped", false);
         if (enhancedSessionDsp != null) enhancedSessionDsp.onStopped();
         if (optionalDsp != null) optionalDsp.onServiceStopped();
         DiagnosticLog.event("service_stop", "reason=" + clean(reason));
@@ -1552,6 +1685,7 @@ public class NormalizerService extends Service {
         controlCoordinator.onStopped();
         hardCapLatch.reset();
         resetGlobalDifferentialState();
+        resetPcmShadowState("service_destroyed", false);
         if (enhancedSessionDsp != null) enhancedSessionDsp.onStopped();
         if (optionalDsp != null) optionalDsp.onServiceStopped();
         if (worker != null) worker.interrupt();

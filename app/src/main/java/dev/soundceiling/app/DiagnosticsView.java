@@ -72,9 +72,10 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 "Engine: %s\nCapture: %s · signal: %s · PCM: %s\n"
                         + "Source: %s · package: %s · sourceConfidence: %s · access: %s · rule: %s\n"
                         + "meteringCapability: %s\nЧастотный спектр: %s · age %d ms\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
-                        + "Enhanced Session permission: %s\n"
-                        + "Session DSP: %s · session=%d · uid=%d · package=%s\n"
-                        + "Session gain: requested=%+.2f dB · applied=%+.2f dB · reason=%s\n"
+                        + "Session DSP: QUARANTINED · reason=%s\n"
+                        + "PCM DSP mode: %s · audible output: %s · reason=%s\n"
+                        + "Shadow gain: requested=%+.2f dB · applied=%+.2f dB · active=%s\n"
+                        + "Shadow peaks: projected=%.2f dBFS · PCM=%.2f dBFS · clipped=%d · reason=%s\n"
                         + "Downgrade reason: %s\nRoute: %s · Device profile: %s\n"
                         + "Media: %d/%d · effective max: %d\n"
                         + "Raw Peak %.1f dBFS · LUFS-like %.1f · reaction %s\nLog: %s",
@@ -85,11 +86,13 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 state.sourceConfidence, state.sourceAccessState, state.appRuleLabel,
                 state.meteringCapability, spectrumSource(state), state.meterAgeMs,
                 state.volumeControlCapability, state.dspTransportCapability,
-                state.enhancedSessionPermissionGranted ? "granted" : "missing",
-                state.sessionDspActive ? "ACTIVE" : "inactive", state.sessionId, state.sessionUid,
-                state.sessionPackage.isEmpty() ? "—" : state.sessionPackage,
-                state.sessionDspRequestedGainDb, state.sessionDspAppliedGainDb,
-                state.sessionDspReason.isEmpty() ? "—" : state.sessionDspReason,
+                EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON,
+                state.pcmDspMode, state.pcmDspAudibleOutputAllowed ? "ALLOWED" : "BLOCKED",
+                state.pcmDspReason,
+                state.pcmShadowRequestedGainDb, state.pcmShadowAppliedGainDb,
+                state.pcmShadowActive ? "yes" : "no",
+                state.pcmShadowProjectedPeakDbfs, state.pcmShadowPcmPeakDbfs,
+                state.pcmShadowClippedSamples, state.pcmShadowReason,
                 state.downgradeReason.isEmpty() ? "—" : state.downgradeReason,
                 state.routeLabel.isEmpty() ? "—" : state.routeLabel,
                 state.profileName.isEmpty() ? "—" : state.profileName,

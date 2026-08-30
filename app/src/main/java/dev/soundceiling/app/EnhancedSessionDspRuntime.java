@@ -36,6 +36,13 @@ final class EnhancedSessionDspRuntime {
                 float outputRmsDb, boolean outputValid,
                 int mediaIndex, String currentRouteIdentity,
                 boolean enabled, long nowMs) {
+        if (!EnhancedSessionSetup.runtimeAllowed()) {
+            release(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON, false);
+            reason = EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON;
+            DiagnosticLog.transition("session_dsp_unavailable", reason,
+                    "authority=field_quarantine constructorAllowed=false");
+            return;
+        }
         String route = currentRouteIdentity == null ? "" : currentRouteIdentity;
         if (!route.equals(routeIdentity)) {
             release("session_route_changed", true);

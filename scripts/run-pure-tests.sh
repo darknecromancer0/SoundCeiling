@@ -90,6 +90,8 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspProbeMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspDifferentialVerifier.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ContinuousDspController.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PcmDspFeasibility.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PcmShadowDsp.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CoarseMediaFallbackController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspGainSlew.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/GlobalDspProbeDecision.java" \
@@ -148,6 +150,9 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V076TelemetryPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V0776StrictSafetyPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V080SafeCustomMatrixPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V090SessionDspQuarantinePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V090PcmFeasibilityPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V090PcmShadowDspPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -237,5 +242,8 @@ java -cp "$OUT" dev.soundceiling.app.V076ArchitectureRegressionPureTest
 java -cp "$OUT" dev.soundceiling.app.V076TelemetryPureTest
 java -cp "$OUT" dev.soundceiling.app.V0776StrictSafetyPureTest
 java -cp "$OUT" dev.soundceiling.app.V080SafeCustomMatrixPureTest
+java -cp "$OUT" dev.soundceiling.app.V090SessionDspQuarantinePureTest
+java -cp "$OUT" dev.soundceiling.app.V090PcmFeasibilityPureTest
+java -cp "$OUT" dev.soundceiling.app.V090PcmShadowDspPureTest
 java -cp "$OUT" dev.soundceiling.app.V072GlobalDspProbePureTest
 java -cp "$OUT" dev.soundceiling.app.V072ResetDefaultsPureTest

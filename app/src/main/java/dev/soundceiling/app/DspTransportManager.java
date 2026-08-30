@@ -77,6 +77,11 @@ final class DspTransportManager implements AutoCloseable {
 
     /** v0.8 deterministic authority over the first exact custom Config that reads back exactly. */
     boolean verifyEnhancedSessionReadback(DspEndpointHandle handle, boolean allowedMediaActive) {
+        if (!EnhancedSessionSetup.runtimeAllowed()) {
+            releaseEnhancedSession(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON);
+            reason = EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON;
+            return false;
+        }
         if (enhancedSessionVerificationStopped) {
             reason = "enhanced_session_readback_cancelled:service_stopped";
             return false;

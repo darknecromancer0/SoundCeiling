@@ -149,6 +149,9 @@ final class AndroidDynamicsProcessingTransport implements DspTransport {
 
     static AndroidDynamicsProcessingTransport forEnhancedSessionProbe(
             DspEndpointHandle handle, EnhancedSessionCandidateMatrix.Profile profile) {
+        if (!EnhancedSessionSetup.runtimeAllowed()) {
+            return unavailable(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON);
+        }
         if (handle == null || !handle.isEnhancedSession() || handle.audioSessionId <= 0) {
             return unavailable("enhanced_session_handle_untrusted");
         }

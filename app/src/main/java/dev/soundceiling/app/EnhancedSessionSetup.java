@@ -8,6 +8,13 @@ final class EnhancedSessionSetup {
     static final String REQUIRED_STATUS = "Enhanced Session DSP setup required";
     static final boolean OEM_DEFAULT_RUNTIME_QUARANTINED = true;
     static final boolean SAFE_CUSTOM_MATRIX_ENABLED = true;
+    static final boolean RUNTIME_QUARANTINED = true;
+    static final String RUNTIME_QUARANTINE_REASON =
+            "field_quarantined_neutral_media_bypass";
+
+    static boolean runtimeAllowed() {
+        return !RUNTIME_QUARANTINED;
+    }
 
     private EnhancedSessionSetup() {}
 }

@@ -27,7 +27,12 @@ public final class V080SafeCustomMatrixPureTest {
         require(EnhancedSessionSetup.OEM_DEFAULT_RUNTIME_QUARANTINED,
                 "unknown OEM-default Enhanced Session constructor must stay quarantined");
         require(EnhancedSessionSetup.SAFE_CUSTOM_MATRIX_ENABLED,
-                "v0.8 must enable only the safe explicit custom matrix");
+                "the v0.8 explicit custom matrix remains available for historical regression");
+        require(!EnhancedSessionSetup.runtimeAllowed(),
+                "v0.9 field quarantine must make the historical matrix unreachable");
+        require("field_quarantined_neutral_media_bypass".equals(
+                        EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON),
+                "historical matrix must expose the proven field failure reason");
         for (EnhancedSessionCandidateMatrix.Profile profile : profiles) {
             require(profile.explicitConfig, "every candidate must require an explicit Config");
             require(profile.channelCount == 2, "pilot candidates must preserve stereo topology");

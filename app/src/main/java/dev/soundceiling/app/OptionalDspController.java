@@ -109,6 +109,12 @@ final class OptionalDspController implements AutoCloseable {
 
     /** v0.7.7.1 deterministic non-zero Session DSP verification. */
     boolean verifyEnhancedSessionReadback(DspEndpointHandle handle, boolean allowedMediaActive) {
+        if (!EnhancedSessionSetup.runtimeAllowed()) {
+            transports.releaseEnhancedSession(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON);
+            policyDecision = null;
+            detail = EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON;
+            return false;
+        }
         boolean verified = transports.verifyEnhancedSessionReadback(handle, allowedMediaActive);
         policyDecision = null;
         detail = transports.reason();

@@ -32,6 +32,10 @@ final class StatusText {
     }
 
     static String sessionDsp(RuntimeState s) {
+        if (EnhancedSessionSetup.RUNTIME_QUARANTINED) {
+            return "Session DSP quarantined · "
+                    + EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON;
+        }
         if (!s.enhancedSessionPermissionGranted) {
             return EnhancedSessionSetup.REQUIRED_STATUS + " · "
                     + EnhancedSessionSetup.ADB_GRANT_COMMAND;
@@ -51,6 +55,21 @@ final class StatusText {
         String reason = s.sessionDspReason == null || s.sessionDspReason.isEmpty()
                 ? "session_dsp_unavailable" : s.sessionDspReason;
         return "Session DSP unavailable · " + reason;
+    }
+
+    static String pcmDsp(RuntimeState s) {
+        String reason = s.pcmDspReason == null || s.pcmDspReason.isEmpty()
+                ? "public_playback_capture_keeps_original_audio" : s.pcmDspReason;
+        String mode = s.pcmDspMode == null || s.pcmDspMode.isEmpty()
+                ? "SHADOW_ONLY" : s.pcmDspMode;
+        String base = "SHADOW_ONLY".equals(mode) && !s.pcmDspAudibleOutputAllowed
+                ? "PCM DSP: Shadow only · audible output blocked"
+                : "PCM DSP: " + mode;
+        if (!s.pcmShadowActive) return base + " · " + reason;
+        return String.format(java.util.Locale.US,
+                "%s · requested %+.2f dB · shadow %+.2f dB · %s · %s",
+                base, s.pcmShadowRequestedGainDb, s.pcmShadowAppliedGainDb,
+                reason, s.pcmShadowReason);
     }
 
     static String engine(RuntimeState s) {

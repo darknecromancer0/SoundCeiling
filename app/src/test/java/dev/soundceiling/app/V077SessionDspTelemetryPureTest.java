@@ -2,25 +2,26 @@ package dev.soundceiling.app;
 
 public final class V077SessionDspTelemetryPureTest {
     public static void main(String[] args) {
-        missingPermissionExposesExactSetupCommand();
+        fieldQuarantinePreemptsLegacySetupCommand();
         activeSessionPublishesIdentityAndGain();
-        activeV080StatusExposesProfileAndPilotCap();
+        historicalActiveStateCannotOverrideFieldQuarantine();
         zeroSessionCannotClaimActiveDsp();
         diagnosticsCopyPreservesSessionTelemetry();
         System.out.println("V077SessionDspTelemetryPureTest: PASS");
     }
 
-    private static void missingPermissionExposesExactSetupCommand() {
+    private static void fieldQuarantinePreemptsLegacySetupCommand() {
         RuntimeState state = new RuntimeState.Builder()
                 .running(true)
                 .enhancedSession(false, false, -1, -1, "", 0f, 0f,
                         "session_dump_permission_missing")
                 .build();
         String status = StatusText.sessionDsp(state);
-        require(status.contains("Enhanced Session DSP setup required"),
-                "missing DUMP permission must state setup is required");
-        require(status.contains(EnhancedSessionSetup.ADB_GRANT_COMMAND),
-                "setup status must include exact copyable ADB command");
+        require(status.contains("quarantined")
+                        && status.contains(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON),
+                "v0.9 field quarantine must preempt every legacy permission state");
+        require(!status.contains(EnhancedSessionSetup.ADB_GRANT_COMMAND),
+                "quarantined runtime must not ask the user for obsolete DUMP setup");
         require(!state.sessionDspActive && state.sessionId <= 0,
                 "missing permission cannot claim active Session DSP");
     }
@@ -40,8 +41,9 @@ public final class V077SessionDspTelemetryPureTest {
         require(Math.abs(state.sessionDspAppliedGainDb - 3.75f) < .001f,
                 "applied Session DSP gain telemetry");
         String status = StatusText.sessionDsp(state);
-        require(status.contains("Session DSP 233") && status.contains("ru.yandex.music"),
-                "active status must identify the bound session and package");
+        require(status.contains(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON)
+                        && !status.contains("Session DSP 233"),
+                "legacy active telemetry must not be presented as v0.9 runtime authority");
     }
 
     private static void zeroSessionCannotClaimActiveDsp() {
@@ -53,17 +55,17 @@ public final class V077SessionDspTelemetryPureTest {
                 "session 0 is never an active Enhanced Session DSP transport");
     }
 
-    private static void activeV080StatusExposesProfileAndPilotCap() {
+    private static void historicalActiveStateCannotOverrideFieldQuarantine() {
         RuntimeState state = new RuntimeState.Builder()
                 .running(true)
                 .enhancedSession(true, true, 240, 10292, "ru.yandex.music", 12f, 3f,
                         "session_dsp_active:cts_frequency_full_bypass_stereo")
                 .build();
         String status = StatusText.sessionDsp(state);
-        require(status.contains("cts_frequency_full_bypass_stereo"),
-                "v0.8 active status must expose selected custom profile");
-        require(status.contains("pilot max +3.00 dB"),
-                "v0.8 active status must expose the bounded positive-gain pilot");
+        require(status.contains(EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON),
+                "v0.8 profile state must remain historical under v0.9 quarantine");
+        require(!status.contains("pilot max") && !status.contains("cts_frequency"),
+                "v0.9 UI must not advertise a quarantined field profile");
     }
 
     private static void diagnosticsCopyPreservesSessionTelemetry() {
@@ -71,6 +73,9 @@ public final class V077SessionDspTelemetryPureTest {
                 .running(true)
                 .enhancedSession(true, true, 241, 10292, "ru.yandex.music", -1.5f, -1.25f,
                         "session_dsp_active")
+                .pcmDsp("SHADOW_ONLY", "public_playback_capture_keeps_original_audio",
+                        false, true, 2.5f, 1.5f, -3f, -4f, 0,
+                        "dsp_loudness_recovery")
                 .build();
         RuntimeState copy = original.withDiagnostics(
                 java.util.List.of(DiagnosticItem.green("ok", "ok")));
@@ -79,6 +84,13 @@ public final class V077SessionDspTelemetryPureTest {
         require("ru.yandex.music".equals(copy.sessionPackage)
                         && "session_dsp_active".equals(copy.sessionDspReason),
                 "diagnostics enrichment must preserve Session DSP text telemetry");
+        require("SHADOW_ONLY".equals(copy.pcmDspMode)
+                        && !copy.pcmDspAudibleOutputAllowed && copy.pcmShadowActive,
+                "diagnostics enrichment must preserve fail-closed PCM mode");
+        require(Math.abs(copy.pcmShadowRequestedGainDb - 2.5f) < .001f
+                        && Math.abs(copy.pcmShadowAppliedGainDb - 1.5f) < .001f
+                        && copy.pcmShadowClippedSamples == 0,
+                "diagnostics enrichment must preserve PCM shadow metrics");
     }
 
     private static void require(boolean value, String message) {

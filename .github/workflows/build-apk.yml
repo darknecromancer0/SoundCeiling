@@ -11,10 +11,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Upload source snapshot for v0.8 development
+      - name: Upload source snapshot for v0.9 development
         uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.8-source-snapshot
+          name: SoundCeiling-v0.9-source-snapshot
           path: |
             .github
             app
@@ -150,12 +150,24 @@ jobs:
         run: bash ./scripts/run-v07710-emergency-dsp-quarantine-test.sh
       - name: Check v0.7.7.10 emergency DSP quarantine contract
         run: bash ./scripts/check-v07710-release-contract.sh
-      - name: Check v0.8 safe custom Session DSP pure tests
+      - name: Check historical v0.8 custom Session DSP pure tests
         run: bash ./scripts/run-v080-safe-custom-matrix-tests.sh
-      - name: Check v0.8 safe custom Session DSP wiring
+      - name: Check historical v0.8 custom Session DSP wiring
         run: bash ./scripts/check-v080-session-matrix-contract.sh
-      - name: Check v0.8 release contract
+      - name: Check historical v0.8 release contract
         run: bash ./scripts/check-v080-release-contract.sh
+      - name: Check v0.9 Session DSP quarantine pure test
+        run: bash ./scripts/run-v090-session-quarantine-tests.sh
+      - name: Check v0.9 Session DSP quarantine wiring
+        run: bash ./scripts/check-v090-session-quarantine-contract.sh
+      - name: Check v0.9 PCM feasibility gate
+        run: bash ./scripts/run-v090-pcm-feasibility-tests.sh
+      - name: Check v0.9 PCM shadow processor
+        run: bash ./scripts/run-v090-pcm-shadow-tests.sh
+      - name: Check v0.9 truthful runtime wiring
+        run: bash ./scripts/check-v090-runtime-wiring-contract.sh
+      - name: Check v0.9 release contract
+        run: bash ./scripts/check-v090-release-contract.sh
       - name: Install Android SDK 35 packages
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
@@ -179,6 +191,11 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.8.0-debug-apk
+          name: SoundCeiling-v0.9.0-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SoundCeiling-v0.9.0-debug-apk-checksum
+          path: app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error

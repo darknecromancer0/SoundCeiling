@@ -83,10 +83,10 @@ final class RuntimeStateStore {
         DiagnosticLog.transition("raise_blocked_reason", raiseReason,
                 "reason=" + raiseReason + " source=" + source);
 
-        DiagnosticLog.transition("session_dsp_permission",
-                state.enhancedSessionPermissionGranted ? "granted" : "missing",
-                "granted=" + state.enhancedSessionPermissionGranted
-                        + " reason=" + state.sessionDspReason);
+        DiagnosticLog.transition("session_dsp_quarantine",
+                EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON,
+                "quarantined=true constructorAllowed=false reason="
+                        + EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON);
         String sessionKey = state.sessionDspActive
                 ? state.sessionId + ":" + state.sessionUid + ":" + state.sessionPackage
                 : "inactive:" + state.sessionDspReason;
@@ -96,6 +96,20 @@ final class RuntimeStateStore {
                         + " requestedGainDb=" + state.sessionDspRequestedGainDb
                         + " appliedGainDb=" + state.sessionDspAppliedGainDb
                         + " reason=" + state.sessionDspReason);
+        String pcmDspKey = state.pcmDspMode + ':' + state.pcmDspAudibleOutputAllowed + ':'
+                + state.pcmShadowActive + ':' + Math.round(state.pcmShadowAppliedGainDb * 2f)
+                + ':' + state.pcmShadowReason;
+        DiagnosticLog.transition("pcm_dsp_runtime", pcmDspKey,
+                "mode=" + state.pcmDspMode
+                        + " audibleOutputAllowed=" + state.pcmDspAudibleOutputAllowed
+                        + " shadowActive=" + state.pcmShadowActive
+                        + " requestedGainDb=" + state.pcmShadowRequestedGainDb
+                        + " shadowGainDb=" + state.pcmShadowAppliedGainDb
+                        + " projectedPeakDbfs=" + state.pcmShadowProjectedPeakDbfs
+                        + " shadowPcmPeakDbfs=" + state.pcmShadowPcmPeakDbfs
+                        + " clippedSamples=" + state.pcmShadowClippedSamples
+                        + " reason=" + state.pcmDspReason
+                        + " shadowReason=" + state.pcmShadowReason);
     }
 
     private static String raiseBlockReason(RuntimeState state) {

@@ -1,8 +1,41 @@
-# Sound Ceiling for Android - v0.8.0
+# Sound Ceiling for Android - v0.9.0
 
-SoundCeiling is a no-root Android 10+ adaptive audio controller. v0.8.0 is the first bounded
-Samsung Session DSP compatibility-matrix field build: Samsung Media remains the user master while
-only an exact, custom-configured non-zero session may receive continuous gain.
+SoundCeiling is a no-root Android 10+ adaptive audio safety controller. v0.9.0 is an install-over
+corrective and PCM feasibility build driven by Samsung v0.8.0 field evidence. Samsung Media remains
+the user master; hard Media/Safety actions remain separate from ordinary normalization.
+
+## v0.9.0 PCM shadow feasibility and Session DSP quarantine
+
+- **Enhanced Session DSP is field-quarantined before construction.** The neutral v0.8.0 Samsung
+  effect could break physical Media authority even though its custom topology and handshake read
+  back correctly. Runtime, facade, manager, and Android factory all reject it with
+  `field_quarantined_neutral_media_bypass`. The v0.8 matrix remains only as historical regression
+  code and cannot be selected or attached.
+- **The obsolete DUMP setup is removed.** v0.9.0 neither declares `android.permission.DUMP` nor
+  asks the user to run an ADB grant command. Simple, Advanced, Diagnostics, and logs report the
+  field quarantine directly.
+- **PCM normalization now runs in an isolated shadow buffer.** For a positively allowed,
+  high-confidence targeted MEDIA source with a known output-domain projection, the processor
+  calculates continuous positive gain for quiet material and attenuation for loud material/peaks.
+  It enforces the configured output peak ceiling and `-0.5 dBFS` PCM headroom with saturating PCM16
+  conversion and lifecycle reset.
+- **PCM DSP is deliberately non-audible in this build.** Public Android playback capture keeps the
+  original playback rendered. Starting a normal output track from the processed copy would duplicate
+  the sound, so the immutable verdict is `SHADOW_ONLY`, `audibleOutputAllowed=false`, reason
+  `public_playback_capture_keeps_original_audio`. No audible PCM renderer is created.
+- **The UI and logs do not claim that shadow gain was applied to the speaker.** Telemetry uses
+  `pcm_dsp_feasibility`, `pcm_dsp_shadow`, and `pcm_dsp_runtime`, including requested/shadow gain,
+  projected/PCM peaks, clipping count, eligibility, and the blocked-output reason.
+- **Safety and user authority are unchanged.** Volume Down wins immediately. Automatic Media UP
+  remains limited to acknowledged SoundCeiling-owned attenuation debt. Safety Maximum, hard cap,
+  Quiet Now, source exclusions, route/capture reset, and stop/restart fail-closed behavior remain
+  active without a Session effect.
+
+This release verifies the PCM algorithm and safe routing boundary; it does **not yet make quiet and
+loud content converge audibly**. Audible replacement remains blocked until an exclusive public
+route can be proven without duplicating playback or taking authority away from Samsung Media.
+
+Samsung field acceptance: `docs/field-tests/2026-08-29-v0.9.0-samsung-checklist.md`.
 
 ## v0.8.0 safe Samsung Session DSP matrix
 

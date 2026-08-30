@@ -17,7 +17,7 @@ require_order(){
 }
 
 require "$WF" 'path: app/build/outputs/apk/debug/app-debug.apk'
-reject "$WF" 'app/build/outputs/apk/debug/app-debug.apk.sha256'
+require "$WF" 'path: app/build/outputs/apk/debug/app-debug.apk.sha256'
 require "$WF" 'run: ./scripts/run-pure-tests.sh'
 require "$WF" 'run: bash ./scripts/check-v07-adaptive-contract.sh'
 require "$WF" 'run: bash ./scripts/check-v071-dsp-contract.sh'

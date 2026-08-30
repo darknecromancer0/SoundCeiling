@@ -1,11 +1,8 @@
 package dev.soundceiling.app;
 
 import android.app.AlertDialog;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
@@ -35,7 +32,6 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private final TextView modeInfo, profileInfo, liveDetails, decisionDetails, globalDspStatus, linkedLockHint;
     private final TextView sessionDspSetupStatus;
     private final TextView strictSafetyStatus;
-    private final Button copySessionDspCommand;
     private final Button strictSafetyAccess;
     private final Button startStop;
     private final StatusCardView statusCard;
@@ -70,9 +66,6 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         sessionDspSetupStatus = secondary("", 13);
         sessionDspSetupStatus.setPadding(0, dp(8), 0, dp(6));
         root.addView(sessionDspSetupStatus);
-        copySessionDspCommand = button("Копировать команду Enhanced Session DSP");
-        copySessionDspCommand.setOnClickListener(v -> copyEnhancedSessionCommand());
-        root.addView(copySessionDspCommand, fullButton());
 
         section("Основной actuator");
         globalDsp = addSwitch("Global DSP", HelpText.GLOBAL_DSP, Prefs.globalDspEnabled(context),
@@ -356,23 +349,8 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     }
 
     private void refreshEnhancedSessionSetup() {
-        boolean granted = getContext().checkSelfPermission(EnhancedSessionSetup.DUMP_PERMISSION)
-                == PackageManager.PERMISSION_GRANTED;
-        if (!granted) {
-            sessionDspSetupStatus.setText(EnhancedSessionSetup.REQUIRED_STATUS + "\n"
-                    + EnhancedSessionSetup.ADB_GRANT_COMMAND);
-            copySessionDspCommand.setVisibility(View.VISIBLE);
-            return;
-        }
-        copySessionDspCommand.setVisibility(View.GONE);
-        sessionDspSetupStatus.setText(runtime.running ? StatusText.sessionDsp(runtime)
-                : "Enhanced Session DSP permission granted · session discovery starts with playback");
-    }
-
-    private void copyEnhancedSessionCommand() {
-        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
-        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(
-                "SoundCeiling Enhanced Session DSP", EnhancedSessionSetup.ADB_GRANT_COMMAND));
+        sessionDspSetupStatus.setText(StatusText.sessionDsp(runtime) + "\n"
+                + StatusText.pcmDsp(runtime));
     }
 
     private void refreshSharedOutputControls() {
