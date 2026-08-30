@@ -47,7 +47,10 @@ final class HelpText {
         if (CAPTURE_REFERENCE.equals(key)) return tri("Capture pre/post-volume показывает, измерен сигнал до или после системной громкости.", "Определяет математическую интерпретацию gain correction.", "Точно только после подтверждённого capture-reference probe; UNKNOWN блокирует опасное повышение.");
         if (VERIFIED_SOURCE.equals(key)) return tri("Verified source — приложение-кандидат, подтверждённое targeted PCM, а не только MediaSession.", "Разрешает selective per-app policy там, где она технически применима.", "Точно только после стабильного UID-targeted non-silent PCM.");
         if (VERIFIED_POLICY_DSP.equals(key)) return tri("Verified policy-scoped DSP — DSP handle с доверенным provenance для конкретной policy scope.", "Позволяет selective DSP без обработки чужих endpoints.", "Точно только для APP_OWNED или DOCUMENTED_PROVIDER handle с совпадающей policy.");
-        if (VERIFIED_GLOBAL_DSP.equals(key)) return tri("Verified global-mix DSP — session-zero DynamicsProcessing, чей эффект на allowed MEDIA подтверждён bounded probe.", "При включённом Global DSP становится основным normalizer actuator общего mix.", "Active считается точным только при VERIFIED_GLOBAL_MIX и действующем route proof.");
+        if (VERIFIED_GLOBAL_DSP.equals(key)) return tri(
+                "Исторический global-mix DSP использовал session-zero DynamicsProcessing; после Samsung field-регрессии v0.8 он помещён в полный карантин до любого Android constructor.",
+                "В v0.9 не является active actuator и не меняет Samsung Media или слышимый аудиовыход; нормализация рассчитывается только отдельным PCM Shadow.",
+                "Карантин fail-closed: никакой constructor, attach, probe или gain Session DSP не разрешён.");
         if (MEDIA_STEP_PERCENT.equals(key)) return tri("Media step — реальная дискретная ступень Android/Samsung; percent — её отображение на 0–100%.", "Fallback может выбирать только существующие steps, а не произвольный плавный процент.", "Точно, когда UI показывает фактический index и snapped percent текущего route.");
         if (MIN_MEDIA.equals(key)) return "Minimum Media — нижняя граница fallback Media actuator. Пользовательское ручное снижение ниже неё не должно автоматически возвращаться вверх.";
         if (MAX_MEDIA.equals(key)) return "Maximum Media — жёсткая верхняя граница fallback/safety Media actuator.";
@@ -55,7 +58,7 @@ final class HelpText {
         if (QUIET_NOW.equals(key)) return "Quiet Now — одноразовое снижение Media до настроенного уровня. Доступно только в Расширенном режиме.";
         if (QUIET_LEVEL.equals(key)) return "Quiet Now level — предел Media для Quiet Now; команда никогда не повышает громкость.";
         if (CEILING_BASIS.equals(key)) return "Шкала управления меняет представление output ceilings: Media %, Digital dB или калиброванный dB SPL. Без действующей калибровки dB SPL используется Safe fallback. Смена шкалы не создаёт права на повышение и не создаёт отдельный controller.";
-        if (TARGET_LOUDNESS.equals(key)) return "Target — цель воспринимаемой громкости для normalizer. Сам по себе тихий материал не создаёт нового права повышать Media; fallback-восстановление возвращает только ранее сделанное SoundCeiling снижение. Verified Global DSP может выполнять допустимую коррекцию через gain.";
+        if (TARGET_LOUDNESS.equals(key)) return "Target — цель вычисления нормализации в PCM Shadow. В v0.9 он не разрешает слышимый gain и не создаёт нового права повышать Samsung Media; fallback-восстановление возвращает только ранее сделанное SoundCeiling снижение. Hard safety остаётся отдельным путём.";
         if (NORMALIZATION_STRENGTH.equals(key)) return "Normalization strength — доля рассчитанной обычной коррекции. Hard safety остаётся отдельным приоритетным путём.";
         if (TOLERANCE.equals(key)) return "Tolerance — зона вокруг target, где normalizer удерживает текущий уровень.";
         if (DOWN_ATTACK.equals(key)) return "Downward attack — скорость обычного снижения; hard peak/transient safety работает отдельно.";
