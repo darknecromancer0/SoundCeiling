@@ -12,16 +12,22 @@ final class HelpText {
             CONTROL_LOUDNESS="CONTROL_LOUDNESS", CAPTURE_REFERENCE="CAPTURE_REFERENCE", VERIFIED_SOURCE="VERIFIED_SOURCE",
             VERIFIED_POLICY_DSP="VERIFIED_POLICY_DSP", VERIFIED_GLOBAL_DSP="VERIFIED_GLOBAL_DSP",
             WHOLE_OUTPUT_DSP="WHOLE_OUTPUT_DSP", MEDIA_STEP_PERCENT="MEDIA_STEP_PERCENT", DSP_FALLBACK="DSP_FALLBACK";
+    static final String ACCESSIBILITY_RELAY="ACCESSIBILITY_RELAY";
 
     private static final String[] VISIBLE_DIAGNOSTIC_TERMS = {
             PCM, LUFS_LIKE, DBFS, RMS, DSP, DSP_FALLBACK, DBSPL, RAW_PEAK, PROJECTED_PEAK,
             CONTROL_LOUDNESS, CAPTURE_REFERENCE, VERIFIED_SOURCE, VERIFIED_POLICY_DSP,
-            VERIFIED_GLOBAL_DSP, WHOLE_OUTPUT_DSP, MEDIA_STEP_PERCENT, DEFAULT_LINKED_LOCK, GLOBAL_DSP
+            VERIFIED_GLOBAL_DSP, WHOLE_OUTPUT_DSP, MEDIA_STEP_PERCENT, DEFAULT_LINKED_LOCK,
+            GLOBAL_DSP, ACCESSIBILITY_RELAY
     };
 
     static String[] visibleDiagnosticTermIds() { return VISIBLE_DIAGNOSTIC_TERMS.clone(); }
 
     static String forKey(String key) {
+        if (ACCESSIBILITY_RELAY.equals(key)) return tri(
+                "Accessibility Relay — экспериментальный audible-путь: точный разрешённый PCM обрабатывается локально и воспроизводится отдельным Accessibility output.",
+                "Media временно удерживается на 0; пользователь управляет Relay volume. PCM Shadow остаётся неслышимым и не получает renderer authority.",
+                "Точно только после PRE_VOLUME proof, Media-zero acknowledgement и ручного подтверждения тихой пробы; при любой неопределённости Relay останавливается.");
         if (GLOBAL_DSP.equals(key) || WHOLE_OUTPUT_DSP.equals(key)) return tri(
                 "PCM Shadow v0.9 рассчитывает gain/leveling на отдельной копии разрешённого targeted PCM только в памяти.",
                 "Влияет только на feasibility-метрики и логи; Samsung Media и слышимый аудиовыход не изменяются.",

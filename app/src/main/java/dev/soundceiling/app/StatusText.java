@@ -68,8 +68,38 @@ final class StatusText {
                 reason, s.pcmShadowReason);
     }
 
+    static String relay(RuntimeState s) {
+        String reason = s.relayReason == null || s.relayReason.isEmpty()
+                ? "relay_off" : s.relayReason;
+        return switch (s.relayState) {
+            case "PREFLIGHT" -> "Relay: проверка условий · " + reason;
+            case "CAPTURE_PROVEN" -> "Relay: точный PCM подтверждён · " + reason;
+            case "MEDIA_MUTING" -> "Relay: временно выключает Samsung Media · " + reason;
+            case "MEDIA_MUTED" -> "Relay: Media 0, проверка PCM · " + reason;
+            case "QUIET_PROBE" -> String.format(java.util.Locale.US,
+                    "Тихая проба Relay · осталось %.1f с · %s",
+                    s.relayProbeRemainingMs / 1000f, reason);
+            case "AWAITING_CONFIRMATION" ->
+                    "Relay: ждёт подтверждения тихой пробы · " + reason;
+            case "ACTIVE" -> s.relayAudible
+                    ? String.format(java.util.Locale.US,
+                            "Relay активен · %s · gain %+.2f dB · output %.1f dBFS · %s",
+                            s.relayFullExperimental
+                                    ? "Full experimental +12 dB"
+                                    : "Safe +3 dB",
+                            s.relayAppliedGainDb,
+                            s.relayOutputPeakDbfs, reason)
+                    : "Relay: запуск подтверждённого выхода · " + reason;
+            case "ABORTING" -> "Relay: безопасная остановка · " + reason;
+            case "RECOVERY_REQUIRED" ->
+                    "Relay: нужно восстановление Media · " + reason;
+            default -> "Relay выключен · " + reason;
+        };
+    }
+
     static String engine(RuntimeState s) {
         if (!s.running) return "Sound Ceiling выключен";
+        if (s.relayAudible) return "Accessibility Relay";
         if (s.sessionDspActive && s.sessionId > 0) return "Session DSP";
 
         boolean precisePcm = s.pcmState == PcmAvailabilityState.ACTIVE

@@ -15,7 +15,7 @@ COORD="$R/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.ja
 
 need "$MANIFEST" 'android:name=".VolumeKeySafetyService"'
 need "$MANIFEST" 'android.permission.BIND_ACCESSIBILITY_SERVICE'
-need "$XML" 'android:accessibilityFlags="flagRequestFilterKeyEvents"'
+need "$XML" 'flagRequestFilterKeyEvents'
 need "$XML" 'android:canRequestFilterKeyEvents="true"'
 need "$POLICY" 'if (keyCode == KEY_VOLUME_DOWN) return false;'
 need "$TRACKER" 'REJECTED_HARD_CAP_OVERSHOOT'

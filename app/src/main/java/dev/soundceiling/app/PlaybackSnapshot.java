@@ -26,11 +26,13 @@ final class PlaybackSnapshot {
     final long updatedElapsedMs;
     final boolean observerHealthy;
     final String detail;
+    final boolean rendererOwnershipExpected;
+    final boolean rendererOwnershipProven;
 
     PlaybackSnapshot(boolean active, List<Integer> observedUsages, int observedPlayers,
                      long updatedElapsedMs, boolean observerHealthy, String detail) {
         this(active, factsFromUsages(observedUsages, updatedElapsedMs), observedPlayers,
-                updatedElapsedMs, observerHealthy, detail, true);
+                updatedElapsedMs, observerHealthy, detail, false, true, true);
     }
 
     static PlaybackSnapshot fromPlayerFacts(List<PlayerFact> facts, int observedPlayers,
@@ -38,11 +40,24 @@ final class PlaybackSnapshot {
                                             String detail) {
         List<PlayerFact> safe = facts == null ? Collections.emptyList() : facts;
         return new PlaybackSnapshot(observedPlayers > 0, safe, observedPlayers,
-                updatedElapsedMs, observerHealthy, detail, true);
+                updatedElapsedMs, observerHealthy, detail, false, true, true);
+    }
+
+    static PlaybackSnapshot fromPlayerFacts(List<PlayerFact> facts,
+            int observedPlayers, long updatedElapsedMs,
+            boolean observerHealthy, String detail,
+            boolean rendererOwnershipExpected,
+            boolean rendererOwnershipProven) {
+        List<PlayerFact> safe = facts == null ? Collections.emptyList() : facts;
+        return new PlaybackSnapshot(observedPlayers > 0, safe,
+                observedPlayers, updatedElapsedMs, observerHealthy, detail,
+                rendererOwnershipExpected, rendererOwnershipProven, true);
     }
 
     private PlaybackSnapshot(boolean active, List<PlayerFact> facts, int observedPlayers,
                              long updatedElapsedMs, boolean observerHealthy, String detail,
+                             boolean rendererOwnershipExpected,
+                             boolean rendererOwnershipProven,
                              boolean ignored) {
         this.active = active;
         ArrayList<PlayerFact> factCopy = new ArrayList<>();
@@ -61,6 +76,8 @@ final class PlaybackSnapshot {
         this.updatedElapsedMs = Math.max(0L, updatedElapsedMs);
         this.observerHealthy = observerHealthy;
         this.detail = detail == null ? "" : detail;
+        this.rendererOwnershipExpected = rendererOwnershipExpected;
+        this.rendererOwnershipProven = rendererOwnershipProven;
     }
 
     List<PlayerFact> playerFacts() {

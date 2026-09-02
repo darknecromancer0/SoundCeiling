@@ -1,4 +1,42 @@
-# Sound Ceiling for Android - v0.9.0
+# Sound Ceiling for Android - v0.9.1
+
+SoundCeiling v0.9.1 adds an **experimental field path** for one no-root audible-normalization
+feasibility test. It is built-in speaker only, deliberately fail-closed, and not a store release.
+PR #8 remains draft until a complete Samsung field log passes the published checklist.
+
+## v0.9.1 Accessibility Relay field experiment
+
+- **The only new audible PCM path is explicit Accessibility Relay.** It accepts one positively
+  allowed exact-UID playback capture, requires a proven `PRE_VOLUME` reference and one active
+  endpoint, processes PCM locally, and renders the bounded copy with
+  `USAGE_ASSISTANCE_ACCESSIBILITY`. No captured PCM is saved or uploaded.
+- **Original playback is suppressed only through an acknowledged Media-zero lease.** Relay saves
+  recovery state first, temporarily moves original Samsung Media to 0, proves that exact PCM still
+  arrives, and only then permits a five-second quiet probe. While Relay is active, the user controls
+  the separate Accessibility volume; moving the Samsung Media panel exits Relay instead of being
+  counter-written.
+- **Audible authority requires a manual one-stream confirmation.** The probe is capped at
+  `-30 dBFS`; the user must choose `Один чистый тихий поток` for the current epoch. Echo, a loud or
+  broken probe, stale confirmation, unknown output domain, route/source/projection change, renderer
+  fault, or failed readback stops the renderer before Media cleanup.
+- **Gain and output remain bounded.** Safe mode permits at most `+3 dB`; only an already active,
+  confirmed Relay exposes explicit Full experimental `+12 dB`. The final PCM boundary stays at or
+  below `-6 dBFS`, uses saturating PCM16 conversion, and treats clipping or excessive measured
+  latency as an abort.
+- **Recovery is durable and visible.** Media/Accessibility ownership is persisted before mute or
+  output changes. Process death or an ambiguous restore produces `RECOVERY_REQUIRED`; the UI offers
+  an explicit bounded restore and does not silently clear the record.
+- **Enhanced Session DSP remains quarantined.** The unsafe Samsung path is still blocked before
+  construction with `field_quarantined_neutral_media_bypass`. The v0.9 algorithmic copy remains
+  `SHADOW_ONLY`; Shadow never receives renderer authority and cannot claim speaker-applied gain.
+- **This repository still produces a field-only engineering APK.** `QUERY_ALL_PACKAGES` and the
+  `specialUse` foreground-service type remain for Samsung evidence collection. A separate
+  store-clean flavor, policy review, production signing, broader routing, and successful physical
+  acceptance are future gates, not v0.9.1 claims.
+
+Field procedure: `docs/field-tests/2026-08-31-v0.9.1-samsung-relay-checklist.md`.
+
+## Sound Ceiling for Android - v0.9.0 (historical baseline)
 
 SoundCeiling is a no-root Android 10+ adaptive audio safety controller. v0.9.0 is an install-over
 corrective and PCM feasibility build driven by Samsung v0.8.0 field evidence. Samsung Media remains
@@ -172,4 +210,5 @@ Playback-capture/log persistence continues to use the existing **MediaStore**/SA
 
 Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, Samsung 3/15/telemetry/wiring contracts, the v0.7.7.2 disabled-limiter compatibility topology contract, deterministic readback pure/wiring contracts, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
 
-Release artifact: **`SoundCeiling-v0.8.0-debug-apk`**, containing `app-debug.apk`.
+Release artifact: **`SoundCeiling-v0.9.1-debug-apk`**, containing `app-debug.apk`; the paired
+**`SoundCeiling-v0.9.1-debug-apk-checksum`** artifact contains its SHA-256 file.

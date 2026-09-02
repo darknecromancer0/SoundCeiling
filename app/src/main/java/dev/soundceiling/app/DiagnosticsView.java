@@ -76,6 +76,9 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                         + "PCM DSP mode: %s · audible output: %s · reason=%s\n"
                         + "Shadow gain: requested=%+.2f dB · applied=%+.2f dB · active=%s\n"
                         + "Shadow peaks: projected=%.2f dBFS · PCM=%.2f dBFS · clipped=%d · reason=%s\n"
+                        + "Relay state: %s · audible=%s · full=%s · recovery=%s · reason=%s\n"
+                        + "Relay volume: %d/%d · gain requested=%+.2f dB · applied=%+.2f dB\n"
+                        + "Relay output peak: %.2f dBFS · latency=%s · probe remaining=%d ms\n"
                         + "Downgrade reason: %s\nRoute: %s · Device profile: %s\n"
                         + "Media: %d/%d · effective max: %d\n"
                         + "Raw Peak %.1f dBFS · LUFS-like %.1f · reaction %s\nLog: %s",
@@ -93,6 +96,16 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 state.pcmShadowActive ? "yes" : "no",
                 state.pcmShadowProjectedPeakDbfs, state.pcmShadowPcmPeakDbfs,
                 state.pcmShadowClippedSamples, state.pcmShadowReason,
+                state.relayState, state.relayAudible ? "yes" : "no",
+                state.relayFullExperimental ? "yes" : "no",
+                state.relayRecoveryRequired ? "yes" : "no",
+                state.relayReason, state.relayVolumeIndex,
+                state.relayVolumeHardMaximum,
+                state.relayRequestedGainDb, state.relayAppliedGainDb,
+                state.relayOutputPeakDbfs,
+                state.relayLatencyMs < 0L
+                        ? "—" : state.relayLatencyMs + " ms",
+                state.relayProbeRemainingMs,
                 state.downgradeReason.isEmpty() ? "—" : state.downgradeReason,
                 state.routeLabel.isEmpty() ? "—" : state.routeLabel,
                 state.profileName.isEmpty() ? "—" : state.profileName,

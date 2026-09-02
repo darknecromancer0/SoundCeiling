@@ -24,6 +24,7 @@ javac -Xlint:all -Werror -d "$OUT" \
   "$R/app/src/main/java/dev/soundceiling/app/OutputLevelModel.java" \
   "$R/app/src/main/java/dev/soundceiling/app/OutputGainPlanner.java" \
   "$R/app/src/main/java/dev/soundceiling/app/ContinuousDspController.java" \
+  "$R/app/src/main/java/dev/soundceiling/app/PcmNormalizer.java" \
   "$R/app/src/main/java/dev/soundceiling/app/PcmDspFeasibility.java" \
   "$R/app/src/main/java/dev/soundceiling/app/PcmShadowEligibility.java" \
   "$R/app/src/main/java/dev/soundceiling/app/PcmShadowDsp.java" \

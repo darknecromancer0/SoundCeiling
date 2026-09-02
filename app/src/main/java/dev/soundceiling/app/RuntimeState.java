@@ -58,6 +58,17 @@ final class RuntimeState {
     final float pcmShadowProjectedPeakDbfs, pcmShadowPcmPeakDbfs;
     final int pcmShadowClippedSamples;
 
+    // v0.9.1 experimental Accessibility Relay telemetry. This is separate from Shadow truth:
+    // only relayAudible may describe PCM that reached an audible renderer.
+    final long relayEpoch;
+    final String relayState, relayReason;
+    final boolean relayAudible, relayFullExperimental,
+            relayRecoveryRequired;
+    final int relayVolumeIndex, relayVolumeHardMaximum;
+    final float relayRequestedGainDb, relayAppliedGainDb,
+            relayOutputPeakDbfs;
+    final long relayLatencyMs, relayProbeRemainingMs;
+
     private final float[] bandLevels;
     private final DiagnosticItem[] diagnostics;
 
@@ -116,6 +127,20 @@ final class RuntimeState {
         pcmShadowProjectedPeakDbfs=b.pcmShadowProjectedPeakDbfs;
         pcmShadowPcmPeakDbfs=b.pcmShadowPcmPeakDbfs;
         pcmShadowClippedSamples=Math.max(0,b.pcmShadowClippedSamples);
+        relayEpoch=Math.max(0L,b.relayEpoch);
+        relayState=n(b.relayState).isEmpty()?"OFF":n(b.relayState);
+        relayReason=n(b.relayReason).isEmpty()?"relay_off":n(b.relayReason);
+        relayAudible=b.relayAudible && "ACTIVE".equals(relayState);
+        relayFullExperimental=b.relayFullExperimental && relayAudible;
+        relayRecoveryRequired=b.relayRecoveryRequired
+                || "RECOVERY_REQUIRED".equals(relayState);
+        relayVolumeIndex=Math.max(0,b.relayVolumeIndex);
+        relayVolumeHardMaximum=Math.max(0,b.relayVolumeHardMaximum);
+        relayRequestedGainDb=finite(b.relayRequestedGainDb);
+        relayAppliedGainDb=finite(b.relayAppliedGainDb);
+        relayOutputPeakDbfs=b.relayOutputPeakDbfs;
+        relayLatencyMs=b.relayLatencyMs < 0L ? -1L : b.relayLatencyMs;
+        relayProbeRemainingMs=Math.max(0L,b.relayProbeRemainingMs);
         bandLevels=b.bandLevels.clone(); diagnostics=b.diagnostics.clone();
     }
 
@@ -133,7 +158,21 @@ final class RuntimeState {
     }
 
     private RuntimeState copyWithDiagnostics(List<DiagnosticItem> items, long currentMeterAgeMs) {
-        Builder b = new Builder()
+        return copyBuilder().meterAgeMs(currentMeterAgeMs)
+                .diagnostics(items).build();
+    }
+
+    RuntimeState withRelay(long epoch, String state, String reason,
+            boolean audible, boolean full, boolean recovery, int volume,
+            int hardMaximum, float requestedGain, float appliedGain,
+            float outputPeak, long latencyMs, long probeRemainingMs) {
+        return copyBuilder().relay(epoch, state, reason, audible, full,
+                recovery, volume, hardMaximum, requestedGain, appliedGain,
+                outputPeak, latencyMs, probeRemainingMs).build();
+    }
+
+    private Builder copyBuilder() {
+        return new Builder()
                 .running(running).captureStatus(captureStatus).controlActivity(controlActivity)
                 .signalPresent(signalPresent).levels(rmsDbfs, peakDbfs, estimatedRmsSpl, estimatedPeakSpl)
                 .loudness(rawPeakDbfs, sourceLoudness).volume(volumeIndex, volumeMax)
@@ -147,7 +186,7 @@ final class RuntimeState {
                         automaticAttenuationDb)
                 .controller(lastControllerAction, lastControllerReason,
                         lastReactionLatencyMs, lastEmergencyLatencyMs)
-                .meterAgeMs(currentMeterAgeMs).unexpectedZero(unexpectedZero)
+                .meterAgeMs(meterAgeMs).unexpectedZero(unexpectedZero)
                 .hybrid(pcmState, sourceConfidence, meteringCapability, volumeControlCapability,
                         dspTransportCapability, sourcePackage, sourceLabel, appRuleLabel, downgradeReason)
                 .sourceAccessState(sourceAccessState)
@@ -162,8 +201,13 @@ final class RuntimeState {
                         pcmShadowRequestedGainDb, pcmShadowAppliedGainDb,
                         pcmShadowProjectedPeakDbfs, pcmShadowPcmPeakDbfs,
                         pcmShadowClippedSamples, pcmShadowReason)
-                .bandLevels(bandLevels).diagnostics(items);
-        return b.build();
+                .relay(relayEpoch, relayState, relayReason, relayAudible,
+                        relayFullExperimental, relayRecoveryRequired,
+                        relayVolumeIndex, relayVolumeHardMaximum,
+                        relayRequestedGainDb, relayAppliedGainDb,
+                        relayOutputPeakDbfs, relayLatencyMs,
+                        relayProbeRemainingMs)
+                .bandLevels(bandLevels).diagnostics(diagnostics);
     }
 
     static RuntimeState stopped(String message) {
@@ -215,6 +259,14 @@ final class RuntimeState {
         float pcmShadowRequestedGainDb, pcmShadowAppliedGainDb;
         float pcmShadowProjectedPeakDbfs=Float.NaN, pcmShadowPcmPeakDbfs=Float.NaN;
         int pcmShadowClippedSamples;
+        long relayEpoch;
+        String relayState="OFF", relayReason="relay_off";
+        boolean relayAudible, relayFullExperimental,
+                relayRecoveryRequired;
+        int relayVolumeIndex, relayVolumeHardMaximum;
+        float relayRequestedGainDb, relayAppliedGainDb;
+        float relayOutputPeakDbfs=Float.NaN;
+        long relayLatencyMs=-1L, relayProbeRemainingMs;
         float[] bandLevels=new float[5];
         DiagnosticItem[] diagnostics=new DiagnosticItem[0];
 
@@ -299,6 +351,29 @@ final class RuntimeState {
             pcmShadowProjectedPeakDbfs=projectedPeakDbfs;
             pcmShadowPcmPeakDbfs=shadowPcmPeakDbfs;
             pcmShadowClippedSamples=clippedSamples; pcmShadowReason=shadowReason; return this;
+        }
+        Builder relay(long epoch, String state, String reason,
+                      boolean audible, boolean full, boolean recovery,
+                      int volume, int hardMaximum, float requestedGain,
+                      float appliedGain, float outputPeak, long latencyMs,
+                      long probeRemainingMs) {
+            relayEpoch=Math.max(0L,epoch);
+            relayState=state==null?"OFF":state;
+            relayReason=reason==null?"relay_off":reason;
+            relayAudible=audible && "ACTIVE".equals(relayState);
+            relayFullExperimental=full && relayAudible;
+            relayRecoveryRequired=recovery
+                    || "RECOVERY_REQUIRED".equals(relayState);
+            relayVolumeIndex=Math.max(0,volume);
+            relayVolumeHardMaximum=Math.max(0,hardMaximum);
+            relayRequestedGainDb=Float.isFinite(requestedGain)
+                    ? requestedGain : 0f;
+            relayAppliedGainDb=Float.isFinite(appliedGain)
+                    ? appliedGain : 0f;
+            relayOutputPeakDbfs=outputPeak;
+            relayLatencyMs=latencyMs < 0L ? -1L : latencyMs;
+            relayProbeRemainingMs=Math.max(0L,probeRemainingMs);
+            return this;
         }
         Builder bandLevels(float[] v){bandLevels=v==null?new float[5]:v.clone();return this;}
         Builder diagnostics(List<DiagnosticItem> v){diagnostics=v==null?new DiagnosticItem[0]:v.toArray(new DiagnosticItem[0]);return this;}

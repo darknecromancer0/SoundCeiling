@@ -35,6 +35,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private final Button strictSafetyAccess;
     private final Button startStop;
     private final StatusCardView statusCard;
+    private final RelayCardView relayCard;
     private final FrequencyMeterView frequencyMeter;
     private final SeekBar lowerOutput, upperOutput, minMedia, maxMedia, safetyPercent, quietIndex, peakThreshold,
             transientWarning, transientEmergency, targetLoudness, tolerance, strength,
@@ -44,7 +45,8 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private boolean loading;
     private RuntimeState runtime = RuntimeState.stopped("Остановлено");
 
-    AdvancedModeView(Context context, Listener listener) {
+    AdvancedModeView(Context context, Listener listener,
+            RelayCardView.Listener relayListener) {
         super(context);
         this.listener = listener;
         audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
@@ -62,6 +64,13 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         modeInfo = secondary("", 14); modeInfo.setPadding(0, dp(6), 0, dp(10)); root.addView(modeInfo);
         statusCard = new StatusCardView(context); root.addView(statusCard,
                 new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
+        relayCard = new RelayCardView(context, relayListener);
+        LinearLayout.LayoutParams relayLp = new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        relayLp.topMargin = dp(10);
+        relayLp.bottomMargin = dp(10);
+        root.addView(relayCard, relayLp);
 
         sessionDspSetupStatus = secondary("", 13);
         sessionDspSetupStatus.setPadding(0, dp(8), 0, dp(6));
@@ -238,7 +247,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
 
     @Override public void render(RuntimeState state) {
         if (state != null) runtime = state;
-        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); frequencyMeter.renderState(runtime);
+        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); relayCard.render(runtime); frequencyMeter.renderState(runtime);
         refreshEnhancedSessionSetup();
         refreshStrictSafety();
         refreshSharedOutputControls();

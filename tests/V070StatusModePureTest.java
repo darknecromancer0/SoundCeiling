@@ -7,6 +7,7 @@ public final class V070StatusModePureTest {
         testSystemOnlyProtection();
         testMixedPcmIsNotPrecise();
         testRecoveryCopy();
+        testRelayTruthfulStates();
         System.out.println("V070StatusModePureTest: PASS");
     }
 
@@ -56,6 +57,37 @@ public final class V070StatusModePureTest {
         assertContains(text, "Recovery", "recovery label");
         assertContains(text, "SoundCeiling", "recovery ownership");
         assertContains(text, "снижен", "recovery must describe restoration of prior attenuation");
+    }
+
+    private static void testRelayTruthfulStates() {
+        RuntimeState probing = new RuntimeState.Builder().relay(
+                41L, "QUIET_PROBE", "relay_quiet_probe",
+                false, false, false, 1, 3,
+                0f, 0f, -30f, 80L, 5000L).build();
+        assertContains(StatusText.relay(probing), "Тихая проба",
+                "probe must not claim active normalization");
+
+        RuntimeState active = new RuntimeState.Builder().relay(
+                41L, "ACTIVE", "relay_active",
+                true, true, false, 2, 3,
+                7f, 7f, -6f, 90L, 0L).build();
+        assertContains(StatusText.relay(active), "Relay активен",
+                "active state is truthful");
+        RuntimeState copied = active.withDiagnostics(java.util.List.of());
+        assertEquals("ACTIVE", copied.relayState,
+                "diagnostics copy keeps Relay state");
+        if (!copied.relayAudible || !copied.relayFullExperimental
+                || copied.relayEpoch != 41L) {
+            throw new AssertionError(
+                    "diagnostics copy must preserve Relay authority fields");
+        }
+
+        RuntimeState recovery = new RuntimeState.Builder().relay(
+                41L, "RECOVERY_REQUIRED", "relay_recovery_required",
+                false, false, true, 0, 0,
+                0f, 0f, Float.NaN, -1L, 0L).build();
+        assertContains(StatusText.relay(recovery), "нужно восстановление",
+                "recovery is explicit");
     }
 
     private static RuntimeState state(PcmAvailabilityState pcm,

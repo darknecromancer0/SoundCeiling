@@ -92,9 +92,21 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspProbeMath.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspDifferentialVerifier.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ContinuousDspController.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/PcmNormalizer.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmDspFeasibility.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmShadowEligibility.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/PcmShadowDsp.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/RelayPcmDsp.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/AccessibilityRelayGate.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/RelayMediaLease.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/RelayVolumePolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/RelayPreflightPolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/RelayLatencyTracker.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/RelayRendererHealthGuard.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/CaptureTimestampAligner.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/RelayGenerationToken.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/RelayRecoveryGenerationPolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/RelayPlaybackOwnership.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/CoarseMediaFallbackController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/DspGainSlew.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/GlobalDspProbeDecision.java" \
@@ -157,6 +169,12 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V090PcmFeasibilityPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V090PcmShadowDspPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V090PcmShadowEligibilityPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayGatePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayLeaseVolumePureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayPreflightLatencyPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayPcmDspPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayRendererHealthPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayTopologyPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -250,5 +268,11 @@ java -cp "$OUT" dev.soundceiling.app.V090SessionDspQuarantinePureTest
 java -cp "$OUT" dev.soundceiling.app.V090PcmFeasibilityPureTest
 java -cp "$OUT" dev.soundceiling.app.V090PcmShadowDspPureTest
 java -cp "$OUT" dev.soundceiling.app.V090PcmShadowEligibilityPureTest
+java -cp "$OUT" dev.soundceiling.app.V091RelayGatePureTest
+java -cp "$OUT" dev.soundceiling.app.V091RelayLeaseVolumePureTest
+java -cp "$OUT" dev.soundceiling.app.V091RelayPreflightLatencyPureTest
+java -cp "$OUT" dev.soundceiling.app.V091RelayPcmDspPureTest
+java -cp "$OUT" dev.soundceiling.app.V091RelayRendererHealthPureTest
+java -cp "$OUT" dev.soundceiling.app.V091RelayTopologyPureTest
 java -cp "$OUT" dev.soundceiling.app.V072GlobalDspProbePureTest
 java -cp "$OUT" dev.soundceiling.app.V072ResetDefaultsPureTest

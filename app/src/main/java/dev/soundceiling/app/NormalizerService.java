@@ -30,6 +30,24 @@ public class NormalizerService extends Service {
     static final String EXTRA_FAST_ONLY = "fast_only";
     static final String ACTION_STOP = "dev.soundceiling.app.STOP";
     static final String ACTION_QUIET = "dev.soundceiling.app.QUIET";
+    static final String ACTION_RELAY_START =
+            "dev.soundceiling.app.RELAY_START";
+    static final String ACTION_RELAY_ACCEPT =
+            "dev.soundceiling.app.RELAY_ACCEPT";
+    static final String ACTION_RELAY_REJECT =
+            "dev.soundceiling.app.RELAY_REJECT";
+    static final String ACTION_RELAY_STOP =
+            "dev.soundceiling.app.RELAY_STOP";
+    static final String ACTION_RELAY_RESTORE =
+            "dev.soundceiling.app.RELAY_RESTORE";
+    static final String ACTION_RELAY_VOLUME =
+            "dev.soundceiling.app.RELAY_VOLUME";
+    static final String ACTION_RELAY_FULL =
+            "dev.soundceiling.app.RELAY_FULL";
+    static final String EXTRA_RELAY_REQUESTED = "relay_requested";
+    static final String EXTRA_RELAY_EPOCH = "relay_epoch";
+    static final String EXTRA_RELAY_VOLUME_INDEX = "relay_volume_index";
+    static final String EXTRA_RELAY_FULL_ENABLED = "relay_full_enabled";
 
     private static final String CHANNEL = "sound_ceiling_v05";
     private static final int NOTIFICATION_ID = 41;
@@ -65,6 +83,19 @@ public class NormalizerService extends Service {
     private GlobalVisualizerBackend visualizer;
     private OptionalDspController optionalDsp;
     private EnhancedSessionDspRuntime enhancedSessionDsp;
+    private AccessibilityRelayRuntime relayRuntime;
+    private volatile AccessibilityRelayRuntime.Snapshot relaySnapshot;
+    private String relayRuntimeRouteKey = "";
+    private String relayImmediateStateKey = "";
+    private boolean pendingRelayRequested;
+    private long relayEpochSequence = Math.max(
+            1L, SystemClock.elapsedRealtime());
+    private volatile long activeRelayEpoch;
+    private volatile long serviceGeneration;
+    private volatile long projectionGeneration;
+    private volatile long captureGeneration;
+    private volatile long routeGeneration;
+    private volatile boolean relayForegroundPlayback;
     private final PcmShadowDsp pcmShadowDsp = new PcmShadowDsp();
     private final PcmDspFeasibility.Verdict pcmDspFeasibility =
             PcmDspFeasibility.publicPlaybackCapture();
@@ -134,23 +165,73 @@ public class NormalizerService extends Service {
         writeTracker.observeInitial(initial);
         if (initial > controlCurve.minIndex()) lastAppliedNonzero = initial;
         refreshRoute(true);
+        ensureRelayRuntime();
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(
                 CHANNEL, "Sound Ceiling", NotificationManager.IMPORTANCE_LOW));
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        String action = intent == null ? "" : intent.getAction();
+        if (ACTION_RELAY_START.equals(action)) {
+            if (workerRunning.get() && !fastOnlyMode) {
+                pendingRelayRequested = true;
+                resetPcmShadowState("relay_requested", false);
+            }
+            return finishRelayActionIfIdle(startId);
+        }
+        if (ACTION_RELAY_ACCEPT.equals(action)) {
+            ensureRelayRuntime().acceptProbe(intent.getLongExtra(
+                    EXTRA_RELAY_EPOCH, 0L));
+            return finishRelayActionIfIdle(startId);
+        }
+        if (ACTION_RELAY_REJECT.equals(action)) {
+            ensureRelayRuntime().rejectProbe(intent.getLongExtra(
+                    EXTRA_RELAY_EPOCH, 0L), "user_rejected_probe");
+            return finishRelayActionIfIdle(startId);
+        }
+        if (ACTION_RELAY_STOP.equals(action)) {
+            ensureRelayRuntime().abort("relay_user_stop",
+                    AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
+            pendingRelayRequested = false;
+            return finishRelayActionIfIdle(startId);
+        }
+        if (ACTION_RELAY_RESTORE.equals(action)) {
+            ensureRelayRuntime().restoreSafeMedia();
+            return finishRelayActionIfIdle(startId);
+        }
+        if (ACTION_RELAY_VOLUME.equals(action)) {
+            ensureRelayRuntime().requestVolumeIndex(intent.getIntExtra(
+                    EXTRA_RELAY_VOLUME_INDEX, 0));
+            return finishRelayActionIfIdle(startId);
+        }
+        if (ACTION_RELAY_FULL.equals(action)) {
+            ensureRelayRuntime().setFullExperimental(
+                    intent.getBooleanExtra(
+                            EXTRA_RELAY_FULL_ENABLED, false));
+            return finishRelayActionIfIdle(startId);
+        }
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             stopSafe("Остановлено пользователем", false);
             return START_NOT_STICKY;
         }
         if (intent != null && ACTION_QUIET.equals(intent.getAction())) {
-            quietNow();
+            if (relayRuntime != null
+                    && relayRuntime.suppressesLegacyMediaWrites()) {
+                relayRuntime.requestVolumeIndex(0);
+            } else {
+                quietNow();
+            }
             return START_NOT_STICKY;
         }
         if (workerRunning.get()) return START_NOT_STICKY;
 
-        fastOnlyMode = intent != null && intent.getBooleanExtra(EXTRA_FAST_ONLY, false);
+        serviceGeneration = nextGeneration(serviceGeneration);
+
+        fastOnlyMode = intent != null
+                && intent.getBooleanExtra(EXTRA_FAST_ONLY, false);
+        pendingRelayRequested = intent != null
+                && intent.getBooleanExtra(EXTRA_RELAY_REQUESTED, false);
         hybridRuntime.newEpoch();
         resetPcmShadowState("service_epoch", true);
         startForegroundNow();
@@ -198,14 +279,25 @@ public class NormalizerService extends Service {
             MediaProjectionManager pm = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
             projection = pm.getMediaProjection(code, data);
             if (projection == null) throw new IllegalStateException("MediaProjection == null");
+            projectionGeneration = nextGeneration(projectionGeneration);
+            final long callbackProjectionGeneration = projectionGeneration;
             projection.registerCallback(new MediaProjection.Callback() {
                 @Override public void onStop() {
+                    if (projectionGeneration == callbackProjectionGeneration) {
+                        projectionGeneration = nextGeneration(
+                                projectionGeneration);
+                    }
                     DiagnosticLog.event("projection_stop", "Android stopped MediaProjection");
+                    if (relayRuntime != null) {
+                        relayRuntime.abort("projection_stopped",
+                                AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
+                    }
                     if (workerRunning.get()) switchToFallback("projection_stopped");
                 }
             }, null);
             PcmCaptureRequest request = hybridRuntime.prepareCaptureRequest();
             pcmCapture = PcmCaptureBackend.open(projection, request);
+            captureGeneration = nextGeneration(captureGeneration);
             backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.PLAYBACK_CAPTURE, true,
                     request.targeted() ? "targeted_uid_pcm" : "mixed_pcm_downward_only");
             tryOpenLogger();
@@ -218,6 +310,11 @@ public class NormalizerService extends Service {
             DiagnosticLog.event("service_start_error", "errorClass=" + e.getClass().getSimpleName());
             enterFallback(visualizerReady, "projection_failed:" + e.getClass().getSimpleName());
         }
+        return START_NOT_STICKY;
+    }
+
+    private int finishRelayActionIfIdle(int startId) {
+        if (!workerRunning.get()) stopSelfResult(startId);
         return START_NOT_STICKY;
     }
 
@@ -235,12 +332,18 @@ public class NormalizerService extends Service {
 
     private synchronized void switchToFallback(String reason) {
         if (!workerRunning.get()) return;
+        if (relayRuntime != null) {
+            relayRuntime.abort("capture_replaced",
+                    AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
+        }
+        pendingRelayRequested = false;
         resetPcmShadowState("fallback:" + reason, true);
         if (pcmCapture != null) {
             if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
         if (optionalDsp != null) optionalDsp.onCaptureReplaced();
             pcmCapture.close();
             pcmCapture = null;
+            captureGeneration = nextGeneration(captureGeneration);
         }
         fastOnlyMode = true;
         backendStatus = visualizer != null && visualizer.isOpen()
@@ -259,9 +362,168 @@ public class NormalizerService extends Service {
         worker.start();
     }
 
+    private synchronized AccessibilityRelayRuntime ensureRelayRuntime() {
+        String routeKey = DeviceDetector.key(currentDevice);
+        if (relayRuntime == null || (!relayRuntime.suppressesLegacyMediaWrites()
+                && !routeKey.equals(relayRuntimeRouteKey))) {
+            relayRuntime = new AccessibilityRelayRuntime(
+                    this, audio, currentDevice, hybridRuntime,
+                    this::onRelaySnapshot);
+            relayRuntimeRouteKey = routeKey;
+            relaySnapshot = relayRuntime.snapshot();
+        }
+        return relayRuntime;
+    }
+
+    private boolean onRelaySnapshot(
+            AccessibilityRelayRuntime.Snapshot snapshot) {
+        relaySnapshot = snapshot;
+        if (snapshot == null) return false;
+        boolean foregroundReady = setRelayForegroundPlayback(
+                snapshot.state == AccessibilityRelayGate.State.QUIET_PROBE
+                || snapshot.state == AccessibilityRelayGate.State.ACTIVE
+                || snapshot.state == AccessibilityRelayGate.State.ABORTING
+                || snapshot.state
+                        == AccessibilityRelayGate.State.RECOVERY_REQUIRED
+                || snapshot.recoveryRequired);
+        String stateKey = snapshot.epoch + ":" + snapshot.state + ":"
+                + snapshot.reason + ':' + snapshot.audible + ':'
+                + snapshot.fullExperimental + ':'
+                + snapshot.recoveryRequired + ':' + snapshot.volumeIndex
+                + ':' + snapshot.volumeHardMaximum;
+        boolean changed = !stateKey.equals(relayImmediateStateKey);
+        relayImmediateStateKey = stateKey;
+        if (changed || !workerRunning.get()) {
+            RuntimeStateStore.publishRelay(snapshot.epoch,
+                    snapshot.state.name(), snapshot.reason,
+                    snapshot.audible, snapshot.fullExperimental,
+                    snapshot.recoveryRequired, snapshot.volumeIndex,
+                    snapshot.volumeHardMaximum,
+                    snapshot.requestedGainDb, snapshot.appliedGainDb,
+                    snapshot.outputPeakDbfs, snapshot.latestLatencyMs,
+                    snapshot.probeRemainingMs);
+        }
+        return foregroundReady;
+    }
+
+    private boolean relayStartReady(HybridRuntimeResolver.Snapshot resolved,
+            long nowMs) {
+        if (resolved == null || resolved.exactSource == null
+                || resolved.playbackEndpoints.size() != 1
+                || pcmCapture == null || !pcmCapture.targeted()
+                || pcmCapture.targetUid() != resolved.exactSource.uid) {
+            return false;
+        }
+        return pcmCapture.targetWarmupStatus(nowMs)
+                == PcmCaptureBackend.TargetWarmupStatus.CONFIRMED;
+    }
+
+    private AccessibilityRelayRuntime.Frame buildRelayFrame(long nowMs,
+            int observedMedia, float blockPeak,
+            float sourceLoudnessDb, ControlProfile effectiveProfile) {
+        HybridRuntimeResolver.Snapshot resolved = hybridSnapshot;
+        SourceDescriptor exact = resolved == null
+                ? null : resolved.exactSource;
+        boolean targeted = exact != null && pcmCapture != null
+                && pcmCapture.targeted()
+                && pcmCapture.targetUid() == exact.uid;
+        boolean warmup = targeted && pcmCapture.targetWarmupStatus(nowMs)
+                == PcmCaptureBackend.TargetWarmupStatus.CONFIRMED;
+        boolean builtIn = currentDevice != null && currentDevice.isSink()
+                && currentDevice.getType()
+                        == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
+        boolean protectedSource = exact != null && exact.samsungApp;
+        if (resolved != null) {
+            for (PlaybackEndpoint endpoint : resolved.playbackEndpoints) {
+                if (endpoint != null
+                        && endpoint.isDefaultProtectedUsageOff()) {
+                    protectedSource = true;
+                }
+            }
+        }
+        PcmCaptureBackend.CaptureTimestamp timestamp = pcmCapture == null
+                ? new PcmCaptureBackend.CaptureTimestamp(false, 0L, 0L)
+                : pcmCapture.latestTimestamp();
+        return new AccessibilityRelayRuntime.Frame(
+                activeRelayEpoch, nowMs, observedMedia,
+                safetySettings == null ? 0 : safetySettings.hardMax(),
+                targeted, exact != null, relaySourceAllowed(resolved),
+                exact != null && exact.systemApp, protectedSource,
+                resolved != null && resolved.playback != null
+                        && resolved.playback.active,
+                warmup, builtIn,
+                resolved == null ? 0 : resolved.playbackEndpoints.size(),
+                exact == null ? -1 : exact.uid,
+                exact == null ? "" : exact.packageName,
+                DeviceDetector.key(currentDevice),
+                liveCaptureReference.mode(), blockPeak,
+                sourceLoudnessDb, controlCoordinator.ceilingState(),
+                effectiveProfile, timestamp,
+                currentRelayGenerations(resolved),
+                hybridRuntime != null
+                        && hybridRuntime.relayRendererOwnershipProven());
+    }
+
+    private static boolean relaySourceAllowed(
+            HybridRuntimeResolver.Snapshot resolved) {
+        if (resolved == null || resolved.exactSource == null
+                || resolved.exactAppPolicy == null
+                || resolved.policy == null
+                || !resolved.exactAppPolicy.allowsDspControl()
+                || !resolved.policy.sourceControlEnabled
+                || resolved.playbackEndpoints.size() != 1) {
+            return false;
+        }
+        PlaybackEndpoint endpoint = resolved.playbackEndpoints.get(0);
+        return endpoint != null && endpoint.policyResolved
+                && endpoint.allowsDspControl()
+                && SystemStreamPolicies.defaultEnabledForPublicUsage(
+                        endpoint.publicUsage);
+    }
+
+    private int readMediaIndexForRelay() {
+        try {
+            return audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+        } catch (RuntimeException ignored) {
+            return -1;
+        }
+    }
+
+    private synchronized long nextRelayEpoch() {
+        long elapsed = Math.max(1L, SystemClock.elapsedRealtime());
+        relayEpochSequence = Math.max(relayEpochSequence + 1L, elapsed);
+        activeRelayEpoch = relayEpochSequence;
+        return activeRelayEpoch;
+    }
+
+    private void requestRelayStartIfIdle() {
+        AccessibilityRelayRuntime runtime = ensureRelayRuntime();
+        AccessibilityRelayRuntime.Snapshot before = runtime.snapshot();
+        if (before.state == AccessibilityRelayGate.State.OFF
+                && !before.recoveryRequired) {
+            runtime.requestStart(nextRelayEpoch(),
+                    currentRelayGenerations(hybridSnapshot));
+        }
+    }
+
+    private void publishRelayHoldingState(int observedMedia,
+            boolean signal, LoudnessTracker.Reading rms,
+            LoudnessMeter.Reading loud, float blockPeak,
+            FrequencyBandTracker bands, short[] buffer, int count) {
+        AccessibilityRelayRuntime.Snapshot relay = relayRuntime.snapshot();
+        int displayedMedia = Math.max(0, observedMedia);
+        publishState(displayedMedia, signal, rms, loud, blockPeak,
+                Float.NaN, Float.NaN,
+                RuntimeState.ControlActivity.HOLDING,
+                "Relay · " + relay.state,
+                relay.reason, false, null, bands, buffer, count,
+                relay.latestLatencyMs);
+    }
+
     private void loopPlaybackCapture() {
         short[] buffer = new short[CAPTURE_BLOCK_SHORTS];
         short[] shadowBuffer = new short[CAPTURE_BLOCK_SHORTS];
+        short[] relayOutputBuffer = new short[CAPTURE_BLOCK_SHORTS];
         LoudnessTracker tracker = new LoudnessTracker();
         LoudnessMeter loudnessMeter = new LoudnessMeter(SAMPLE_RATE, CHANNELS);
         FrequencyBandTracker bands = new FrequencyBandTracker(SAMPLE_RATE, CHANNELS);
@@ -319,13 +581,33 @@ public class NormalizerService extends Service {
             refreshControlSettings(now, false);
             DeviceProfileV2 deviceProfile = currentDeviceProfileV2();
             enforceSystemStreams(deviceProfile, now);
-            int current = observeVolumeAndEnforce(now);
-            observeLiveCaptureReference(current, blockRms);
+            int observedMedia = readMediaIndexForRelay();
+            if (observedMedia >= 0) {
+                observeLiveCaptureReference(observedMedia, blockRms);
+            }
 
             GlobalVisualizerBackend.Reading outputMix = visualizer.read();
             boolean outputMixEvidence = outputMix.levelAvailable;
             hybridSnapshot = hybridRuntime.resolvePcm(pcmCapture, true, signal, outputMixEvidence,
                     controlProfile, deviceProfile, now);
+            ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
+            if (pendingRelayRequested && relayStartReady(hybridSnapshot, now)) {
+                requestRelayStartIfIdle();
+                pendingRelayRequested = false;
+            }
+            AccessibilityRelayRuntime.Frame relayFrame = buildRelayFrame(
+                    now, observedMedia, blockPeak, loud.controlLoudnessDb,
+                    effectiveProfile);
+            ensureRelayRuntime();
+            relayRuntime.onPcmBlock(relayFrame, buffer, n,
+                    relayOutputBuffer);
+            if (relayRuntime.suppressesLegacyMediaWrites()) {
+                publishRelayHoldingState(observedMedia, signal, rms, loud,
+                        blockPeak, bands, buffer, n);
+                continue;
+            }
+
+            int current = observeVolumeAndEnforce(now);
             if (optionalDsp != null) {
                 enhancedSessionDsp.update(hybridSnapshot, blockRms, signal,
                         outputMix.rmsDbfs, outputMixEvidence, current,
@@ -334,7 +616,6 @@ public class NormalizerService extends Service {
                 // mix remains diagnostic/historical code and receives no runtime authority here.
                 optionalDsp.updatePolicy(hybridSnapshot.playbackEndpoints, false, false);
             }
-            ControlProfile effectiveProfile = profileForPolicy(hybridSnapshot.policy);
             boolean verifiedDsp = optionalDsp != null
                     && isVerifiedDspCapability(optionalDsp.capability());
             float verifiedGainDb = verifiedDsp ? optionalDsp.appliedGainDb() : 0f;
@@ -442,12 +723,17 @@ public class NormalizerService extends Service {
 
     private boolean rebindCaptureOnWorker(CaptureRequestCoordinator.Decision decision, long now) {
         if (decision == null || decision.action == CaptureRequestCoordinator.Action.KEEP) return true;
+        if (relayRuntime != null) {
+            relayRuntime.abort("capture_replaced",
+                    AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
+        }
         if (decision.action == CaptureRequestCoordinator.Action.CLOSE) {
             if (enhancedSessionDsp != null) enhancedSessionDsp.onCaptureReplaced();
         if (optionalDsp != null) optionalDsp.onCaptureReplaced();
             if (pcmCapture != null) {
                 pcmCapture.close();
                 pcmCapture = null;
+                captureGeneration = nextGeneration(captureGeneration);
             }
             resetAfterCaptureRebind();
             DiagnosticLog.event("capture_rebind", "action=CLOSE reason=" + decision.reason);
@@ -469,6 +755,7 @@ public class NormalizerService extends Service {
         resetAfterCaptureRebind();
         try {
             pcmCapture = PcmCaptureBackend.open(projection, requested);
+            captureGeneration = nextGeneration(captureGeneration);
             backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.PLAYBACK_CAPTURE, true,
                     requested.targeted() ? "targeted_uid_pcm_candidate" : "mixed_pcm_downward_only");
             DiagnosticLog.event("capture_rebind", "action=" + decision.action
@@ -491,6 +778,7 @@ public class NormalizerService extends Service {
             try {
                 PcmCaptureRequest mixed = PcmCaptureRequest.mixed();
                 pcmCapture = PcmCaptureBackend.open(projection, mixed);
+                captureGeneration = nextGeneration(captureGeneration);
                 backendStatus = new AudioBackendStatus(AudioBackendStatus.Tier.PLAYBACK_CAPTURE, true,
                         "target_open_failed_mixed_pcm");
                 DiagnosticLog.event("capture_rebind", "action=OPEN_MIXED request=" + mixed
@@ -543,6 +831,15 @@ public class NormalizerService extends Service {
             refreshControlSettings(detectedAt, false);
             DeviceProfileV2 deviceProfile = currentDeviceProfileV2();
             enforceSystemStreams(deviceProfile, detectedAt);
+            if (relayRuntime != null
+                    && relayRuntime.suppressesLegacyMediaWrites()) {
+                try { Thread.sleep(50L); }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                continue;
+            }
             int current = observeVolumeAndEnforce(detectedAt);
             GlobalVisualizerBackend.Reading reading = visualizer.read();
             if (reading.levelAvailable && backendStatus.tier != AudioBackendStatus.Tier.VISUALIZER) {
@@ -1040,6 +1337,7 @@ public class NormalizerService extends Service {
 
     private RuntimeState.Builder baseState(RuntimeState.Builder builder, int volume) {
         PcmShadowDsp.Result shadow = lastPcmShadowResult;
+        AccessibilityRelayRuntime.Snapshot relay = relaySnapshot;
         RuntimeState.Builder out = builder.volume(volume, controlCurve.maxIndex())
                 .safety(false, safetySettings.maxIndex,
                         safetySettings.safetyLockEnabled, safetySettings.safetyLockIndex)
@@ -1081,6 +1379,14 @@ public class NormalizerService extends Service {
                         shadow == null ? pcmShadowEligibilityReason
                                 : shadow.reason + ":" + pcmShadowEligibilityReason)
                 .unexpectedZero(unexpectedZeroThisPoll);
+        if (relay != null) {
+            out.relay(relay.epoch, relay.state.name(), relay.reason,
+                    relay.audible, relay.fullExperimental,
+                    relay.recoveryRequired, relay.volumeIndex,
+                    relay.volumeHardMaximum, relay.requestedGainDb,
+                    relay.appliedGainDb, relay.outputPeakDbfs,
+                    relay.latestLatencyMs, relay.probeRemainingMs);
+        }
         if (hybridSnapshot != null) {
             EffectivePolicy policy = hybridSnapshot.policy;
             ControlProfile effective = profileForPolicy(policy);
@@ -1484,6 +1790,14 @@ public class NormalizerService extends Service {
         String oldKey = currentDevice == null ? "" : DeviceDetector.key(currentDevice);
         String newKey = DeviceDetector.key(detected);
         if (force || !oldKey.equals(newKey)) {
+            routeGeneration = nextGeneration(routeGeneration);
+            if (!oldKey.isEmpty() && !oldKey.equals(newKey)
+                    && relayRuntime != null) {
+                relayRuntime.abort("route_changed",
+                        relayRuntime.ownsMediaZero()
+                                ? AccessibilityRelayGate.Cleanup.RECOVERY_REQUIRED
+                                : AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
+            }
             resetPcmShadowState("route_changed", false);
             if (enhancedSessionDsp != null && !oldKey.isEmpty())
                 enhancedSessionDsp.onPolicyChanged();
@@ -1513,6 +1827,10 @@ public class NormalizerService extends Service {
             DiagnosticLog.event("route_change", "route=" + DeviceDetector.label(detected)
                     + " profile=" + (currentProfileV2 == null ? "default" : currentProfileV2.key)
                     + " curveSource=" + controlCurve.source());
+            if (relayRuntime != null
+                    && !relayRuntime.suppressesLegacyMediaWrites()) {
+                ensureRelayRuntime();
+            }
         } else if (currentProfile == null) {
             currentProfile = ProfileStore.find(this, detected);
         }
@@ -1597,6 +1915,9 @@ public class NormalizerService extends Service {
         if (Build.VERSION.SDK_INT >= 34) {
             int type = fastOnlyMode ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                     : ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION;
+            if (relayForegroundPlayback) {
+                type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
+            }
             startForeground(NOTIFICATION_ID, notification, type);
         } else {
             startForeground(NOTIFICATION_ID, notification);
@@ -1605,8 +1926,14 @@ public class NormalizerService extends Service {
 
     private synchronized void stopSafe(String reason, boolean error) {
         if (!stopping.compareAndSet(false, true)) return;
+        if (relayRuntime != null) {
+            relayRuntime.abort("service_stop",
+                    AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
+        }
+        pendingRelayRequested = false;
         StrictSafetyState.setEngineRunning(this, false);
         workerRunning.set(false);
+        relayForegroundPlayback = false;
         controlCoordinator.onStopped();
         hardCapLatch.reset();
         resetGlobalDifferentialState();
@@ -1642,8 +1969,14 @@ public class NormalizerService extends Service {
     }
 
     @Override public void onDestroy() {
+        if (relayRuntime != null) {
+            relayRuntime.abort("service_destroy",
+                    AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
+        }
+        pendingRelayRequested = false;
         StrictSafetyState.setEngineRunning(this, false);
         workerRunning.set(false);
+        relayForegroundPlayback = false;
         controlCoordinator.onStopped();
         hardCapLatch.reset();
         resetGlobalDifferentialState();
@@ -1659,4 +1992,36 @@ public class NormalizerService extends Service {
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
+
+    private RelayGenerationToken currentRelayGenerations(
+            HybridRuntimeResolver.Snapshot resolved) {
+        return new RelayGenerationToken(serviceGeneration,
+                projectionGeneration, captureGeneration,
+                resolved == null ? 0L : resolved.sourceGeneration,
+                routeGeneration);
+    }
+
+    private boolean setRelayForegroundPlayback(boolean enabled) {
+        if (relayForegroundPlayback == enabled) return true;
+        boolean previous = relayForegroundPlayback;
+        relayForegroundPlayback = enabled;
+        if (workerRunning.get()) {
+            try {
+                startForegroundWithNotification(
+                        buildNotification(RuntimeStateStore.get()));
+            } catch (RuntimeException failure) {
+                relayForegroundPlayback = previous;
+                DiagnosticLog.event(
+                        "relay_foreground_playback_type_failed",
+                        "enabled=" + enabled + " error="
+                                + failure.getClass().getSimpleName());
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static long nextGeneration(long current) {
+        return current == Long.MAX_VALUE ? 1L : Math.max(1L, current + 1L);
+    }
 }

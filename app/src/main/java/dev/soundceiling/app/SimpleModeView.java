@@ -32,10 +32,12 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
     private final Button strictSafetyAccess;
     private final Button resetDefaults;
     private final StatusCardView statusCard;
+    private final RelayCardView relayCard;
     private boolean loading;
     private RuntimeState runtime = RuntimeState.stopped("Остановлено");
 
-    SimpleModeView(Context context, Listener listener) {
+    SimpleModeView(Context context, Listener listener,
+            RelayCardView.Listener relayListener) {
         super(context);
         this.listener = listener;
         AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
@@ -58,6 +60,12 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         statusLp.bottomMargin = dp(12);
         root.addView(statusCard, statusLp);
+
+        relayCard = new RelayCardView(context, relayListener);
+        LinearLayout.LayoutParams relayLp = new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        relayLp.bottomMargin = dp(12);
+        root.addView(relayCard, relayLp);
 
         sessionDspSetupStatus = secondary("", 13);
         sessionDspSetupStatus.setPadding(0, dp(2), 0, dp(6));
@@ -229,6 +237,7 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         if (state != null) runtime = state;
         startStop.setText(runtime.running ? "Остановить" : "Запустить");
         statusCard.render(runtime);
+        relayCard.render(runtime);
         sourceAccess.setVisibility(runtime.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING
                 ? View.VISIBLE : View.GONE);
         refreshEnhancedSessionSetup();

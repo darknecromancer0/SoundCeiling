@@ -19,7 +19,9 @@ LEVELS="$PKG/OutputLevelModel.java"
 
 # Samsung field regression: capture reference is measured live and real Media dB participates in PRE projection.
 require "$SERVICE" 'LiveCaptureReference liveCaptureReference'
-require "$SERVICE" 'observeLiveCaptureReference(current, blockRms)'
+# v0.9.1 samples raw Media before Relay suppression; the evidence is still fed to the same
+# live PRE/POST estimator, but the local name is now observedMedia instead of legacy current.
+require "$SERVICE" 'observeLiveCaptureReference(observedMedia, blockRms)'
 require "$SERVICE" 'liveCaptureReference.mode(), outputMix.peakDbfs'
 require "$SERVICE" 'controlCurve.gainDbForIndex(current), verifiedGainDb'
 reject "$SERVICE" '.captureReference(CaptureReferenceEstimator.Mode.POST_VOLUME)'

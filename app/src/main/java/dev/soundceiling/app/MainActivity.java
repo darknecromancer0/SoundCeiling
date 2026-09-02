@@ -21,10 +21,12 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements RelayCardView.Listener {
 private static final int REQ_RECORD_AUDIO = 100;
 private static final int REQ_MEDIA_PROJECTION = 101;
 private static final int REQ_NOTIFICATIONS = 102;
+private static final String STATE_PENDING_RELAY_PROJECTION =
+"pending_relay_projection";
 private final Handler handler = new Handler(Looper.getMainLooper());
 private AudioManager audio;
 private MeasurementVolumeCurve measurementCurve;
@@ -36,6 +38,7 @@ private CalibrationView calibrationView;
 private ToneController.Result lastCalibrationResult;
 private final CalibrationToneStateMachine toneStateMachine = new CalibrationToneStateMachine();
 private ToneController.Kind pendingToneKind;
+private boolean pendingRelayProjection;
 private static final long TONE_STOP_POLL_MS = 50L;
 private final Runnable toneStopPoll = this::pollToneStop;
 private final Runnable uiTick = new Runnable() {
@@ -48,7 +51,14 @@ handler.postDelayed(this, 200L);
 @Override protected void onCreate(Bundle savedInstanceState) {
 UiTheme.applyActivityTheme(this);
 super.onCreate(savedInstanceState);
+pendingRelayProjection = savedInstanceState != null
+&& savedInstanceState.getBoolean(STATE_PENDING_RELAY_PROJECTION, false);
 audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+if (new RelayRecoveryStore(this).hasPending()) {
+RuntimeStateStore.publishRelay(0L, "RECOVERY_REQUIRED",
+"relay_recovery_required", false, false, true,
+0, 0, 0f, 0f, Float.NaN, -1L, 0L);
+}
 measurementCurve = new MeasurementVolumeCurve(audio);
 toneController = new ToneController(this);
 setVolumeControlStream(AudioManager.STREAM_MUSIC);
@@ -100,7 +110,7 @@ case ADVANCED: {
 AdvancedModeView advanced = new AdvancedModeView(this, new AdvancedModeView.Listener() {
 @Override public void onStartStop() { startStop(); }
 @Override public void onQuietNow() { quietNow(); }
-});
+}, this);
 activeScreen = advanced;
 screen = advanced;
 break;
@@ -152,7 +162,7 @@ case SIMPLE:
 default: {
 SimpleModeView simple = new SimpleModeView(this, new SimpleModeView.Listener() {
 @Override public void onStartStop() { startStop(); }
-});
+}, this);
 activeScreen = simple;
 screen = simple;
 break;
@@ -186,6 +196,7 @@ if (state.running) {
 startService(new Intent(this, NormalizerService.class).setAction(NormalizerService.ACTION_STOP));
 return;
 }
+pendingRelayProjection = false;
 if (Prefs.splMode(this)) {
 AudioDeviceInfo device = DeviceDetector.detectOutputDevice(audio);
 if (ProfileStore.find(this, device) == null) {
@@ -204,6 +215,43 @@ showProjectionExplanation();
 private void quietNow() {
 Intent intent = new Intent(this, NormalizerService.class).setAction(NormalizerService.ACTION_QUIET);
 startService(intent);
+}
+@Override public void onStartRelay() {
+pendingRelayProjection = true;
+if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+!= PackageManager.PERMISSION_GRANTED) {
+requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
+return;
+}
+showProjectionExplanation();
+}
+@Override public void onAcceptProbe(long epoch) {
+startService(new Intent(this, NormalizerService.class)
+.setAction(NormalizerService.ACTION_RELAY_ACCEPT)
+.putExtra(NormalizerService.EXTRA_RELAY_EPOCH, epoch));
+}
+@Override public void onRejectProbe(long epoch) {
+startService(new Intent(this, NormalizerService.class)
+.setAction(NormalizerService.ACTION_RELAY_REJECT)
+.putExtra(NormalizerService.EXTRA_RELAY_EPOCH, epoch));
+}
+@Override public void onStopRelay() {
+startService(new Intent(this, NormalizerService.class)
+.setAction(NormalizerService.ACTION_RELAY_STOP));
+}
+@Override public void onRestoreMedia() {
+startService(new Intent(this, NormalizerService.class)
+.setAction(NormalizerService.ACTION_RELAY_RESTORE));
+}
+@Override public void onRelayVolume(int index) {
+startService(new Intent(this, NormalizerService.class)
+.setAction(NormalizerService.ACTION_RELAY_VOLUME)
+.putExtra(NormalizerService.EXTRA_RELAY_VOLUME_INDEX, index));
+}
+@Override public void onFullExperimental(boolean enabled) {
+startService(new Intent(this, NormalizerService.class)
+.setAction(NormalizerService.ACTION_RELAY_FULL)
+.putExtra(NormalizerService.EXTRA_RELAY_FULL_ENABLED, enabled));
 }
 private void requestCalibrationTone(ToneController.Kind kind) {
 handler.removeCallbacks(toneStopPoll);
@@ -372,17 +420,47 @@ DiagnosticLog.event("calibration_deleted", "route=" + DeviceDetector.label(devic
 Toast.makeText(this, "Профиль удалён.", Toast.LENGTH_SHORT).show();
 }
 private void showProjectionExplanation() {
-new AlertDialog.Builder(this)
-.setTitle("Точный анализ воспроизведения")
-.setMessage("Android покажет системное окно разрешения, похожее на запись или трансляцию экрана. "
+boolean relay = pendingRelayProjection;
+AlertDialog.Builder builder = new AlertDialog.Builder(this)
+.setTitle(relay ? "Экспериментальный Accessibility Relay" : "Точный анализ воспроизведения")
+.setMessage(relay
+? "Разрешённый playback PCM обрабатывается только локально и не сохраняется. "
++ "Во время Relay original Samsung Media временно устанавливается в 0, а обработанный звук "
++ "идёт через отдельный Accessibility output. Первая полевая версия поддерживает только "
++ "встроенный динамик.\n\nСначала прозвучит не более пяти секунд очень тихой пробы. "
++ "Если слышны эхо, громкий скачок или сломанный звук — сразу выбери отказ.\n\n"
++ "Android покажет системное окно MediaProjection только если точный PCM ещё не запущен."
+: "Android покажет системное окно разрешения, похожее на запись или трансляцию экрана. "
 + "Это нужно потому, что AudioPlaybackCapture авторизуется через MediaProjection.\n\n"
 + "SoundCeiling использует только PCM воспроизводимого аудио для измерения громкости. "
 + "SoundCeiling не записывает видео экрана.")
-.setPositiveButton("Продолжить", (dialog, which) -> requestProjection())
-.setNegativeButton("Safe fallback", (dialog, which) -> startFastFallback())
-.show();
+.setPositiveButton("Продолжить", (dialog, which) -> requestProjection());
+if (relay) {
+builder.setNegativeButton("Отмена", (dialog, which) -> pendingRelayProjection = false);
+} else {
+builder.setNegativeButton("Safe fallback", (dialog, which) -> startFastFallback());
+}
+builder.show();
 }
 private void requestProjection() {
+if (pendingRelayProjection) {
+RuntimeState state = RuntimeStateStore.get();
+boolean exactPcmRunning = state.running
+&& state.captureStatus == RuntimeState.CaptureStatus.RUNNING
+&& state.pcmState == PcmAvailabilityState.ACTIVE
+&& state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT
+&& state.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.EXACT;
+if (exactPcmRunning) {
+pendingRelayProjection = false;
+startService(new Intent(this, NormalizerService.class)
+.setAction(NormalizerService.ACTION_RELAY_START));
+return;
+}
+if (state.running) {
+startService(new Intent(this, NormalizerService.class)
+.setAction(NormalizerService.ACTION_STOP));
+}
+}
 MediaProjectionManager manager =
 (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
 startActivityForResult(manager.createScreenCaptureIntent(), REQ_MEDIA_PROJECTION);
@@ -396,18 +474,29 @@ Toast.makeText(this, "Точный PCM не запущен · пробую бы�
 @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
 super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 if (requestCode == REQ_RECORD_AUDIO && grantResults.length > 0) {
-if (grantResults[0] == PackageManager.PERMISSION_GRANTED) showProjectionExplanation();
-else Toast.makeText(this, "Без разрешения Android не даёт Sound Ceiling читать playback-meter APIs.", Toast.LENGTH_LONG).show();
+if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+showProjectionExplanation();
+} else {
+pendingRelayProjection = false;
+Toast.makeText(this, "Без разрешения Android не даёт Sound Ceiling читать playback-meter APIs.", Toast.LENGTH_LONG).show();
+}
 }
 }
 @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 super.onActivityResult(requestCode, resultCode, data);
 if (requestCode != REQ_MEDIA_PROJECTION) return;
+boolean relayRequested = pendingRelayProjection;
+pendingRelayProjection = false;
 if (resultCode == RESULT_OK && data != null) {
 Intent service = new Intent(this, NormalizerService.class)
 .putExtra(NormalizerService.EXTRA_RESULT_CODE, resultCode)
 .putExtra(NormalizerService.EXTRA_RESULT_DATA, data);
+if (relayRequested) {
+service.putExtra(NormalizerService.EXTRA_RELAY_REQUESTED, true);
+}
 startForegroundService(service);
+} else if (relayRequested) {
+Toast.makeText(this, "Relay не запущен: MediaProjection не разрешён.", Toast.LENGTH_LONG).show();
 } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
 startFastFallback();
 }
@@ -426,6 +515,11 @@ handler.post(uiTick);
 @Override protected void onPause() {
 handler.removeCallbacks(uiTick);
 super.onPause();
+}
+@Override protected void onSaveInstanceState(Bundle outState) {
+outState.putBoolean(STATE_PENDING_RELAY_PROJECTION,
+pendingRelayProjection);
+super.onSaveInstanceState(outState);
 }
 @Override protected void onDestroy() {
 handler.removeCallbacks(uiTick);

@@ -26,12 +26,14 @@ final class HybridRuntimeResolver implements AutoCloseable {
         final long sourceChangedAtMs;
         final String sourceStatusLabel;
         final CaptureRequestCoordinator.SourceAccessState sourceAccessState;
+        final long sourceGeneration;
 
         Snapshot(PlaybackSnapshot playback, List<PlaybackEndpoint> playbackEndpoints,
                  SourceSet sources, PcmAvailabilityState pcmState,
                  EngineCapabilities capabilities, EffectivePolicy policy,
                  SourceDescriptor exactSource, AppPolicy exactAppPolicy, long sourceChangedAtMs,
-                 String sourceStatusLabel, CaptureRequestCoordinator.SourceAccessState sourceAccessState) {
+                 String sourceStatusLabel, CaptureRequestCoordinator.SourceAccessState sourceAccessState,
+                 long sourceGeneration) {
             this.playback = playback;
             this.playbackEndpoints = Collections.unmodifiableList(new ArrayList<>(playbackEndpoints));
             this.sources = sources;
@@ -44,6 +46,7 @@ final class HybridRuntimeResolver implements AutoCloseable {
             this.sourceStatusLabel = sourceStatusLabel == null ? "" : sourceStatusLabel;
             this.sourceAccessState = sourceAccessState == null
                     ? CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING : sourceAccessState;
+            this.sourceGeneration = Math.max(0L, sourceGeneration);
         }
     }
 
@@ -57,6 +60,7 @@ final class HybridRuntimeResolver implements AutoCloseable {
     private CaptureRequestCoordinator captureCoordinator =
             new CaptureRequestCoordinator(CAPTURE_SOURCE_COALESCE_MS);
     private List<PlaybackEvidence> candidateEvidence = Collections.emptyList();
+    private long sourceGeneration = 1L;
 
     HybridRuntimeResolver(Context context, AudioManager audio) {
         this.context = context.getApplicationContext();
@@ -199,7 +203,9 @@ final class HybridRuntimeResolver implements AutoCloseable {
         List<PlaybackEndpoint> endpoints = PlaybackEndpointResolver.resolve(playback,
                 captureCoordinator.candidates(), captureCoordinator.confirmedCandidate());
         return new Snapshot(playback, endpoints, sources, pcm, capabilities, policy,
-                exactSource, exactPolicy, sourceChangedAtMs, captureCoordinator.sourceStatusLabel(), captureCoordinator.sourceAccessState());
+                exactSource, exactPolicy, sourceChangedAtMs,
+                captureCoordinator.sourceStatusLabel(),
+                captureCoordinator.sourceAccessState(), sourceGeneration);
     }
 
     private void refreshCandidates(long nowElapsedMs) {
@@ -239,17 +245,36 @@ final class HybridRuntimeResolver implements AutoCloseable {
         if (!next.equals(sourceSignature)) {
             sourceSignature = next;
             sourceChangedAtMs = nowElapsedMs;
+            sourceGeneration++;
             DiagnosticLog.event("source_transition", "signature=" + next);
         }
     }
 
     void newEpoch() {
         epoch++;
+        sourceGeneration++;
         sourceSignature = "";
         sourceChangedAtMs = SystemClock.elapsedRealtime();
         captureCoordinator = new CaptureRequestCoordinator(CAPTURE_SOURCE_COALESCE_MS);
         candidateEvidence = Collections.emptyList();
         captureReconcileRequested.set(true);
+    }
+
+    PlaybackObserver.RendererBaseline beginRelayRendererOwnership() {
+        return observer.beginRendererOwnership();
+    }
+
+    boolean claimRelayRendererOwnership(
+            PlaybackObserver.RendererBaseline baseline) {
+        return observer.claimRendererOwnership(baseline);
+    }
+
+    void clearRelayRendererOwnership() {
+        observer.clearRendererOwnership();
+    }
+
+    boolean relayRendererOwnershipProven() {
+        return observer.rendererOwnershipProven();
     }
 
     @Override public void close() {

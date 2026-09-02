@@ -4,6 +4,7 @@ import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioPlaybackCaptureConfiguration;
 import android.media.AudioRecord;
+import android.media.AudioTimestamp;
 import android.media.projection.MediaProjection;
 import android.os.SystemClock;
 
@@ -17,11 +18,25 @@ final class PcmCaptureBackend implements AutoCloseable {
 
     enum TargetWarmupStatus { NOT_TARGETED, PENDING, CONFIRMED, FAILED }
 
+    static final class CaptureTimestamp {
+        final boolean valid;
+        final long framePosition;
+        final long nanoTime;
+
+        CaptureTimestamp(boolean valid, long framePosition, long nanoTime) {
+            this.valid = valid;
+            this.framePosition = framePosition;
+            this.nanoTime = nanoTime;
+        }
+    }
+
     private final AudioRecord record;
     private final PcmCaptureRequest request;
     private final long openedElapsedMs;
     private final Object readLock = new Object();
     private volatile long lastSampleElapsedMs;
+    private volatile CaptureTimestamp latestTimestamp =
+            new CaptureTimestamp(false, 0L, 0L);
     private volatile boolean closed;
     private volatile boolean stopRequested;
     private boolean readInFlight;
@@ -29,6 +44,7 @@ final class PcmCaptureBackend implements AutoCloseable {
     private boolean released;
     private volatile int consecutiveTargetSignalBlocks;
     private volatile boolean targetConfirmed;
+    private long totalFramesRead;
 
     private PcmCaptureBackend(AudioRecord record, PcmCaptureRequest request) {
         this.record = record;
@@ -99,6 +115,8 @@ final class PcmCaptureBackend implements AutoCloseable {
         if (read > 0) {
             long now = SystemClock.elapsedRealtime();
             lastSampleElapsedMs = now;
+            totalFramesRead += read / CHANNELS;
+            updateTimestamp(totalFramesRead);
             observeTargetWarmup(buffer, read);
         }
         return read;
@@ -149,6 +167,10 @@ final class PcmCaptureBackend implements AutoCloseable {
         return lastSampleElapsedMs;
     }
 
+    CaptureTimestamp latestTimestamp() {
+        return latestTimestamp;
+    }
+
     long sampleAgeMs(long nowElapsedMs) {
         long last = lastSampleElapsedMs;
         return last <= 0L ? Long.MAX_VALUE : Math.max(0L, nowElapsedMs - last);
@@ -157,6 +179,7 @@ final class PcmCaptureBackend implements AutoCloseable {
     void requestStop() {
         if (closed || stopRequested) return;
         stopRequested = true;
+        latestTimestamp = new CaptureTimestamp(false, 0L, 0L);
         try { record.stop(); } catch (RuntimeException ignored) {}
     }
 
@@ -188,5 +211,25 @@ final class PcmCaptureBackend implements AutoCloseable {
             released = true;
         }
         try { record.release(); } catch (RuntimeException ignored) {}
+    }
+
+    private void updateTimestamp(long returnedBlockEndFrame) {
+        AudioTimestamp timestamp = new AudioTimestamp();
+        try {
+            int status = record.getTimestamp(
+                    timestamp, AudioTimestamp.TIMEBASE_MONOTONIC);
+            CaptureTimestampAligner.Result aligned = status
+                    == AudioRecord.SUCCESS
+                    ? CaptureTimestampAligner.align(returnedBlockEndFrame,
+                            timestamp.framePosition, timestamp.nanoTime,
+                            SAMPLE_RATE)
+                    : new CaptureTimestampAligner.Result(false, 0L, 0L);
+            latestTimestamp = aligned.valid
+                    ? new CaptureTimestamp(true, aligned.framePosition,
+                            aligned.nanoTime)
+                    : new CaptureTimestamp(false, 0L, 0L);
+        } catch (RuntimeException ignored) {
+            latestTimestamp = new CaptureTimestamp(false, 0L, 0L);
+        }
     }
 }
