@@ -140,8 +140,9 @@ final class PlaybackObserver implements AutoCloseable {
         ArrayList<PlaybackSnapshot.PlayerFact> facts = new ArrayList<>();
         AudioPlaybackConfiguration owned = ownedRendererConfiguration;
         RelayPlaybackOwnership.FilterResult<AudioPlaybackConfiguration>
-                filtered = RelayPlaybackOwnership.excludeOwned(
-                        safeCopy(configs), owned);
+                filtered = RelayPlaybackOwnership.excludeOwnedByStableKey(
+                        safeCopy(configs), owned,
+                        PlaybackObserver::stableRendererIdentity);
         boolean ownershipExpected = owned != null;
         boolean ownershipProven = !ownershipExpected
                 || filtered.ownershipProven();
