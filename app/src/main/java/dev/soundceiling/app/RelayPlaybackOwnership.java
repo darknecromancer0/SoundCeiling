@@ -68,6 +68,29 @@ final class RelayPlaybackOwnership {
         return new FilterResult<>(remaining, excluded);
     }
 
+    /** Excludes exactly one owned row using the same stable identity used at claim time. */
+    static <T> FilterResult<T> excludeOwnedByStableKey(List<T> current, T owned,
+            Function<T, String> stableKey) {
+        ArrayList<T> remaining = new ArrayList<>();
+        int excluded = 0;
+        if (current != null && stableKey != null) {
+            String ownedKey = owned == null ? null : stableKey.apply(owned);
+            if (ownedKey == null) return new FilterResult<>(safeCopy(current), 0);
+            for (T item : current) {
+                String key = item == null ? null : stableKey.apply(item);
+                if (ownedKey.equals(key)) excluded++;
+                else if (item != null) remaining.add(item);
+            }
+        } else if (current != null) {
+            remaining.addAll(current);
+        }
+        return new FilterResult<>(remaining, excluded);
+    }
+
+    private static <T> List<T> safeCopy(List<T> source) {
+        return source == null ? Collections.emptyList() : new ArrayList<>(source);
+    }
+
     private static <T> int indexOfKey(List<T> values, String wanted,
             Function<T, String> stableKey) {
         int found = -1;
