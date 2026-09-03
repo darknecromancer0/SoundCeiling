@@ -99,8 +99,9 @@ final class PlaybackObserver implements AutoCloseable {
                 return false;
             }
             AudioPlaybackConfiguration candidate =
-                    RelayPlaybackOwnership.uniqueNew(
+                    RelayPlaybackOwnership.uniqueNewByStableKey(
                             baseline.configurations, current,
+                            PlaybackObserver::stableRendererIdentity,
                             PlaybackObserver::isExpectedRenderer);
             if (candidate != null) {
                 ownedRendererConfiguration = candidate;
@@ -165,6 +166,16 @@ final class PlaybackObserver implements AutoCloseable {
                 "public_playback_callback", ownershipExpected,
                 ownershipProven);
         notifyListener();
+    }
+
+    private static String stableRendererIdentity(
+            AudioPlaybackConfiguration configuration) {
+        if (configuration == null) return null;
+        AudioAttributes attributes = configuration.getAudioAttributes();
+        if (attributes == null) return null;
+        // Public, semantically stable fields only. Do not include mutable route,
+        // player state, mute state or device identifiers in ownership identity.
+        return attributes.getUsage() + ":" + attributes.getContentType();
     }
 
     private static boolean isExpectedRenderer(
