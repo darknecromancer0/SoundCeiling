@@ -52,7 +52,7 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         root.addView(text("Простой режим", 28, true));
-        TextView intro = secondary("Основные настройки безопасности. PCM Shadow в v0.9 только рассчитывает коррекцию и не меняет слышимый звук; Default Linked Lock задаёт форму output ceilings.", 14);
+        TextView intro = secondary("v0.9.2: основная автогромкость меняет Samsung Media по одной ступени. Volume Down или уменьшение системного ползунка ставит её на паузу до Остановить → Запустить. Safety Maximum остаётся активен. PCM Shadow — отдельный расчёт без звука.", 14);
         intro.setPadding(0, dp(6), 0, dp(12));
         root.addView(intro);
 

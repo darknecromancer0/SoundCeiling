@@ -11,8 +11,8 @@ fail() { echo "v0.9.1 playback ownership contract: $*" >&2; exit 1; }
 need() { grep -Fq -- "$2" "$1" || fail "missing $(basename "$1") -> $2"; }
 reject() { if grep -Fq -- "$2" "$1"; then fail "forbidden $(basename "$1") -> $2"; fi; }
 
-need "$OBSERVER" 'RelayPlaybackOwnership.uniqueNew('
-need "$OBSERVER" 'RelayPlaybackOwnership.excludeOwned('
+need "$OBSERVER" 'RelayPlaybackOwnership.uniqueNewByStableKey('
+need "$OBSERVER" 'RelayPlaybackOwnership.excludeOwnedByStableKey('
 need "$OBSERVER" 'AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY'
 need "$OBSERVER" 'AudioAttributes.CONTENT_TYPE_MUSIC'
 need "$OBSERVER" 'filtered.ownershipProven()'

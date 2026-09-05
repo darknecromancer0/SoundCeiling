@@ -16,6 +16,24 @@ final class StatusText {
     }
 
     static String controller(RuntimeState s) {
+        if (s.manualSafetyPause) {
+            return "Автогромкость на паузе"
+                    + (s.lastControllerReason.contains("user_down") ? " — Volume Down" : "")
+                    + ". Для возобновления: Остановить → Запустить. Safety Maximum активен.";
+        }
+        if (s.lastControllerReason.startsWith("media_auto_")) {
+            if (s.controlActivity == RuntimeState.ControlActivity.RECOVERING)
+                return "Samsung Media: повышает тихий звук на одну ступень";
+            if (s.controlActivity == RuntimeState.ControlActivity.DECREASING)
+                return "Samsung Media: снижает громкий звук на одну ступень";
+            if (s.lastControllerReason.contains("no_output_loudness"))
+                return "Samsung Media: ждёт измерение PCM; автозаписей нет";
+            if (s.lastControllerReason.contains("reference_ambiguous"))
+                return "Samsung Media: безопасное направление неоднозначно — удержание";
+            if (s.lastControllerReason.contains("next_step_exceeds_ceiling"))
+                return "Samsung Media: следующая ступень превысит потолок — удержание";
+            return "Samsung Media: удержание · " + s.lastControllerReason;
+        }
         return switch (s.controlActivity) {
             case HOLDING -> "Регулятор: удерживает";
             case DECREASING -> "Регулятор: снижает";
@@ -100,6 +118,9 @@ final class StatusText {
     static String engine(RuntimeState s) {
         if (!s.running) return "Sound Ceiling выключен";
         if (s.relayAudible) return "Accessibility Relay";
+        if (s.manualSafetyPause) return "Samsung Media: автогромкость на паузе";
+        if (s.lastControllerReason.startsWith("media_auto_"))
+            return "Samsung Media Auto Volume";
         if (s.sessionDspActive && s.sessionId > 0) return "Session DSP";
 
         boolean precisePcm = s.pcmState == PcmAvailabilityState.ACTIVE

@@ -67,6 +67,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ManualThresholdFollower.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/AdaptiveVolumeEnvelope.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteTracker.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/MediaAutoVolumeAuthority.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/HardCapLatch.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeKeySafetyPolicy.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/UnexpectedZeroPolicy.java" \
@@ -175,6 +176,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayPcmDspPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayRendererHealthPureTest.java" \
  "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayTopologyPureTest.java" \
+ "$ROOT/app/src/test/java/dev/soundceiling/app/V092SamsungMediaPureTest.java" \
  "$ROOT/tests/PureLogicTest.java" \
  "$ROOT/tests/DiagnosticsPureTest.java" \
  "$ROOT/tests/LoudnessPolicyPeakThresholdTest.java" \
@@ -274,5 +276,6 @@ java -cp "$OUT" dev.soundceiling.app.V091RelayPreflightLatencyPureTest
 java -cp "$OUT" dev.soundceiling.app.V091RelayPcmDspPureTest
 java -cp "$OUT" dev.soundceiling.app.V091RelayRendererHealthPureTest
 java -cp "$OUT" dev.soundceiling.app.V091RelayTopologyPureTest
+java -cp "$OUT" dev.soundceiling.app.V092SamsungMediaPureTest
 java -cp "$OUT" dev.soundceiling.app.V072GlobalDspProbePureTest
 java -cp "$OUT" dev.soundceiling.app.V072ResetDefaultsPureTest

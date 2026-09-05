@@ -151,7 +151,8 @@ public class NormalizerService extends Service {
         measurementCurve = new MeasurementVolumeCurve(audio);
         applier = new VolumeApplier(audio);
         writeTracker = new VolumeWriteTracker(VolumeWriteTracker.DEFAULT_ACKNOWLEDGEMENT_WINDOW_MS);
-        safeVolume = new SafeVolumeController(applier, writeTracker);
+        safeVolume = new SafeVolumeController(applier, writeTracker,
+                StrictSafetyState.mediaAutomation());
         systemStreams = new SystemStreamController(audio);
         visualizer = new GlobalVisualizerBackend();
         optionalDsp = new OptionalDspController();
@@ -227,6 +228,7 @@ public class NormalizerService extends Service {
         if (workerRunning.get()) return START_NOT_STICKY;
 
         serviceGeneration = nextGeneration(serviceGeneration);
+        if (intent != null) StrictSafetyState.mediaAutomation().start();
 
         fastOnlyMode = intent != null
                 && intent.getBooleanExtra(EXTRA_FAST_ONLY, false);
@@ -673,13 +675,16 @@ public class NormalizerService extends Service {
             ControlCommand command = controlCoordinator.onFrame(controlFrame(now, current, levels,
                     signal, hybridSnapshot.policy, effectiveProfile, hybridSnapshot.sources.confidence,
                     hybridSnapshot.playback, blockRms, signal));
+            command = respectMediaPause(command);
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
                     effectiveProfile.autoMute, now);
+            command = respectMediaPause(command);
             logControlSummary(now, command, applied, levels);
             String reason = command.reason();
-            long reactionLatency = applied != current
+            long reactionLatency = command.kind() == ControlCommand.Kind.MEDIA_INDEX
+                    && applied != current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
             if (applied < current) {
                 lastChange = now;
@@ -691,7 +696,7 @@ public class NormalizerService extends Service {
             }
             if (applied > controlCurve.minIndex()) lastAppliedNonzero = applied;
 
-            if (applied != current) {
+            if (command.kind() == ControlCommand.Kind.MEDIA_INDEX && applied != current) {
                 DiagnosticLog.event("hybrid_control_write", String.format(Locale.US,
                         "reason=%s actuator=%s current=%d requested=%d applied=%d min=%d max=%d hardMax=%d rawPeak=%.2f projectedPeak=%.2f controlLoudness=%.2f latencyMs=%d source=%s pcm=%s confidence=%s",
                         reason, command.kind(), current, command.mediaIndex(), applied,
@@ -708,7 +713,9 @@ public class NormalizerService extends Service {
                 estRms = rms.controlRmsDb + gain + currentProfile.calibrationOffsetDb;
                 estPeak = rms.peakHoldDb + gain + currentProfile.calibrationOffsetDb;
             }
-            RuntimeState.ControlActivity activity = applied < current ? RuntimeState.ControlActivity.DECREASING
+            RuntimeState.ControlActivity activity = StrictSafetyState.mediaAutomation().paused()
+                    ? RuntimeState.ControlActivity.HOLDING
+                    : applied < current ? RuntimeState.ControlActivity.DECREASING
                     : applied > current ? RuntimeState.ControlActivity.RECOVERING
                     : applied >= safetySettings.hardMax() ? RuntimeState.ControlActivity.MAXIMUM_LIMIT
                     : RuntimeState.ControlActivity.HOLDING;
@@ -921,6 +928,11 @@ public class NormalizerService extends Service {
 
         int hardMax = safetySettings.hardMax();
         VolumeWriteTracker.Observation observation = writeTracker.observe(current, now, hardMax);
+        StrictSafetyState.mediaAutomation().observe(observation);
+        DiagnosticLog.transition("media_auto_authority",
+                StrictSafetyState.mediaAutomation().reason(),
+                "state=" + StrictSafetyState.mediaAutomation().reason() + " media=" + current
+                        + " resume=explicit_stop_start");
         logVolumeObservation(observation, current, hardMax);
         HardCapLatch.Decision latch = hardCapLatch.update(current, hardMax, now);
         if (latch.entered) {
@@ -1032,6 +1044,13 @@ public class NormalizerService extends Service {
                         && isVerifiedDspCapability(optionalDsp.capability()))
                 .globalMixDsp(false)
                 .ordinaryMediaFallbackAllowed(false)
+                .mediaAutoVolume(!fastOnlyMode && pcmCapture != null
+                                && pcmCapture.request().targeted()
+                                && sourceEvidence
+                                == EngineCapabilities.SourceIdentityConfidence.EXACT
+                                && playback != null && playback.active
+                                && playback.observedPlayers == 1,
+                        !StrictSafetyState.mediaAutomation().allowsWrites())
                 .observation(coordinatorObservation(observed), coordinatorOrigin(observed))
                 .build();
     }
@@ -1057,8 +1076,19 @@ public class NormalizerService extends Service {
     }
 
     /** The service is the only Android actuator bridge; the coordinator has already chosen it. */
+    private ControlCommand respectMediaPause(ControlCommand command) {
+        if (!StrictSafetyState.mediaAutomation().paused() || command == null
+                || command.provenance() == ControlCommand.Provenance.HARD_CAP
+                || command.provenance() == ControlCommand.Provenance.QUIET_NOW
+                || command.provenance() == ControlCommand.Provenance.DSP_NEUTRALIZATION) {
+            return command;
+        }
+        return ControlCommand.none(StrictSafetyState.mediaAutomation().reason());
+    }
+
     private int applyCoordinatorCommand(ControlCommand command, int current, SafetySettings settings,
                                         int effectiveMax, boolean autoMuteEnabled, long now) {
+        command = respectMediaPause(command);
         if (command == null || command.kind() == ControlCommand.Kind.NONE) return current;
         if (command.kind() == ControlCommand.Kind.DSP_GAIN) {
             int sessionBefore = optionalDsp == null ? -1 : optionalDsp.enhancedSessionId();
@@ -1081,6 +1111,10 @@ public class NormalizerService extends Service {
         }
         int target = command.mediaIndex();
         if (target > current) {
+            if (command.provenance() == ControlCommand.Provenance.AUTO_MEDIA) {
+                return safeVolume.applyRecovery(target, current, settings, effectiveMax,
+                        Math.min(effectiveMax, settings.hardMax()), now);
+            }
             MediaAnchorState anchor = controlCoordinator.mediaAnchorState();
             int debtCeiling = anchor == null ? current : anchor.maxDebtRecoveryIndex();
             target = Math.min(target, debtCeiling);
@@ -1214,6 +1248,7 @@ public class NormalizerService extends Service {
 
     private void logControlSummary(long nowMs, ControlCommand command, int appliedMediaIndex,
                                    OutputLevelModel.Snapshot levels) {
+        command = respectMediaPause(command);
         NormalizerControlCoordinator.Snapshot snapshot = controlCoordinator.snapshot();
         float appliedGainDb = optionalDsp == null ? 0f : optionalDsp.appliedGainDb();
         float sourcePeakDbfs = levels == null ? Float.NaN : levels.sourcePeakDbfs;
@@ -1261,6 +1296,10 @@ public class NormalizerService extends Service {
     }
 
     private String actuatorTier(ControlCommand command, String reason) {
+        if (StrictSafetyState.mediaAutomation().paused()
+                && reason != null && reason.startsWith("media_auto_paused")) {
+            return "SAMSUNG_MEDIA_PAUSED";
+        }
         if (command != null) {
             if (command.kind() == ControlCommand.Kind.DSP_GAIN)
                 return optionalDsp != null && optionalDsp.enhancedSessionId() > 0
@@ -1269,6 +1308,9 @@ public class NormalizerService extends Service {
                     || command.provenance() == ControlCommand.Provenance.DEBT_RECOVERY) {
                 return "COARSE_MEDIA";
             }
+            if (command.provenance() == ControlCommand.Provenance.AUTO_MEDIA) {
+                return "SAMSUNG_MEDIA";
+            }
             if (command.provenance() == ControlCommand.Provenance.HARD_CAP
                     || command.provenance() == ControlCommand.Provenance.HARD_PEAK_SAFETY
                     || command.provenance() == ControlCommand.Provenance.QUIET_NOW) {
@@ -1276,6 +1318,7 @@ public class NormalizerService extends Service {
             }
         }
         if (reason != null && reason.startsWith("coarse_")) return "COARSE_MEDIA";
+        if (reason != null && reason.startsWith("media_auto_")) return "SAMSUNG_MEDIA";
         if (optionalDsp != null && optionalDsp.enhancedSessionId() > 0) return "SESSION_DSP";
         return optionalDsp != null && isVerifiedDspCapability(optionalDsp.capability())
                 ? "DSP" : "SAFETY_ONLY";
@@ -1339,7 +1382,7 @@ public class NormalizerService extends Service {
         PcmShadowDsp.Result shadow = lastPcmShadowResult;
         AccessibilityRelayRuntime.Snapshot relay = relaySnapshot;
         RuntimeState.Builder out = builder.volume(volume, controlCurve.maxIndex())
-                .safety(false, safetySettings.maxIndex,
+                .safety(StrictSafetyState.mediaAutomation().paused(), safetySettings.maxIndex,
                         safetySettings.safetyLockEnabled, safetySettings.safetyLockIndex)
                 .envelope(safetySettings.hardMax(), safetySettings.hardMax(),
                         safetySettings.hardMax(), 0f)
@@ -1926,6 +1969,7 @@ public class NormalizerService extends Service {
 
     private synchronized void stopSafe(String reason, boolean error) {
         if (!stopping.compareAndSet(false, true)) return;
+        StrictSafetyState.mediaAutomation().stop();
         if (relayRuntime != null) {
             relayRuntime.abort("service_stop",
                     AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
@@ -1969,6 +2013,7 @@ public class NormalizerService extends Service {
     }
 
     @Override public void onDestroy() {
+        StrictSafetyState.mediaAutomation().stop();
         if (relayRuntime != null) {
             relayRuntime.abort("service_destroy",
                     AccessibilityRelayGate.Cleanup.RESTORE_OWNED);

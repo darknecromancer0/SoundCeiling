@@ -45,6 +45,8 @@ public final class NormalizerControlCoordinator {
         private final boolean transientEvidence;
         private final boolean calibrationProfileValid;
         private final boolean ordinaryMediaFallbackAllowed;
+        private final boolean mediaAutoVolume;
+        private final boolean mediaAutoVolumePaused;
 
         private Frame(Builder b) {
             atMs = Math.max(0L, b.atMs);
@@ -86,6 +88,8 @@ public final class NormalizerControlCoordinator {
             transientEvidence = b.transientEvidence;
             calibrationProfileValid = b.calibrationProfileValid;
             ordinaryMediaFallbackAllowed = b.ordinaryMediaFallbackAllowed;
+            mediaAutoVolume = b.mediaAutoVolume;
+            mediaAutoVolumePaused = b.mediaAutoVolumePaused;
         }
 
         public static final class Builder {
@@ -121,6 +125,8 @@ public final class NormalizerControlCoordinator {
             private boolean transientEvidence;
             private boolean calibrationProfileValid = true;
             private boolean ordinaryMediaFallbackAllowed = true;
+            private boolean mediaAutoVolume;
+            private boolean mediaAutoVolumePaused;
 
             public Builder(long atMs, int previousMediaIndex, int currentMediaIndex,
                            ControlVolumeCurve routeCurve) {
@@ -168,6 +174,9 @@ public final class NormalizerControlCoordinator {
             }
             public Builder ordinaryMediaFallbackAllowed(boolean value) {
                 ordinaryMediaFallbackAllowed = value; return this;
+            }
+            public Builder mediaAutoVolume(boolean enabled, boolean paused) {
+                mediaAutoVolume = enabled; mediaAutoVolumePaused = paused; return this;
             }
             public Frame build() { return new Frame(this); }
         }
@@ -308,6 +317,26 @@ public final class NormalizerControlCoordinator {
         if (!frame.sourceControlEnabled || frame.effectivePolicy.contains("off")) {
             return record(ControlCommand.none("source_control_disabled"), plan.desiredCorrectionDb(),
                     frame, programActive, transientEvent.severity);
+        }
+
+        if (frame.mediaAutoVolume) {
+            if (frame.mediaAutoVolumePaused) {
+                coarseFallback.onCaptureReplaced();
+                return record(ControlCommand.none("media_auto_paused_user_down"),
+                        plan.desiredCorrectionDb(), frame, programActive, transientEvent.severity);
+            }
+            int maximum = Math.min(frame.hardMediaCeilingIndex,
+                    frame.routeCurve.capIndexFromPercent(frame.controlProfile.maxMediaPercent));
+            CoarseMediaFallbackController.Decision automatic = coarseFallback.updateAutomatic(
+                    frame.atMs, frame.currentMediaIndex, maximum, frame.outputLevels, ceilingState,
+                    frame.routeCurve, frame.controlProfile, programActive,
+                    allowsPositiveControl(frame));
+            ControlCommand command = automatic.shouldWrite
+                    ? ControlCommand.mediaIndex(automatic.requestedIndex, automatic.reason,
+                            ControlCommand.Provenance.AUTO_MEDIA)
+                    : ControlCommand.none(automatic.reason);
+            return record(command, plan.desiredCorrectionDb(), frame, programActive,
+                    transientEvent.severity);
         }
 
         // v0.7.7: missing Session DSP is a HOLD for ordinary normalization. Samsung Media stays

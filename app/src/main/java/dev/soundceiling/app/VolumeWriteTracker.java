@@ -97,6 +97,7 @@ final class VolumeWriteTracker {
     private final Deque<PendingWrite> pendingWrites = new ArrayDeque<>();
     private final Deque<PendingWrite> staleWrites = new ArrayDeque<>();
     private int lastObserved = -1;
+    private Observation confirmedReadback;
 
     VolumeWriteTracker(long acknowledgementWindowMs) {
         this.acknowledgementWindowMs = Math.max(50L, acknowledgementWindowMs);
@@ -107,6 +108,7 @@ final class VolumeWriteTracker {
         lastObserved = index;
         pendingWrites.clear();
         staleWrites.clear();
+        confirmedReadback = null;
     }
 
     void noteAppWrite(WriteOrigin origin, int previousObservedIndex, int expectedIndex, long nowMs) {
@@ -124,6 +126,18 @@ final class VolumeWriteTracker {
         noteAppWrite(WriteOrigin.NORMALIZER_DOWN, previous, index, nowMs);
     }
 
+    /** Commit a synchronous readback as the physical baseline while retaining one ACK. */
+    void confirmAppWriteReadback(WriteOrigin origin, int previous, int expected, int observed,
+                                 long nowMs) {
+        PendingWrite write = pendingWrites.peekLast();
+        if (observed != expected || write == null || write.origin != origin
+                || write.previousIndex != previous || write.expectedIndex != expected) return;
+        removeThrough(pendingWrites, write);
+        lastObserved = observed;
+        confirmedReadback = new Observation(ObservationKind.APP_WRITE_ACK, origin, previous,
+                expected, observed, Math.max(0L, nowMs - write.atMs));
+    }
+
     Observation observe(int index, long nowMs) {
         return observe(index, nowMs, Integer.MAX_VALUE);
     }
@@ -131,6 +145,8 @@ final class VolumeWriteTracker {
     Observation observe(int index, long nowMs, int hardMaxIndex) {
         expirePending(nowMs);
         pruneStale(nowMs);
+        Observation confirmed = confirmedReadback;
+        confirmedReadback = null;
 
         int safeHardMax = Math.max(0, hardMaxIndex);
         if (index > safeHardMax) {
@@ -142,6 +158,7 @@ final class VolumeWriteTracker {
         }
 
         if (index == lastObserved) {
+            if (confirmed != null) return confirmed;
             PendingWrite pending = pendingWrites.peekFirst();
             long age = pending == null ? 0L : Math.max(0L, nowMs - pending.atMs);
             return new Observation(ObservationKind.UNCHANGED,

@@ -7,6 +7,7 @@ MANIFEST="$R/app/src/main/AndroidManifest.xml"
 WORKFLOW="$R/.github/workflows/build-apk.yml"
 README="$R/README.md"
 CHECKLIST="$R/docs/field-tests/2026-08-31-v0.9.1-samsung-relay-checklist.md"
+MEDIA_CHECKLIST="$R/docs/field-tests/2026-09-03-v0.9.2-samsung-media-checklist.md"
 CAPTURE="$R/app/src/main/java/dev/soundceiling/app/PcmCaptureBackend.java"
 SERVICE="$R/app/src/main/java/dev/soundceiling/app/NormalizerService.java"
 SIGNING="$R/scripts/check-stable-debug-signing-contract.sh"
@@ -20,8 +21,8 @@ reject() {
   fi
 }
 
-need "$GRADLE" 'versionCode=37'
-need "$GRADLE" 'versionName="0.9.1"'
+need "$GRADLE" 'versionCode=38'
+need "$GRADLE" 'versionName="0.9.2"'
 need "$GRADLE" 'signingConfig = signingConfigs.getByName("soundCeilingDev")'
 
 need "$MANIFEST" 'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK'
@@ -34,12 +35,13 @@ reject "$CAPTURE" 'USAGE_ASSISTANCE_ACCESSIBILITY'
 
 need "$WORKFLOW" 'run: bash ./scripts/run-v091-accessibility-relay-tests.sh'
 need "$WORKFLOW" 'run: bash ./scripts/check-v091-release-contract.sh'
-need "$WORKFLOW" 'name: SoundCeiling-v0.9.1-source-snapshot'
-need "$WORKFLOW" 'name: SoundCeiling-v0.9.1-debug-apk'
-need "$WORKFLOW" 'name: SoundCeiling-v0.9.1-debug-apk-checksum'
+need "$WORKFLOW" 'name: SoundCeiling-v0.9.2-source-snapshot'
+need "$WORKFLOW" 'name: SoundCeiling-v0.9.2-debug-apk'
+need "$WORKFLOW" 'name: SoundCeiling-v0.9.2-debug-apk-checksum'
 need "$WORKFLOW" 'path: app/build/outputs/apk/debug/app-debug.apk.sha256'
 
 need_file "$CHECKLIST"
+need_file "$MEDIA_CHECKLIST"
 need "$CHECKLIST" 'Install-over from v0.9.0'
 need "$CHECKLIST" 'Media 0'
 need "$CHECKLIST" 'Один чистый тихий поток'
@@ -48,7 +50,7 @@ need "$CHECKLIST" '10 минут'
 need "$CHECKLIST" 'median <= 120 ms'
 need "$CHECKLIST" 'p95 <= 200 ms'
 
-need "$README" '# Sound Ceiling for Android - v0.9.1'
+need "$README" '# Sound Ceiling for Android - v0.9.2'
 need "$README" 'experimental field path'
 need "$README" 'built-in speaker only'
 need "$README" 'field_quarantined_neutral_media_bypass'

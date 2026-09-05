@@ -111,7 +111,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         root.addView(quietRow);
 
         section("Главное");
-        root.addView(secondary("Target — верхняя цель: тихий материал сам по себе не даёт права повышать Media. Восстановление возвращает только ранее сделанное SoundCeiling снижение и не выходит выше пользовательского/Maximum envelope.", 13));
+        root.addView(secondary("v0.9.2: Samsung Media Auto Volume использует output ceilings и Normalization strength. Тихое повышается, громкое снижается по одной ступени, не выше Safety Maximum. Volume Down ставит обычное управление на паузу до Остановить → Запустить. Target ниже относится к PCM Shadow/Relay.", 13));
         normalizationGroup = new RadioGroup(context); normalizationGroup.setOrientation(RadioGroup.HORIZONTAL);
         addNormalization("Off", NormalizationPreset.OFF); addNormalization("Light", NormalizationPreset.LIGHT);
         addNormalization("Medium", NormalizationPreset.MEDIUM); addNormalization("Strict", NormalizationPreset.STRICT);

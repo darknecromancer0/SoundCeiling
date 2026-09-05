@@ -12,6 +12,8 @@ import java.util.List;
 
 /** Shared truth for the opt-in Accessibility hardware-key safety gate. */
 final class StrictSafetyState {
+    private static final MediaAutoVolumeAuthority MEDIA_AUTOMATION =
+            new MediaAutoVolumeAuthority();
     private static final String ENGINE_RUNNING = "strict_safety_engine_running";
     private static final RelayKeyAuthority RELAY_KEYS_OFF =
             new RelayKeyAuthority(RelayVolumePolicy.Phase.OFF, 0, 0);
@@ -82,6 +84,8 @@ final class StrictSafetyState {
     }
 
     static boolean keyFilterCapable() { return keyFilterCapable; }
+
+    static MediaAutoVolumeAuthority mediaAutomation() { return MEDIA_AUTOMATION; }
 
     static void publishRelayKeyAuthority(RelayVolumePolicy.Phase phase,
             int minimumIndex, int hardMaximumIndex) {

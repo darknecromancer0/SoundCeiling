@@ -20,32 +20,81 @@ final class CoarseMediaFallbackController {
     private long directionStartedAtMs = Long.MIN_VALUE;
     private int debtSteps;
 
+    Decision updateAutomatic(long atMs, int currentIndex, int maximumIndex,
+                    OutputLevelModel.Snapshot levels, OutputCeilingState ceilings,
+                    ControlVolumeCurve routeCurve, ControlProfile profile,
+                    boolean programActive, boolean positiveAllowed) {
+        Decision result = update(atMs, currentIndex, maximumIndex, levels, ceilings, routeCurve,
+                profile, programActive, true, positiveAllowed);
+        return new Decision(result.requestedIndex, result.shouldWrite,
+                result.reason.replace("coarse_", "media_auto_"), result.dwellRemainingMs);
+    }
+
     Decision update(long atMs, int currentIndex, int userAnchorIndex,
                     OutputLevelModel.Snapshot levels, OutputCeilingState ceilings,
                     ControlVolumeCurve routeCurve, ControlProfile profile,
                     boolean programActive) {
+        return update(atMs, currentIndex, userAnchorIndex, levels, ceilings, routeCurve, profile,
+                programActive, false, true);
+    }
+
+    private Decision update(long atMs, int currentIndex, int userAnchorIndex,
+                    OutputLevelModel.Snapshot levels, OutputCeilingState ceilings,
+                    ControlVolumeCurve routeCurve, ControlProfile profile,
+                    boolean programActive, boolean automatic, boolean positiveAllowed) {
         if (levels == null || ceilings == null || routeCurve == null || profile == null) {
             resetPending();
             return hold(currentIndex, "coarse_input_invalid", 0L);
         }
-        if (!programActive || !levels.outputProjectionValid
-                || !Float.isFinite(levels.projectedOutputLoudnessDb)) {
+        if (automatic && (profile.normalizationPreset == NormalizationPreset.OFF
+                || profile.normalizationStrength <= 0f)) {
+            resetPending();
+            return hold(currentIndex, "coarse_normalization_off", 0L);
+        }
+
+        // Auto Media never trusts the adjacent-block PRE/POST inference as a write license.
+        // It uses the full interval of both capture interpretations and acts only when they agree.
+        boolean referenceBounded = automatic && routeCurve.calibrated()
+                && levels.dspAppliedGainDb == 0f && levels.mediaRouteGainDb <= 0f
+                && Float.compare(levels.mediaRouteGainDb,
+                        routeCurve.gainDbForIndex(currentIndex)) == 0
+                && Float.isFinite(levels.sourcePeakDbfs)
+                && Float.isFinite(levels.sourceLoudnessDb);
+        float lowerLoudness = referenceBounded
+                ? levels.sourceLoudnessDb + levels.mediaRouteGainDb
+                : levels.projectedOutputLoudnessDb;
+        float upperLoudness = referenceBounded
+                ? levels.sourceLoudnessDb : levels.projectedOutputLoudnessDb;
+        float upperPeak = referenceBounded
+                ? levels.sourcePeakDbfs : levels.projectedOutputPeakDbfs;
+        if (!programActive || (!levels.outputProjectionValid && !referenceBounded)
+                || !Float.isFinite(lowerLoudness) || !Float.isFinite(upperLoudness)
+                || !Float.isFinite(upperPeak)) {
             resetPending();
             return hold(currentIndex, "coarse_no_output_loudness", 0L);
         }
 
-        float loudness = levels.projectedOutputLoudnessDb;
+        float tolerance = automatic ? profile.toleranceLu / profile.normalizationStrength
+                : profile.toleranceLu;
         int direction = 0;
-        if (loudness > ceilings.upperDb() + profile.toleranceLu) direction = -1;
-        else if (loudness < ceilings.lowerDb() - profile.toleranceLu) direction = 1;
+        if (lowerLoudness > ceilings.upperDb() + tolerance) direction = -1;
+        else if (upperLoudness < ceilings.lowerDb() - tolerance) direction = 1;
 
-        if (direction > 0 && (debtSteps <= 0 || currentIndex >= userAnchorIndex)) {
+        if (automatic && direction > 0
+                && (!positiveAllowed || currentIndex <= routeCurve.minIndex())) {
+            resetPending();
+            return hold(currentIndex, positiveAllowed ? "coarse_user_mute_hold"
+                    : "coarse_positive_policy_blocked", 0L);
+        }
+        if (!automatic && direction > 0
+                && (debtSteps <= 0 || currentIndex >= userAnchorIndex)) {
             resetPending();
             return hold(currentIndex, "coarse_no_owned_debt", 0L);
         }
         if (direction == 0) {
             resetPending();
-            return hold(currentIndex, "coarse_within_tolerance", 0L);
+            return hold(currentIndex, referenceBounded ? "coarse_reference_ambiguous"
+                    : "coarse_within_tolerance", 0L);
         }
 
         int floor = profile.autoMute ? routeCurve.minIndex()
@@ -57,6 +106,15 @@ final class CoarseMediaFallbackController {
         if (direction > 0 && currentIndex >= userAnchorIndex) {
             resetPending();
             return hold(currentIndex, "coarse_anchor_hold", 0L);
+        }
+        if (automatic && direction > 0) {
+            float delta = routeCurve.deltaDb(currentIndex, currentIndex + 1);
+            if (!Float.isFinite(delta) || delta <= 0f
+                    || upperPeak + delta > profile.sourcePeakThresholdDbfs
+                    || upperLoudness + delta > ceilings.upperDb() + profile.toleranceLu) {
+                resetPending();
+                return hold(currentIndex, "coarse_next_step_exceeds_ceiling", 0L);
+            }
         }
 
         long now = Math.max(0L, atMs);
@@ -82,7 +140,9 @@ final class CoarseMediaFallbackController {
             return hold(currentIndex, direction < 0 ? "coarse_floor_hold" : "coarse_anchor_hold", 0L);
         }
         return new Decision(requested, true,
-                direction < 0 ? "coarse_loudness_down" : "coarse_debt_recovery_up", 0L);
+                (direction < 0 ? "coarse_loudness_down"
+                        : automatic ? "coarse_quiet_up" : "coarse_debt_recovery_up")
+                        + (referenceBounded ? "_reference_bounded" : ""), 0L);
     }
 
     void onUserAnchorChanged(int index, long nowMs) {

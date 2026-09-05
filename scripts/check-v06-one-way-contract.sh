@@ -78,7 +78,7 @@ require "$PKG/NormalizerService.java" '.transientSignal('
 reject "$PKG/NormalizerService.java" 'TransientAttenuationPolicy.safeTarget'
 reject "$PKG/NormalizerService.java" 'TransientAttenuationPolicy'
 reject "$PKG/NormalizerService.java" 'int extraSteps = Math.max(2,'
-require "$PKG/NormalizerService.java" 'long reactionLatency = applied != current'
+require "$PKG/NormalizerService.java" 'long reactionLatency = command.kind() == ControlCommand.Kind.MEDIA_INDEX'
 require "$PKG/QuietNowPolicy.java" 'return Math.min(current, quiet);'
 
 # v0.7.1 Task 9 supersedes the historical navigation copy and removes Quiet Now from Simple only.

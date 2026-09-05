@@ -4,10 +4,13 @@ package dev.soundceiling.app;
 final class SafeVolumeController {
     private final VolumeApplier applier;
     private final VolumeWriteTracker writeTracker;
+    private final MediaAutoVolumeAuthority automation;
 
-    SafeVolumeController(VolumeApplier applier, VolumeWriteTracker writeTracker) {
+    SafeVolumeController(VolumeApplier applier, VolumeWriteTracker writeTracker,
+                         MediaAutoVolumeAuthority automation) {
         this.applier = applier;
         this.writeTracker = writeTracker;
+        this.automation = automation;
     }
 
     int applyRequested(int requestedIndex, int currentIndex, SafetySettings settings,
@@ -36,6 +39,10 @@ final class SafeVolumeController {
                 : requestedIndex;
         int guarded = SafetyGuard.clampAutomatic(
                 Math.min(current, requested), current, settings, effectiveMax, allowBelowMinimum);
+        if (actualOrigin == VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN) {
+            guarded = Math.min(Math.min(settings.hardMax(), Math.max(0, effectiveMax)),
+                    Math.max(current - 1, guarded));
+        }
         if (guarded == current) {
             if (quietCommand) {
                 DiagnosticLog.transition("quiet_now_hold",
@@ -47,8 +54,11 @@ final class SafeVolumeController {
             }
             return current;
         }
-        writeTracker.noteAppWrite(actualOrigin, current, guarded, nowMs);
-        int applied = applier.applyIndex(guarded, current);
+        final int target = guarded;
+        int applied = actualOrigin == VolumeWriteTracker.WriteOrigin.HARD_CAP || quietCommand
+                ? write(target, current, nowMs, actualOrigin)
+                : automation.executeAutomatic(current, applier::readIndex,
+                        fresh -> write(target, fresh, nowMs, actualOrigin));
         DiagnosticLog.event("volume_change", "origin=" + actualOrigin
                 + " current=" + current + " requested=" + requestedIndex
                 + " guarded=" + guarded + " applied=" + applied
@@ -58,8 +68,7 @@ final class SafeVolumeController {
     }
 
     /**
-     * Recovery is deliberately a distinct API. It may only hold or move Media upward and is
-     * bounded by the user envelope plus the normal hard/effective safety ceilings.
+     * Upward writes are one step and capped by the caller's explicit authority envelope.
      */
     int applyRecovery(int requestedIndex, int currentIndex, SafetySettings settings,
                       int effectiveMax, int userEnvelopeCeiling, long nowMs) {
@@ -68,13 +77,31 @@ final class SafeVolumeController {
                 effectiveMax, userEnvelopeCeiling);
         if (guarded == current) return current;
         VolumeWriteTracker.WriteOrigin origin = VolumeWriteTracker.WriteOrigin.NORMALIZER_UP;
-        writeTracker.noteAppWrite(origin, current, guarded, nowMs);
-        int applied = applier.applyIndex(guarded, current);
+        int applied = automation.executeAutomatic(current, applier::readIndex,
+                fresh -> write(guarded, fresh, nowMs, origin));
         DiagnosticLog.event("volume_change", "origin=" + origin
                 + " current=" + current + " requested=" + requestedIndex
                 + " guarded=" + guarded + " applied=" + applied
                 + " userCeiling=" + userEnvelopeCeiling
                 + " effectiveMax=" + effectiveMax + " hardMax=" + settings.hardMax());
+        return applied;
+    }
+
+    private int write(int target, int current, long nowMs,
+                      VolumeWriteTracker.WriteOrigin origin) {
+        writeTracker.noteAppWrite(origin, current, target, nowMs);
+        int applied = applier.applyIndex(target, current);
+        writeTracker.confirmAppWriteReadback(origin, current, target, applied, nowMs);
+        if (origin == VolumeWriteTracker.WriteOrigin.NORMALIZER_UP
+                || origin == VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN) {
+            DiagnosticLog.event("media_auto_write", "origin=" + origin + " from=" + current
+                    + " requested=" + target + " readback=" + applied
+                    + " acknowledged=" + (applied == target));
+        }
+        if (applied != target && origin != VolumeWriteTracker.WriteOrigin.HARD_CAP
+                && origin != VolumeWriteTracker.WriteOrigin.QUIET_NOW) {
+            automation.pause("media_auto_paused_write_unconfirmed");
+        }
         return applied;
     }
 
@@ -86,6 +113,7 @@ final class SafeVolumeController {
         VolumeWriteTracker.WriteOrigin origin = VolumeWriteTracker.WriteOrigin.HARD_CAP;
         writeTracker.noteAppWrite(origin, current, guarded, nowMs);
         int applied = applier.applyIndex(guarded, current);
+        writeTracker.confirmAppWriteReadback(origin, current, guarded, applied, nowMs);
         DiagnosticLog.event("volume_change", "origin=" + origin + " current=" + current
                 + " requested=" + current + " guarded=" + guarded + " applied=" + applied
                 + " min=" + settings.minIndex + " hardMax=" + settings.hardMax());

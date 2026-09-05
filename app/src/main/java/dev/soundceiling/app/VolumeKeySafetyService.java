@@ -36,6 +36,13 @@ public final class VolumeKeySafetyService extends AccessibilityService {
 
     @Override protected boolean onKeyEvent(KeyEvent event) {
         if (event == null) return false;
+        StrictSafetyState.mediaAutomation().onKeyEvent(
+                event.getKeyCode(), event.getAction());
+        if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN
+                && event.getAction() == KeyEvent.ACTION_DOWN) {
+            DiagnosticLog.event("media_auto_user_down_key",
+                    "action=DOWN passthrough=true resume=explicit_stop_start");
+        }
         StrictSafetyState.noteKeyEvent(SystemClock.elapsedRealtime());
         AudioManager manager = audio;
         if (manager == null) {

@@ -8,6 +8,8 @@ final class VolumeApplier {
 
     VolumeApplier(AudioManager audio) { this.audio = audio; }
 
+    int readIndex() { return audio.getStreamVolume(AudioManager.STREAM_MUSIC); }
+
     int applyIndex(int target, int fallbackIndex) {
         try {
             audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0);

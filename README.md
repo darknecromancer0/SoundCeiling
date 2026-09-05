@@ -1,4 +1,27 @@
-# Sound Ceiling for Android - v0.9.1
+# Sound Ceiling for Android - v0.9.2
+
+## v0.9.2 Samsung Media Auto Volume
+
+Ordinary Start now uses exact targeted PCM to move Samsung Media one hardware step at a time:
+quiet passages may move UP and loud passages DOWN. Every UP is bounded by the effective policy
+maximum and Safety Maximum. Enhanced Session DSP stays quarantined and PCM Shadow stays inaudible.
+
+- Hardware Volume Down or an externally observed Media decrease latches ordinary control off.
+  Volume Up, settings changes, and source/route churn do not resume it; only Stop then Start does.
+- Every ordinary write re-reads Media at the last boundary. A decrease cancels a queued command.
+  A confirmed app readback becomes the observation baseline immediately, so app 4→5 followed by
+  user 5→4 cannot be hidden as unchanged. Failed or unconfirmed writes pause fail-closed.
+- Hard cap and explicit Quiet Now remain active during the pause.
+- Before a capture reference is trustworthy, the controller uses the complete PRE/POST interval
+  from PCM plus a validated vendor Media curve. It acts only when both interpretations agree and
+  worst-case next-step peak/loudness headroom fits; ambiguity is HOLD. This does not fabricate
+  PRE/POST evidence and avoids an automatic calibration probe.
+- This remains one-step reactive control, not sample-accurate limiting. A field run on Samsung is
+  required; PR #8 remains draft and store publication is a later gate.
+
+Checklist: `docs/field-tests/2026-09-03-v0.9.2-samsung-media-checklist.md`.
+
+## Sound Ceiling for Android - v0.9.1 (historical baseline)
 
 SoundCeiling v0.9.1 adds an **experimental field path** for one no-root audible-normalization
 feasibility test. It is built-in speaker only, deliberately fail-closed, and not a store release.

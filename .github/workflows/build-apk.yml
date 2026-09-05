@@ -11,10 +11,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Upload source snapshot for v0.9.1 field build
+      - name: Upload source snapshot for v0.9.2 field build
         uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.9.1-source-snapshot
+          name: SoundCeiling-v0.9.2-source-snapshot
           path: |
             .github
             app
@@ -172,6 +172,8 @@ jobs:
         run: bash ./scripts/run-v091-accessibility-relay-tests.sh
       - name: Check v0.9.1 release contract
         run: bash ./scripts/check-v091-release-contract.sh
+      - name: Check v0.9.2 Samsung Media last-write boundary
+        run: bash ./scripts/run-v092-media-write-bridge-tests.sh
       - name: Install Android SDK 35 packages
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
@@ -195,11 +197,11 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.9.1-debug-apk
+          name: SoundCeiling-v0.9.2-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.9.1-debug-apk-checksum
+          name: SoundCeiling-v0.9.2-debug-apk-checksum
           path: app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error

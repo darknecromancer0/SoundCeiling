@@ -38,8 +38,8 @@ final class HelpText {
                 "Точно, когда изменение Media классифицировано VolumeWriteTracker как USER, а не APP_ACK/STALE/MISMATCH.");
         if (OUTPUT_CEILINGS.equals(key)) return tri(
                 "Output ceilings задают нижнюю и верхнюю цель цифрового уровня.",
-                "Verified DSP использует их как непрерывный dB range; fallback показывает ближайшую реальную Media step.",
-                "DSP dB точны при verified transport; fallback-процент точен только как фактическая дискретная Media step.");
+                "Samsung Media Auto Volume сравнивает с ними PCM и меняет Media по одной ступени; Normalization strength меняет допуск.",
+                "При неизвестной точке PCM шаг разрешён только если PRE/POST границы согласны; Safety Maximum имеет приоритет.");
         if (PCM.equals(key)) return tri("PCM — цифровые аудиосэмплы воспроизводимого сигнала.", "Даёт измерение уровня и может подтвердить UID-targeted source.", "Точно для source identity только после стабильного non-silent targeted PCM.");
         if (LUFS_LIKE.equals(key) || LUFS.equals(key)) return tri("LUFS-like — приближённая loudness-оценка воспринимаемой громкости; это не сертифицированное измерение настоящего LUFS.", "Используется нормализатором для сравнения тихих и громких участков.", "Надёжнее на устойчивом программном материале; это приблизительная метрика.");
         if (DBFS.equals(key)) return tri("dBFS — цифровая шкала сигнала, где 0 dBFS является цифровым максимумом.", "Используется для peak и цифровых ceilings.", "Точно для измеренного цифрового сигнала, но не означает dB SPL в комнате.");
@@ -55,7 +55,7 @@ final class HelpText {
         if (VERIFIED_POLICY_DSP.equals(key)) return tri("Verified policy-scoped DSP — DSP handle с доверенным provenance для конкретной policy scope.", "Позволяет selective DSP без обработки чужих endpoints.", "Точно только для APP_OWNED или DOCUMENTED_PROVIDER handle с совпадающей policy.");
         if (VERIFIED_GLOBAL_DSP.equals(key)) return tri(
                 "Исторический global-mix DSP использовал session-zero DynamicsProcessing; после Samsung field-регрессии v0.8 он помещён в полный карантин до любого Android constructor.",
-                "В v0.9 не является active actuator и не меняет Samsung Media или слышимый аудиовыход; нормализация рассчитывается только отдельным PCM Shadow.",
+                "Session DSP не является active actuator. Отдельный Samsung Media Auto Volume меняет лишь системные ступени, PCM Shadow остаётся неслышимым.",
                 "Карантин fail-closed: никакой constructor, attach, probe или gain Session DSP не разрешён.");
         if (MEDIA_STEP_PERCENT.equals(key)) return tri("Media step — реальная дискретная ступень Android/Samsung; percent — её отображение на 0–100%.", "Fallback может выбирать только существующие steps, а не произвольный плавный процент.", "Точно, когда UI показывает фактический index и snapped percent текущего route.");
         if (MIN_MEDIA.equals(key)) return "Minimum Media — нижняя граница fallback Media actuator. Пользовательское ручное снижение ниже неё не должно автоматически возвращаться вверх.";
