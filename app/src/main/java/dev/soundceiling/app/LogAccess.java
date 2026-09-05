@@ -102,12 +102,18 @@ final class LogAccess {
             for (LogStorage.Item part : session.parts) {
                 if (part.uri == null) continue;
                 try (InputStream in = activity.getContentResolver().openInputStream(part.uri)) {
-                    if (in == null) continue;
+                    if (in == null) {
+                        LogSessionIndex.removeUri(activity, part.uri);
+                        continue;
+                    }
                     if (wroteAny) out.write('\n');
                     for (int read; (read = in.read(buffer)) >= 0; ) {
                         if (read > 0) out.write(buffer, 0, read);
                     }
                     wroteAny = true;
+                } catch (IOException | SecurityException error) {
+                    // Only an actual failed read prunes a durable index entry. Empty discovery alone never does.
+                    LogSessionIndex.removeUri(activity, part.uri);
                 }
             }
         }

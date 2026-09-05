@@ -1,88 +1,237 @@
-# Sound Ceiling for Android - v0.6.0
+# Sound Ceiling for Android - v0.9.2
 
-No-root Android 10+ adaptive audio safety controller. v0.6.0 introduces the **One-Way Adaptive Engine**: automatic control may hold or reduce Media volume when audio exceeds the configured safety/loudness target, but it never raises the system Media slider on its own.
+## v0.9.2 Samsung Media Auto Volume
 
-## Что изменилось в v0.6.0
+Ordinary Start now uses exact targeted PCM to move Samsung Media one hardware step at a time:
+quiet passages may move UP and loud passages DOWN. Every UP is bounded by the effective policy
+maximum and Safety Maximum. Enhanced Session DSP stays quarantined and PCM Shadow stays inaudible.
 
-- **Никакого automatic-UP.** Ручное снижение Media остаётся решением пользователя. Ни Target, ни Minimum, ни normalization recovery не возвращают ползунок вверх.
-- **Target теперь односторонний.** Он задаёт порог, выше которого SoundCeiling может ослабить слишком громкий материал. Более тихий материал не усиливается системным Media slider.
-- **Быстрый down-path.** Control loudness и transient/peak safety используют быстрые оценки для реакции на громкие скачки; более медленный LUFS-like meter остаётся отдельным отображаемым измерением.
-- **Volume provenance.** Приложение различает ручные изменения, подтверждённые собственные writes и mismatches, чтобы не принимать действия пользователя за сбой или за команду на восстановление громкости.
-- **Quiet Now строго downward-only.** Он может только оставить текущую Media ступень или сделать тише.
-- **Основное / Расширенные = один engine.** Это два интерфейса к одной и той же логике, а не два конкурирующих режима управления.
-- **Калибровочный тон volume-neutral.** ToneController больше не двигает системный Media slider. Если громкость практически нулевая, приложение просит поднять её вручную.
-- **Детерминированная калибровка.** Если engine запущен, calibration state machine сначала останавливает его, ждёт подтверждения остановки с timeout и только затем запускает tone.
-- **Логи собраны в один UX.** В drawer один пункт `Логи`; Log Sessions умеет открыть папку, выбрать папку, вернуть Default location и поделиться последней сессией.
-- **Rotated log parts делятся как один файл.** Части одной logical session объединяются во временный cache-файл и отправляются одним URI через FileProvider.
-- **Светлая тема использует semantic palette.** Success/warning/error/neutral карточки получают согласованные surface/text цвета вместо тёмных RGB-констант и белого текста поверх светлого фона.
-- **EQ остаётся независимым persistent-модулем.** Настройки и Link Strength сохраняются, application-owned controller восстанавливает EQ при старте, а уход с вкладки EQ не уничтожает effect.
-- **Apps & System Sounds остаётся асинхронным.** Package list загружается вне UI thread.
+- Hardware Volume Down or an externally observed Media decrease latches ordinary control off.
+  Volume Up, settings changes, and source/route churn do not resume it; only Stop then Start does.
+- Every ordinary write re-reads Media at the last boundary. A decrease cancels a queued command.
+  A confirmed app readback becomes the observation baseline immediately, so app 4→5 followed by
+  user 5→4 cannot be hidden as unchanged. Failed or unconfirmed writes pause fail-closed.
+- Hard cap and explicit Quiet Now remain active during the pause.
+- Before a capture reference is trustworthy, the controller uses the complete PRE/POST interval
+  from PCM plus a validated vendor Media curve. It acts only when both interpretations agree and
+  worst-case next-step peak/loudness headroom fits; ambiguity is HOLD. This does not fabricate
+  PRE/POST evidence and avoids an automatic calibration probe.
+- This remains one-step reactive control, not sample-accurate limiting. A field run on Samsung is
+  required; PR #8 remains draft and store publication is a later gate.
 
-## Почему Android показывает разрешение «захвата экрана»
+Checklist: `docs/field-tests/2026-09-03-v0.9.2-samsung-media-checklist.md`.
 
-Для точного playback PCM Android использует `AudioPlaybackCapture`, а его разрешение выдаётся через `MediaProjection`. Поэтому перед новой precise PCM session SoundCeiling сначала объясняет это, а затем Android показывает системное окно, похожее на разрешение записи/трансляции экрана.
+## Sound Ceiling for Android - v0.9.1 (historical baseline)
 
-SoundCeiling использует полученный доступ для анализа **PCM воспроизводимого аудио**. Приложение не записывает видео экрана. Если пользователь не хочет выдавать MediaProjection или Android/OEM не позволяет precise PCM, можно запустить `Safe fallback`; статус при этом не выдаёт fallback за точный PCM.
+SoundCeiling v0.9.1 adds an **experimental field path** for one no-root audible-normalization
+feasibility test. It is built-in speaker only, deliberately fail-closed, and not a store release.
+PR #8 remains draft until a complete Samsung field log passes the published checklist.
 
-## Как SoundCeiling понимает громкость
+## v0.9.1 Accessibility Relay field experiment
 
-- `Media index` — системная ступень Android/Samsung, например 3/15.
-- `dBFS / Raw Peak` — цифровой уровень playback PCM там, где Android разрешает его получить.
-- `RMS` — усреднённая энергия цифрового сигнала за небольшой интервал.
-- `LUFS-like` — внутренняя приблизительная realtime-оценка воспринимаемой громкости для нормализации. Это не сертифицированный broadcast LUFS meter.
-- `dB SPL` — оценка физической акустической громкости только после калибровки конкретного output device внешним SPL-метром.
+- **The only new audible PCM path is explicit Accessibility Relay.** It accepts one positively
+  allowed exact-UID playback capture, requires a proven `PRE_VOLUME` reference and one active
+  endpoint, processes PCM locally, and renders the bounded copy with
+  `USAGE_ASSISTANCE_ACCESSIBILITY`. No captured PCM is saved or uploaded.
+- **Original playback is suppressed only through an acknowledged Media-zero lease.** Relay saves
+  recovery state first, temporarily moves original Samsung Media to 0, proves that exact PCM still
+  arrives, and only then permits a five-second quiet probe. While Relay is active, the user controls
+  the separate Accessibility volume; moving the Samsung Media panel exits Relay instead of being
+  counter-written.
+- **Audible authority requires a manual one-stream confirmation.** The probe is capped at
+  `-30 dBFS`; the user must choose `Один чистый тихий поток` for the current epoch. Echo, a loud or
+  broken probe, stale confirmation, unknown output domain, route/source/projection change, renderer
+  fault, or failed readback stops the renderer before Media cleanup.
+- **Gain and output remain bounded.** Safe mode permits at most `+3 dB`; only an already active,
+  confirmed Relay exposes explicit Full experimental `+12 dB`. The final PCM boundary stays at or
+  below `-6 dBFS`, uses saturating PCM16 conversion, and treats clipping or excessive measured
+  latency as an abort.
+- **Recovery is durable and visible.** Media/Accessibility ownership is persisted before mute or
+  output changes. Process death or an ambiguous restore produces `RECOVERY_REQUIRED`; the UI offers
+  an explicit bounded restore and does not silently clear the record.
+- **Enhanced Session DSP remains quarantined.** The unsafe Samsung path is still blocked before
+  construction with `field_quarantined_neutral_media_bypass`. The v0.9 algorithmic copy remains
+  `SHADOW_ONLY`; Shadow never receives renderer authority and cannot claim speaker-applied gain.
+- **This repository still produces a field-only engineering APK.** `QUERY_ALL_PACKAGES` and the
+  `specialUse` foreground-service type remain for Samsung evidence collection. A separate
+  store-clean flavor, policy review, production signing, broader routing, and successful physical
+  acceptance are future gates, not v0.9.1 claims.
 
-Эти величины показываются отдельно и не считаются взаимозаменяемыми.
+Field procedure: `docs/field-tests/2026-08-31-v0.9.1-samsung-relay-checklist.md`.
 
-## Safety model
+## Sound Ceiling for Android - v0.9.0 (historical baseline)
 
-- `SafetyGuard.clampAutomatic()` — последний automatic clamp перед Media write и не разрешает автоматический результат выше наблюдаемой текущей Media ступени.
-- `Safety Lock` остаётся жёстким верхним ограничением.
-- Peak/transient protection может быстро снизить Media при опасном projected output.
-- Ручное снижение пользователя не превращается в команду вернуть громкость вверх.
-- Minimum — нижняя граница для **автоматического снижения**, а не приказ поднять Media, если пользователь уже находится ниже неё.
-- При неизвестном source identity или недостоверном PCM engine выбирает HOLD/down-only fallback, а не агрессивное восстановление.
-- Microphone input не является анализируемым трактом SoundCeiling; основной precise meter использует playback capture APIs.
-- Экспериментальный EQ/DSP не входит в критический safety path и не может отключить основной limiter.
+SoundCeiling is a no-root Android 10+ adaptive audio safety controller. v0.9.0 is an install-over
+corrective and PCM feasibility build driven by Samsung v0.8.0 field evidence. Samsung Media remains
+the user master; hard Media/Safety actions remain separate from ordinary normalization.
 
-## Калибровка
+## v0.9.0 PCM shadow feasibility and Session DSP quarantine
 
-Калибровка нужна только для приблизительного `dB SPL`. Для обычной работы SoundCeiling она не обязательна. Без внешнего SPL-метра оставьте SPL mode выключенным: dBFS, LUFS-like normalization, peak/transient protection и системные ceilings продолжают работать.
+- **Enhanced Session DSP is field-quarantined before construction.** The neutral v0.8.0 Samsung
+  effect could break physical Media authority even though its custom topology and handshake read
+  back correctly. Runtime, facade, manager, and Android factory all reject it with
+  `field_quarantined_neutral_media_bypass`. The v0.8 matrix remains only as historical regression
+  code and cannot be selected or attached.
+- **The obsolete DUMP path is removed from production.** v0.9.0 neither declares
+  `android.permission.DUMP`, asks for an ADB grant, constructs a dump-backed discovery backend, nor
+  executes `dumpsys`. Historical AudioPolicy fixtures and their parser live only in test source.
+  Simple, Advanced, Diagnostics, and logs report the field quarantine directly.
+- **PCM normalization now runs in an isolated shadow buffer.** For a positively allowed,
+  high-confidence targeted MEDIA source with a known output-domain projection, the processor
+  calculates continuous positive gain for quiet material and attenuation for loud material/peaks.
+  It enforces the configured output peak ceiling and `-0.5 dBFS` PCM headroom with saturating PCM16
+  conversion and lifecycle reset. Rejected/off/unknown/system PCM is not copied into the shadow
+  buffer, reports zero processed samples, and exposes no source-derived shadow peaks.
+- **PCM DSP is deliberately non-audible in this build.** Public Android playback capture keeps the
+  original playback rendered. Starting a normal output track from the processed copy would duplicate
+  the sound, so the immutable verdict is `SHADOW_ONLY`, `audibleOutputAllowed=false`, reason
+  `public_playback_capture_keeps_original_audio`. No audible PCM renderer is created.
+- **The UI and logs do not claim that shadow gain was applied to the speaker.** The old Global DSP
+  switch presentation is replaced by `PCM Shadow (без звука)`. Telemetry uses
+  `pcm_dsp_feasibility`, `pcm_dsp_shadow`, and `pcm_dsp_runtime`, including requested/shadow gain,
+  projected/PCM peaks, clipping count, eligibility, and the blocked-output reason.
+- **Safety and user authority are unchanged.** Volume Down wins immediately. Automatic Media UP
+  remains limited to acknowledged SoundCeiling-owned attenuation debt. Safety Maximum, hard cap,
+  Quiet Now, source exclusions, route/capture reset, and stop/restart fail-closed behavior remain
+  active without a Session effect.
 
-Калибровочный tone не меняет Media volume. При запущенном engine приложение сначала останавливает control loop и ждёт фактической остановки. При timeout или невозможности воспроизвести tone показывается ошибка вместо скрытого изменения громкости.
+This release verifies the PCM algorithm and safe routing boundary; it does **not yet make quiet and
+loud content converge audibly**. Audible replacement remains blocked until an exclusive public
+route can be proven without duplicating playback or taking authority away from Samsung Media.
 
-## Логи
+Samsung field acceptance: `docs/field-tests/2026-08-29-v0.9.0-samsung-checklist.md`.
 
-Default location: `Downloads/SoundCeilingLogs`.
+## v0.8.0 safe Samsung Session DSP matrix
 
-Одна работа SoundCeiling = одна логическая session. Если сессия превышает технический размер части, она может храниться в нескольких физических `.log` files, но Log Sessions группирует их вместе. При `Поделиться` все части последовательно объединяются в один временный `.log` и передаются одним URI. Общий retention budget остаётся 16 MiB; старые полные sessions удаляются первыми. PCM/audio payload в лог не записывается и автоматически никуда не отправляется.
+- **OEM-default Enhanced Session DSP stays quarantined.** The unsafe one-argument
+  `DynamicsProcessing(sessionId)` constructor is never used for third-party sessions. v0.7.7.9
+  proved that plausible readback of an unknown Samsung topology was not enough to make it safe.
+- **Three explicit stereo candidates are tried in a fixed order.** The first mirrors Android CTS:
+  frequency-resolution, 9.5 ms frames, two bands in PreEQ/MBC/PostEQ and a limiter, with every
+  optional stage disabled. Two simpler frequency-resolution bypass profiles follow. The historical
+  field-rejected time-resolution topology and mono guesses are excluded.
+- **Topology identity is part of authority.** Variant, frame duration, channel count, stage-in-use
+  flags, band counts, disabled state, control ownership and per-channel gains must all read back
+  exactly before the bounded `0 -> -0.5 -> 0 dB` handshake can promote a candidate.
+- **Positive gain is a `+3 dB` field pilot.** Attenuation retains the existing range and immediate
+  hard-safety path, but quiet-program gain cannot exceed `+3 dB` in this build. Requested and
+  actually applied gain remain distinct in telemetry.
+- **Contradictory output fails closed.** If a positive Session gain coincides with near-full-scale
+  actual output while the PRE_VOLUME projection remains safely below the hard ceiling, the session
+  is neutralized, disabled, released and suppressed until the session or route changes.
+- **Samsung Media remains untouched by ordinary normalization.** Manual moves rebase the anchor;
+  normal Media UP remains debt-only; hard cap and Quiet Now retain their explicit safety authority.
+  If all custom candidates fail, ordinary normalization truthfully holds instead of reviving a
+  coarse target-chasing fallback.
 
-## История регрессий v0.5.1
+Samsung physical acceptance: `docs/field-tests/2026-08-29-v0.8.0-samsung-checklist.md`.
 
-v0.6 сохраняет проверенные field-log fixes из `v0.5.1`: transient re-arm, projected peak calculation, healthy PCM_MIXED handling, async Apps loading, persistent linked-band EQ, logical log sessions и downward-only Quiet Now. Старые CI-gates теперь являются historical regression gates и не фиксируют текущий номер версии или имя release artifact.
+## v0.7.7.2 Samsung Session DSP compatibility corrective
 
-## Сборка и проверки
+- **The Samsung constructor failure is now isolated.** SM-A528B / Android 14 accepted the v0.7.7 architecture when a Limiter stage existed, but rejected the v0.7.7.1 architecture where every optional processing stage was out of use with `dsp_create_failed:custom=IllegalArgumentException`.
+- **A disabled limiter compatibility shell is used only for engine creation.** Enhanced Session `DynamicsProcessing` declares Limiter `inUse=true` so the Samsung engine accepts the architecture, but configures that limiter `enabled=false` on every channel. Android documents disabled stages as bypassed, so input gain remains the only active processing control.
+- **Readback must prove the shell is still bypassed.** PreEQ, MBC and PostEQ must remain out of use, every limiter channel must read back disabled, `AudioEffect.hasControl()` must be true, and the bounded input-gain handshake remains `0 dB -> -0.5 dB -> 0 dB`.
+- **Any active limiter fails closed.** If even one limiter channel reads back enabled, Session DSP authority is rejected. The historical v0.7.7 active 10:1 / -1 dBFS limiter configuration is explicitly regression-locked out.
+- **No OEM default topology fallback for Enhanced Session.** If Samsung still rejects the explicit compatibility topology, the session stays unavailable rather than switching to an unknown OEM configuration.
+- **Samsung Media remains the user master.** Media **3/15** remains a required acceptance point. Ordinary normalization must use verified non-zero Session DSP and must not move the Samsung slider.
 
-Требуются JDK 17 и Android SDK 35.
+Samsung physical acceptance: `docs/field-tests/2026-08-26-v0.7.7.2-samsung-checklist.md`.
 
-```bash
-./scripts/run-pure-tests.sh
-bash ./scripts/check-v04-storage-contract.sh
-bash ./scripts/check-v05-storage-contract.sh
-bash ./scripts/check-v05-app-contract.sh
-./scripts/check-source-invariants.sh
-bash ./scripts/check-v06-one-way-contract.sh
-bash ./scripts/check-v05-pcm-contract.sh
-bash ./scripts/check-v05-microphone-invariant.sh
-bash ./scripts/check-v05-control-adapters.sh
-bash ./scripts/check-ui-contract.sh
-bash ./scripts/check-v04-ui-contract.sh
-bash ./scripts/check-v05-ui-contract.sh
-bash ./scripts/check-v04-package-contract.sh
-bash ./scripts/check-v05-release-contract.sh
-bash ./scripts/check-v051-core-stability-contract.sh
-bash ./scripts/check-v06-release-contract.sh
-./gradlew --no-daemon :app:assembleDebug
-```
+## v0.7.7.1 deterministic Session DSP corrective
 
-GitHub Actions публикует `SoundCeiling-v0.6.0-debug-apk` с `app-debug.apk` и `app-debug.apk.sha256`.
+- **Enhanced Session verification is deterministic.** Exact non-zero `sessionId + UID + package` ownership establishes which playback session may be controlled. Transport authority is verified through Android `DynamicsProcessing` configuration/readback, not through asynchronous PCM/Visualizer level comparisons.
+- **v0.7.7.1 attempted a pure input-gain-only architecture.** PreEQ, MBC, PostEQ and Limiter were all out of use. Samsung field evidence then showed that this all-optional-stages-disabled architecture itself was rejected during engine creation, which v0.7.7.2 corrects with a disabled compatibility shell.
+- **The bounded handshake is `0 dB -> -0.5 dB -> 0 dB`.** Every configured channel must read back neutral gain, the requested small probe gain, and the restored neutral gain. Any topology, channel-count, gain-readback or restore mismatch fails closed and the exact session is not promoted.
+- **PCM/Visualizer residuals are diagnostics, not the Enhanced Session authority gate.** Samsung field traces showed the same session producing apparent residual shifts from about -16.6 dB to +9.7 dB because targeted PCM and Visualizer are not audio-time synchronized. Those values remain useful for metering/output-domain diagnostics but cannot blacklist an otherwise valid non-zero DSP transport.
+- **Samsung Media remains the user master.** Media **3/15** is a required acceptance point. Safety Maximum and Quiet Now retain their explicit Media authority.
+- **Debug signing is temporary during development.** Public GitHub Actions currently uses the normal generated debug signing identity. Production/RuStore signing remains a separate release concern.
+
+Historical Samsung acceptance: `docs/field-tests/2026-08-26-v0.7.7.1-samsung-checklist.md`.
+
+## v0.7.7 Enhanced Session DSP
+
+- **Non-zero session authority.** v0.7.7 introduced discovery of exactly one active non-zero audio session owned by the exact playback UID. Its original audible differential verification is retained as historical code/tests; v0.7.7.1 replaced that production verification gate with deterministic Android readback.
+- **Samsung Media remains user authority.** Media **3/15** is a first-class user anchor. Ordinary normalization must not pull the Samsung slider away from 3/15, 2/15, or another manual step. With verified Session DSP, correction is continuous DSP gain; without it, ordinary normalization holds.
+- **One-time no-root setup.** Enhanced Session DSP discovery requires the Android DUMP permission granted once from ADB: `adb shell pm grant dev.soundceiling.app android.permission.DUMP`. Simple and Advanced modes expose setup status and a copyable command.
+- **Fail-closed transport.** A stale, ambiguous, failed or unverified session transport is released. A failed gain apply revokes Session DSP authority and returns ordinary control to HOLD rather than reviving target-chasing Media fallback.
+- **Diagnostics expose the real actuator.** Runtime state and logs include session ID, UID, package, requested/applied gain, reason, `session_dsp_readback_result`, and `session_dsp_apply`.
+- Historical Safety Maximum, Quiet Now, source-policy gates, user-master anchor, debt-only recovery, stop/restart protection, and v0.7.6.x output-domain safety contracts remain intact.
+
+Historical Samsung acceptance: `docs/field-tests/2026-08-25-v0.7.7-samsung-checklist.md`.
+
+## v0.7.6.3 Samsung DSP attach evidence corrective
+
+- **Retryable neutral-attach evidence.** `attach_insufficient_pairs` and `attach_insufficient_coverage` no longer masquerade as a proven non-neutral session-zero attach. SoundCeiling keeps the transport neutral at 0 dB and continues collecting bounded evidence instead of suppressing Global DSP immediately.
+- **The 250 ms proof floor is retained.** This corrective does not lower or bypass the minimum valid paired-evidence coverage required before a neutral attach is accepted.
+- **Attach timing uses a post-attach clock.** The 250 ms service-side wait starts after `DynamicsProcessing` has actually been enabled, so effect-construction latency is not incorrectly counted as acoustic evidence.
+- **True non-neutral attach remains fail-closed.** A conclusive finite residual shift outside the neutral tolerance still detaches the transport immediately and suppresses it for the route.
+- **Probe lifetime remains bounded.** Retryable evidence cannot leave an unverified transport hanging indefinitely; the existing 1.5 s differential-probe timeout remains authoritative.
+- Diagnostics expose `retryable`, `coveredMs`, and `dsp_global_attach_wait`, making an inconclusive attach distinguishable from an unsafe attach in Samsung field logs.
+- v0.7.6.2 output-domain behavior is preserved: proven `PRE_VOLUME` PCM owns normalizer projection and Visualizer-only UNKNOWN evidence cannot drive ordinary Media normalization.
+
+Historical Samsung acceptance: `docs/field-tests/2026-08-25-v0.7.6.3-samsung-checklist.md`.
+
+## v0.7.6.2 Samsung output-domain corrective
+
+- **PRE_VOLUME PCM outranks Visualizer for normalizer control.** Once targeted playback capture proves that PCM is before Samsung Media attenuation, the output estimate is projected from source level plus the route gain instead of being replaced by a fresh Visualizer frame.
+- **Visualizer-only UNKNOWN evidence is fail-closed.** A readable Visualizer frame does not by itself prove post-volume semantics on an OEM route, so ordinary coarse Media normalization cannot use it to walk the Samsung slider downward.
+- Coarse Media fallback remains available when the output domain is actually proven. It still moves by at most one step after dwell and recovery remains limited to SoundCeiling-owned attenuation debt.
+- Visualizer remains available to the separate paired Global DSP differential-verification path. This corrective does not weaken the v0.7.6.1 neutral-attach and bounded-probe safety sequence.
+- The user master anchor, hard Media cap, Quiet Now, source-policy gates, stop/restart lifecycle protection, and all historical contracts remain unchanged.
+
+Historical Samsung acceptance: `docs/field-tests/2026-08-25-v0.7.6.2-samsung-checklist.md`.
+
+## v0.7.6.1 Samsung DSP safety corrective
+
+- Global DSP diagnostics are side-effect free: logging can no longer construct session-zero `DynamicsProcessing`.
+- Probe order is **baseline with no DSP → neutral 0 dB attach → attach verification → bounded -0.5 dB differential probe**.
+- A neutral attach that changes or loses output is classified unsafe, detached immediately, and suppressed for the route until route change or a deliberate Global DSP toggle.
+- A strong/nonlinear response to the small probe is preserved as `RESPONSIVE_NONLINEAR` evidence but never promoted to continuous gain authority.
+- Unverified global transports are detached after failed/cancelled probes instead of remaining attached at 0 dB.
+- Fresh field-test logs are protected for at least 24 hours and the normal retained budget is 64 MiB.
+- Multiband/MBC normalization remains disabled in this corrective build until broadband session-zero attach/gain behavior is proven safe on the Samsung device.
+
+Historical Samsung acceptance: `docs/field-tests/2026-08-24-v0.7.6.1-samsung-checklist.md`.
+
+## v0.7.6 Control Architecture Reset
+
+- **Samsung slider is the user master anchor.** Manual Media movement rebases control immediately. SoundCeiling may never silently redefine the user's chosen Samsung step.
+- **Verified DSP is the continuous normalizer.** DSP normalization becomes active only after verification proves that the transport controls the intended output path with the required scope.
+- **Historical v0.7.6 scope proof used route-scoped differential verification.** That acoustic proof remains a historical contract; v0.7.7.1+ Enhanced Session production authority uses deterministic Android readback instead.
+- **Unverified DSP is reported honestly.** If verification is absent or fails, UI and logs do not claim verified DSP authority.
+- **Raw peak is not output authority.** A **source peak alone cannot force Media down**. Ordinary control uses measured/projected output evidence. Hard Media cap and Quiet Now remain separate immediate safety paths.
+- **Low-volume authority is explicit.** Media 1/15 and 2/15 are valid user anchors, not automatic normalization destinations. Manual 1→2, 2→3 and 3→2 changes must not snap back.
+- **Diagnostics expose actual control.** Rate-limited summaries include actuator tier, meter domain, DSP state, requested/applied DSP gain, source/output levels, Media anchor/debt/dwell, and decision reason.
+
+Historical v0.7.6 acceptance: `docs/field-tests/2026-08-24-v0.7.6-samsung-checklist.md`.
+
+## v0.7.4 corrective highlights
+
+- **Global DSP probe no longer cancels itself.** The bounded verification probe is held for measurement rather than being mistaken for stale DSP state.
+- **Silence is not PRE/POST evidence.** Silent before/after samples never establish capture-reference proof.
+
+## v0.7.3 corrective highlights
+
+- **Media UP is debt-only.** Ordinary recovery can repay only attenuation previously created by SoundCeiling and cannot exceed the latest user anchor.
+
+## v0.7.2 corrective highlights
+
+- **Samsung Media is the user anchor.** Real user volume moves rebase the anchor; app-owned attenuation debt is tracked separately.
+- Yandex Music and YouTube source recognition remains evidence-based rather than package-name proof.
+
+## Safety and historical compatibility
+
+The v0.7 **Adaptive Envelope** invariant remains `automatic target <= User ceiling <= Safety ceiling`. Historical compatibility from **v0.5.1** onward is retained, including **volume-neutral calibration**, **non-raising Quiet Now**, transient safety, user-authority semantics, route-bound calibration, and repeated stop/restart lifecycle protection.
+
+Historical acceptance examples remain explicit:
+- **Auto down 7 -> 5:** recovery may repay only SoundCeiling-owned attenuation debt.
+- **User manual down 7 -> 4:** the manual user choice wins immediately.
+
+Playback-capture/log persistence continues to use the existing **MediaStore**/SAF reconciliation model. No production analysis is taken from microphone/call audio.
+
+## Build and verification
+
+Requires JDK 17 and Android SDK 35. The release workflow runs the full pure suite, every historical behavior/source contract, Samsung 3/15/telemetry/wiring contracts, the v0.7.7.2 disabled-limiter compatibility topology contract, deterministic readback pure/wiring contracts, Android `:app:assembleDebug`, SHA-256 generation, and artifact upload on the same immutable head.
+
+Release artifact: **`SoundCeiling-v0.9.1-debug-apk`**, containing `app-debug.apk`; the paired
+**`SoundCeiling-v0.9.1-debug-apk-checksum`** artifact contains its SHA-256 file.

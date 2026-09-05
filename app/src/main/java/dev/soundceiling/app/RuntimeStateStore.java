@@ -39,6 +39,19 @@ final class RuntimeStateStore {
         CURRENT.set(next);
     }
 
+    static synchronized void publishRelay(long epoch, String state,
+            String reason, boolean audible, boolean full,
+            boolean recovery, int volume, int hardMaximum,
+            float requestedGain, float appliedGain, float outputPeak,
+            long latencyMs, long probeRemainingMs) {
+        RuntimeState next = CURRENT.get().withRelay(epoch, state, reason,
+                audible, full, recovery, volume, hardMaximum,
+                requestedGain, appliedGain, outputPeak, latencyMs,
+                probeRemainingMs);
+        logRelayTransition(next);
+        CURRENT.set(next);
+    }
+
     private static void logTransitions(RuntimeState state) {
         String source = state.sourcePackage.isEmpty() ? "unknown" : state.sourcePackage;
         DiagnosticLog.transition("playback_activity",
@@ -82,6 +95,58 @@ final class RuntimeStateStore {
         String raiseReason = raiseBlockReason(state);
         DiagnosticLog.transition("raise_blocked_reason", raiseReason,
                 "reason=" + raiseReason + " source=" + source);
+
+        DiagnosticLog.transition("session_dsp_quarantine",
+                EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON,
+                "quarantined=true constructorAllowed=false reason="
+                        + EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON);
+        String sessionKey = state.sessionDspActive
+                ? state.sessionId + ":" + state.sessionUid + ":" + state.sessionPackage
+                : "inactive:" + state.sessionDspReason;
+        DiagnosticLog.transition("session_dsp_state", sessionKey,
+                "active=" + state.sessionDspActive + " session=" + state.sessionId
+                        + " uid=" + state.sessionUid + " package=" + state.sessionPackage
+                        + " requestedGainDb=" + state.sessionDspRequestedGainDb
+                        + " appliedGainDb=" + state.sessionDspAppliedGainDb
+                        + " reason=" + state.sessionDspReason);
+        String pcmDspKey = state.pcmDspMode + ':' + state.pcmDspAudibleOutputAllowed + ':'
+                + state.pcmShadowActive + ':' + Math.round(state.pcmShadowAppliedGainDb * 2f)
+                + ':' + state.pcmShadowReason;
+        DiagnosticLog.transition("pcm_dsp_runtime", pcmDspKey,
+                "mode=" + state.pcmDspMode
+                        + " audibleOutputAllowed=" + state.pcmDspAudibleOutputAllowed
+                        + " shadowActive=" + state.pcmShadowActive
+                        + " requestedGainDb=" + state.pcmShadowRequestedGainDb
+                        + " shadowGainDb=" + state.pcmShadowAppliedGainDb
+                        + " projectedPeakDbfs=" + state.pcmShadowProjectedPeakDbfs
+                        + " shadowPcmPeakDbfs=" + state.pcmShadowPcmPeakDbfs
+                        + " clippedSamples=" + state.pcmShadowClippedSamples
+                        + " reason=" + state.pcmDspReason
+                        + " shadowReason=" + state.pcmShadowReason);
+        logRelayTransition(state);
+    }
+
+    private static void logRelayTransition(RuntimeState state) {
+        String key = state.relayEpoch + ":" + state.relayState + ':'
+                + state.relayReason + ':' + state.relayAudible + ':'
+                + state.relayFullExperimental + ':'
+                + Math.round(state.relayAppliedGainDb * 4f) + ':'
+                + state.relayVolumeIndex;
+        DiagnosticLog.transition("accessibility_relay_runtime", key,
+                "epoch=" + state.relayEpoch
+                        + " state=" + state.relayState
+                        + " audible=" + state.relayAudible
+                        + " full=" + state.relayFullExperimental
+                        + " recovery=" + state.relayRecoveryRequired
+                        + " volume=" + state.relayVolumeIndex
+                        + " hardMax=" + state.relayVolumeHardMaximum
+                        + " requestedGainDb=" + state.relayRequestedGainDb
+                        + " appliedGainDb=" + state.relayAppliedGainDb
+                        + " outputPeakDbfs=" + state.relayOutputPeakDbfs
+                        + " latencyMs=" + state.relayLatencyMs
+                        + " probeRemainingMs="
+                        + state.relayProbeRemainingMs
+                        + " reason=" + state.relayReason);
     }
 
     private static String raiseBlockReason(RuntimeState state) {

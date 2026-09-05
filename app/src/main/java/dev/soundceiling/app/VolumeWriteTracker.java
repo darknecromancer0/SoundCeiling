@@ -1,12 +1,20 @@
 package dev.soundceiling.app;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Iterator;
+
 /** Distinguishes acknowledgement of our own Media writes from user/system changes. */
 final class VolumeWriteTracker {
+    static final long DEFAULT_ACKNOWLEDGEMENT_WINDOW_MS = 300L;
+    private static final int MAX_PENDING_WRITES = 8;
+
     /** Legacy result kept for source compatibility with v0.5 pure tests/callers. */
     enum Origin { APP, USER, UNCHANGED }
 
     enum WriteOrigin {
         NORMALIZER_DOWN,
+        NORMALIZER_UP,
         PEAK_EMERGENCY,
         TRANSIENT_EMERGENCY,
         HARD_CAP,
@@ -15,7 +23,9 @@ final class VolumeWriteTracker {
 
     enum ObservationKind {
         APP_WRITE_ACK,
+        APP_WRITE_STALE,
         APP_WRITE_MISMATCH,
+        REJECTED_HARD_CAP_OVERSHOOT,
         USER_CHANGE,
         UNCHANGED
     }
@@ -40,31 +50,74 @@ final class VolumeWriteTracker {
 
         boolean isAppWrite() {
             return kind == ObservationKind.APP_WRITE_ACK
+                    || kind == ObservationKind.APP_WRITE_STALE
                     || kind == ObservationKind.APP_WRITE_MISMATCH;
+        }
+
+        boolean isTrustedAppAck() {
+            return kind == ObservationKind.APP_WRITE_ACK;
+        }
+
+        VolumeWriteOrigin authorityOrigin() {
+            // Only a timely expected-index acknowledgement is app-owned. A stale arrival or a
+            // mismatch can be a real user/system volume decision racing our pending write, so it
+            // must become external authority rather than permission to fight the user.
+            if (kind == ObservationKind.REJECTED_HARD_CAP_OVERSHOOT) {
+                return VolumeWriteOrigin.HARD_PEAK_SAFETY;
+            }
+            if (kind == ObservationKind.USER_CHANGE
+                    || kind == ObservationKind.APP_WRITE_STALE
+                    || kind == ObservationKind.APP_WRITE_MISMATCH) return VolumeWriteOrigin.USER;
+            if (writeOrigin == WriteOrigin.QUIET_NOW) return VolumeWriteOrigin.QUIET_NOW;
+            if (writeOrigin == WriteOrigin.PEAK_EMERGENCY
+                    || writeOrigin == WriteOrigin.TRANSIENT_EMERGENCY
+                    || writeOrigin == WriteOrigin.HARD_CAP) {
+                return VolumeWriteOrigin.HARD_PEAK_SAFETY;
+            }
+            return VolumeWriteOrigin.NORMALIZATION;
+        }
+    }
+
+    private static final class PendingWrite {
+        final WriteOrigin origin;
+        final int previousIndex;
+        final int expectedIndex;
+        final long atMs;
+
+        PendingWrite(WriteOrigin origin, int previousIndex, int expectedIndex, long atMs) {
+            this.origin = origin;
+            this.previousIndex = previousIndex;
+            this.expectedIndex = expectedIndex;
+            this.atMs = atMs;
         }
     }
 
     private final long acknowledgementWindowMs;
+    private final long staleQuarantineMs;
+    private final Deque<PendingWrite> pendingWrites = new ArrayDeque<>();
+    private final Deque<PendingWrite> staleWrites = new ArrayDeque<>();
     private int lastObserved = -1;
-    private WriteOrigin pendingOrigin;
-    private int pendingPreviousIndex = -1;
-    private int pendingExpectedIndex = -1;
-    private long pendingAppAtMs;
+    private Observation confirmedReadback;
 
     VolumeWriteTracker(long acknowledgementWindowMs) {
         this.acknowledgementWindowMs = Math.max(50L, acknowledgementWindowMs);
+        staleQuarantineMs = Math.max(1_000L, this.acknowledgementWindowMs * 4L);
     }
 
     void observeInitial(int index) {
         lastObserved = index;
-        clearPending();
+        pendingWrites.clear();
+        staleWrites.clear();
+        confirmedReadback = null;
     }
 
     void noteAppWrite(WriteOrigin origin, int previousObservedIndex, int expectedIndex, long nowMs) {
-        pendingOrigin = origin == null ? WriteOrigin.NORMALIZER_DOWN : origin;
-        pendingPreviousIndex = previousObservedIndex;
-        pendingExpectedIndex = expectedIndex;
-        pendingAppAtMs = nowMs;
+        WriteOrigin safeOrigin = origin == null ? WriteOrigin.NORMALIZER_DOWN : origin;
+        pendingWrites.addLast(new PendingWrite(safeOrigin, previousObservedIndex, expectedIndex, nowMs));
+        while (pendingWrites.size() > MAX_PENDING_WRITES) {
+            staleWrites.addLast(pendingWrites.removeFirst());
+        }
+        pruneStale(nowMs);
     }
 
     /** Compatibility overload for v0.5 call sites while they migrate to explicit origins. */
@@ -73,44 +126,77 @@ final class VolumeWriteTracker {
         noteAppWrite(WriteOrigin.NORMALIZER_DOWN, previous, index, nowMs);
     }
 
+    /** Commit a synchronous readback as the physical baseline while retaining one ACK. */
+    void confirmAppWriteReadback(WriteOrigin origin, int previous, int expected, int observed,
+                                 long nowMs) {
+        PendingWrite write = pendingWrites.peekLast();
+        if (observed != expected || write == null || write.origin != origin
+                || write.previousIndex != previous || write.expectedIndex != expected) return;
+        removeThrough(pendingWrites, write);
+        lastObserved = observed;
+        confirmedReadback = new Observation(ObservationKind.APP_WRITE_ACK, origin, previous,
+                expected, observed, Math.max(0L, nowMs - write.atMs));
+    }
+
     Observation observe(int index, long nowMs) {
-        if (pendingExpectedIndex >= 0) {
-            long age = Math.max(0L, nowMs - pendingAppAtMs);
+        return observe(index, nowMs, Integer.MAX_VALUE);
+    }
 
-            // Android/Samsung may expose the old index for one or more polls before the write
-            // becomes visible. Keep the pending write alive during its acknowledgement window.
-            if (index == lastObserved && age <= acknowledgementWindowMs) {
-                return new Observation(ObservationKind.UNCHANGED, pendingOrigin,
-                        pendingPreviousIndex, pendingExpectedIndex, index, age);
-            }
+    Observation observe(int index, long nowMs, int hardMaxIndex) {
+        expirePending(nowMs);
+        pruneStale(nowMs);
+        Observation confirmed = confirmedReadback;
+        confirmedReadback = null;
 
-            if (index == pendingExpectedIndex && age <= acknowledgementWindowMs) {
-                Observation result = new Observation(ObservationKind.APP_WRITE_ACK, pendingOrigin,
-                        pendingPreviousIndex, pendingExpectedIndex, index, age);
-                lastObserved = index;
-                clearPending();
-                return result;
-            }
-
-            if (index != lastObserved) {
-                Observation result = new Observation(ObservationKind.APP_WRITE_MISMATCH, pendingOrigin,
-                        pendingPreviousIndex, pendingExpectedIndex, index, age);
-                lastObserved = index;
-                clearPending();
-                return result;
-            }
-
-            // Deadline expired while Android still reports the old index. The write did not
-            // become observable; clear it without inventing user intent.
-            clearPending();
-            return new Observation(ObservationKind.UNCHANGED, null,
-                    lastObserved, -1, index, age);
+        int safeHardMax = Math.max(0, hardMaxIndex);
+        if (index > safeHardMax) {
+            int previous = lastObserved;
+            while (!pendingWrites.isEmpty()) staleWrites.addLast(pendingWrites.removeFirst());
+            lastObserved = index;
+            return new Observation(ObservationKind.REJECTED_HARD_CAP_OVERSHOOT,
+                    WriteOrigin.HARD_CAP, previous, safeHardMax, index, 0L);
         }
 
         if (index == lastObserved) {
-            return new Observation(ObservationKind.UNCHANGED, null,
-                    lastObserved, -1, index, 0L);
+            if (confirmed != null) return confirmed;
+            PendingWrite pending = pendingWrites.peekFirst();
+            long age = pending == null ? 0L : Math.max(0L, nowMs - pending.atMs);
+            return new Observation(ObservationKind.UNCHANGED,
+                    pending == null ? null : pending.origin,
+                    pending == null ? lastObserved : pending.previousIndex,
+                    pending == null ? -1 : pending.expectedIndex, index, age);
         }
+
+        PendingWrite matchedPending = findExpected(pendingWrites, index);
+        if (matchedPending != null) {
+            removeThrough(pendingWrites, matchedPending);
+            lastObserved = index;
+            return new Observation(ObservationKind.APP_WRITE_ACK, matchedPending.origin,
+                    matchedPending.previousIndex, matchedPending.expectedIndex, index,
+                    Math.max(0L, nowMs - matchedPending.atMs));
+        }
+
+        PendingWrite matchedStale = findExpected(staleWrites, index);
+        if (matchedStale != null) {
+            staleWrites.remove(matchedStale);
+            lastObserved = index;
+            return new Observation(ObservationKind.APP_WRITE_STALE, matchedStale.origin,
+                    matchedStale.previousIndex, matchedStale.expectedIndex, index,
+                    Math.max(0L, nowMs - matchedStale.atMs));
+        }
+
+        if (!pendingWrites.isEmpty()) {
+            PendingWrite conflict = pendingWrites.peekLast();
+            int previous = lastObserved;
+            while (!pendingWrites.isEmpty()) staleWrites.addLast(pendingWrites.removeFirst());
+            lastObserved = index;
+            return new Observation(ObservationKind.APP_WRITE_MISMATCH,
+                    conflict == null ? null : conflict.origin,
+                    previous,
+                    conflict == null ? -1 : conflict.expectedIndex, index,
+                    conflict == null ? 0L : Math.max(0L, nowMs - conflict.atMs));
+        }
+
         int previous = lastObserved;
         lastObserved = index;
         return new Observation(ObservationKind.USER_CHANGE, null,
@@ -119,18 +205,40 @@ final class VolumeWriteTracker {
 
     Origin classifyObserved(int index, long nowMs) {
         Observation observation = observe(index, nowMs);
-        if (observation.kind == ObservationKind.APP_WRITE_ACK
-                || observation.kind == ObservationKind.APP_WRITE_MISMATCH) {
-            return Origin.APP;
-        }
+        if (observation.isAppWrite()) return Origin.APP;
         if (observation.kind == ObservationKind.USER_CHANGE) return Origin.USER;
         return Origin.UNCHANGED;
     }
 
-    private void clearPending() {
-        pendingOrigin = null;
-        pendingPreviousIndex = -1;
-        pendingExpectedIndex = -1;
-        pendingAppAtMs = 0L;
+    private void expirePending(long nowMs) {
+        while (!pendingWrites.isEmpty()) {
+            PendingWrite first = pendingWrites.peekFirst();
+            if (first == null || Math.max(0L, nowMs - first.atMs) <= acknowledgementWindowMs) break;
+            staleWrites.addLast(pendingWrites.removeFirst());
+        }
+    }
+
+    private void pruneStale(long nowMs) {
+        while (!staleWrites.isEmpty()) {
+            PendingWrite first = staleWrites.peekFirst();
+            if (first == null || Math.max(0L, nowMs - first.atMs) <= staleQuarantineMs) break;
+            staleWrites.removeFirst();
+        }
+    }
+
+    private static PendingWrite findExpected(Deque<PendingWrite> writes, int expectedIndex) {
+        for (PendingWrite write : writes) {
+            if (write.expectedIndex == expectedIndex) return write;
+        }
+        return null;
+    }
+
+    private static void removeThrough(Deque<PendingWrite> writes, PendingWrite matched) {
+        Iterator<PendingWrite> iterator = writes.iterator();
+        while (iterator.hasNext()) {
+            PendingWrite write = iterator.next();
+            iterator.remove();
+            if (write == matched) return;
+        }
     }
 }

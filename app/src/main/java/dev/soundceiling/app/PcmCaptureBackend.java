@@ -4,6 +4,7 @@ import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioPlaybackCaptureConfiguration;
 import android.media.AudioRecord;
+import android.media.AudioTimestamp;
 import android.media.projection.MediaProjection;
 import android.os.SystemClock;
 
@@ -11,15 +12,44 @@ import android.os.SystemClock;
 final class PcmCaptureBackend implements AutoCloseable {
     static final int SAMPLE_RATE = 48_000;
     static final int CHANNELS = 2;
+    private static final long TARGET_WARMUP_TIMEOUT_MS = 1_500L;
+    private static final int TARGET_CONFIRM_BLOCKS = 3;
+    private static final int TARGET_SIGNAL_ABS_THRESHOLD = 42; // ~ -58 dBFS PCM16 peak.
+
+    enum TargetWarmupStatus { NOT_TARGETED, PENDING, CONFIRMED, FAILED }
+
+    static final class CaptureTimestamp {
+        final boolean valid;
+        final long framePosition;
+        final long nanoTime;
+
+        CaptureTimestamp(boolean valid, long framePosition, long nanoTime) {
+            this.valid = valid;
+            this.framePosition = framePosition;
+            this.nanoTime = nanoTime;
+        }
+    }
 
     private final AudioRecord record;
     private final PcmCaptureRequest request;
+    private final long openedElapsedMs;
+    private final Object readLock = new Object();
     private volatile long lastSampleElapsedMs;
+    private volatile CaptureTimestamp latestTimestamp =
+            new CaptureTimestamp(false, 0L, 0L);
     private volatile boolean closed;
+    private volatile boolean stopRequested;
+    private boolean readInFlight;
+    private boolean releaseRequested;
+    private boolean released;
+    private volatile int consecutiveTargetSignalBlocks;
+    private volatile boolean targetConfirmed;
+    private long totalFramesRead;
 
     private PcmCaptureBackend(AudioRecord record, PcmCaptureRequest request) {
         this.record = record;
         this.request = request;
+        this.openedElapsedMs = SystemClock.elapsedRealtime();
     }
 
     static PcmCaptureBackend open(MediaProjection projection, PcmCaptureRequest request) {
@@ -62,14 +92,62 @@ final class PcmCaptureBackend implements AutoCloseable {
     }
 
     int read(short[] buffer) {
-        if (closed || buffer == null || buffer.length == 0) return AudioRecord.ERROR_BAD_VALUE;
-        int read = record.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
-        if (read > 0) lastSampleElapsedMs = SystemClock.elapsedRealtime();
+        if (buffer == null || buffer.length == 0) return AudioRecord.ERROR_BAD_VALUE;
+        synchronized (readLock) {
+            if (closed || stopRequested || releaseRequested) return 0;
+            readInFlight = true;
+        }
+
+        int read;
+        try {
+            read = record.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
+        } finally {
+            boolean releaseNow;
+            synchronized (readLock) {
+                readInFlight = false;
+                readLock.notifyAll();
+                releaseNow = releaseRequested && !released;
+            }
+            if (releaseNow) releaseRecordOnce();
+        }
+
+        if (closed || stopRequested) return 0;
+        if (read > 0) {
+            long now = SystemClock.elapsedRealtime();
+            lastSampleElapsedMs = now;
+            totalFramesRead += read / CHANNELS;
+            updateTimestamp(totalFramesRead);
+            observeTargetWarmup(buffer, read);
+        }
         return read;
     }
 
+    private void observeTargetWarmup(short[] buffer, int count) {
+        if (!request.targeted() || targetConfirmed || count <= 0) return;
+        int peak = 0;
+        for (int i = 0; i < count; i++) {
+            peak = Math.max(peak, Math.abs((int) buffer[i]));
+        }
+        if (peak >= TARGET_SIGNAL_ABS_THRESHOLD) {
+            consecutiveTargetSignalBlocks++;
+            if (consecutiveTargetSignalBlocks >= TARGET_CONFIRM_BLOCKS) targetConfirmed = true;
+        } else {
+            consecutiveTargetSignalBlocks = 0;
+        }
+    }
+
+    TargetWarmupStatus targetWarmupStatus(long nowElapsedMs) {
+        if (!request.targeted()) return TargetWarmupStatus.NOT_TARGETED;
+        if (targetConfirmed) return TargetWarmupStatus.CONFIRMED;
+        if (nowElapsedMs >= openedElapsedMs
+                && nowElapsedMs - openedElapsedMs >= TARGET_WARMUP_TIMEOUT_MS) {
+            return TargetWarmupStatus.FAILED;
+        }
+        return TargetWarmupStatus.PENDING;
+    }
+
     boolean healthy() {
-        return !closed && record.getState() == AudioRecord.STATE_INITIALIZED
+        return !closed && !stopRequested && record.getState() == AudioRecord.STATE_INITIALIZED
                 && record.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING;
     }
 
@@ -81,8 +159,16 @@ final class PcmCaptureBackend implements AutoCloseable {
         return request.targetUid;
     }
 
+    PcmCaptureRequest request() {
+        return request;
+    }
+
     long lastSampleElapsedMs() {
         return lastSampleElapsedMs;
+    }
+
+    CaptureTimestamp latestTimestamp() {
+        return latestTimestamp;
     }
 
     long sampleAgeMs(long nowElapsedMs) {
@@ -90,10 +176,60 @@ final class PcmCaptureBackend implements AutoCloseable {
         return last <= 0L ? Long.MAX_VALUE : Math.max(0L, nowElapsedMs - last);
     }
 
-    @Override public void close() {
-        if (closed) return;
-        closed = true;
+    void requestStop() {
+        if (closed || stopRequested) return;
+        stopRequested = true;
+        latestTimestamp = new CaptureTimestamp(false, 0L, 0L);
         try { record.stop(); } catch (RuntimeException ignored) {}
+    }
+
+    @Override public void close() {
+        synchronized (readLock) {
+            if (closed || releaseRequested) return;
+            releaseRequested = true;
+        }
+        requestStop();
+
+        boolean interrupted = false;
+        synchronized (readLock) {
+            while (readInFlight) {
+                try {
+                    readLock.wait(100L);
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+            closed = true;
+        }
+        if (interrupted) Thread.currentThread().interrupt();
+        releaseRecordOnce();
+    }
+
+    private void releaseRecordOnce() {
+        synchronized (readLock) {
+            if (released || readInFlight) return;
+            released = true;
+        }
         try { record.release(); } catch (RuntimeException ignored) {}
+    }
+
+    private void updateTimestamp(long returnedBlockEndFrame) {
+        AudioTimestamp timestamp = new AudioTimestamp();
+        try {
+            int status = record.getTimestamp(
+                    timestamp, AudioTimestamp.TIMEBASE_MONOTONIC);
+            CaptureTimestampAligner.Result aligned = status
+                    == AudioRecord.SUCCESS
+                    ? CaptureTimestampAligner.align(returnedBlockEndFrame,
+                            timestamp.framePosition, timestamp.nanoTime,
+                            SAMPLE_RATE)
+                    : new CaptureTimestampAligner.Result(false, 0L, 0L);
+            latestTimestamp = aligned.valid
+                    ? new CaptureTimestamp(true, aligned.framePosition,
+                            aligned.nanoTime)
+                    : new CaptureTimestamp(false, 0L, 0L);
+        } catch (RuntimeException ignored) {
+            latestTimestamp = new CaptureTimestamp(false, 0L, 0L);
+        }
     }
 }

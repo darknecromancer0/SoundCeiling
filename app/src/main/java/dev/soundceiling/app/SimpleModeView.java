@@ -1,175 +1,290 @@
 package dev.soundceiling.app;
 
 import android.content.Context;
+import android.content.Intent;
+import android.provider.Settings;
+import android.view.View;
 import android.graphics.Typeface;
 import android.media.AudioManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import java.util.Locale;
 
+/** Simple controls: shared Global DSP mode, shared Linked Lock, output ceilings and hard safety. */
 final class SimpleModeView extends ScrollView implements RuntimeScreen {
-    interface Listener { void onStartStop(); void onQuietNow(); }
+    interface Listener { void onStartStop(); }
 
     private final Listener listener;
-    private final AudioManager audio;
-    private final int streamMin;
-    private final int streamMax;
-    private final TextView comfortLabel, minLabel, maxLabel, normalizeLabel;
-    private final SeekBar minSeek, maxSeek;
+    private final ControlVolumeCurve curve;
+    private final LinearLayout root;
+    private final Switch globalDsp, linkedLock;
+    private final TextView globalStatus, linkedHint, lowerLabel, upperLabel, safetyLabel, normalizeLabel;
+    private final TextView sessionDspSetupStatus;
+    private final TextView strictSafetyStatus;
+    private final SeekBar lowerSeek, upperSeek, safetySeek;
     private final Button startStop;
+    private final Button sourceAccess;
+    private final Button strictSafetyAccess;
+    private final Button resetDefaults;
     private final StatusCardView statusCard;
-    private boolean syncingBounds;
+    private final RelayCardView relayCard;
+    private boolean loading;
+    private RuntimeState runtime = RuntimeState.stopped("Остановлено");
 
-    SimpleModeView(Context context, Listener listener) {
+    SimpleModeView(Context context, Listener listener,
+            RelayCardView.Listener relayListener) {
         super(context);
         this.listener = listener;
-        audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        streamMin = audio.getStreamMinVolume(AudioManager.STREAM_MUSIC);
-        streamMax = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        curve = new ControlVolumeCurve(audio.getStreamMinVolume(AudioManager.STREAM_MUSIC),
+                audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
         setFillViewport(true);
         setBackgroundColor(UiTheme.background(context));
-
-        LinearLayout root = new LinearLayout(context);
+        root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(20), dp(20), dp(34));
         root.setBackgroundColor(UiTheme.background(context));
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("Основное", 28, true);
-        root.addView(title);
-        TextView intro = secondary("Один one-way движок: SoundCeiling удерживает или снижает Media, но никогда не повышает системный ползунок автоматически. Target — верхняя цель, а не положение ползунка.", 14);
+        root.addView(text("Простой режим", 28, true));
+        TextView intro = secondary("v0.9.2: основная автогромкость меняет Samsung Media по одной ступени. Volume Down или уменьшение системного ползунка ставит её на паузу до Остановить → Запустить. Safety Maximum остаётся активен. PCM Shadow — отдельный расчёт без звука.", 14);
         intro.setPadding(0, dp(6), 0, dp(12));
         root.addView(intro);
 
         statusCard = new StatusCardView(context);
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        statusLp.bottomMargin = dp(14); root.addView(statusCard, statusLp);
+        statusLp.bottomMargin = dp(12);
+        root.addView(statusCard, statusLp);
 
-        LinearLayout targetRow = new LinearLayout(context);
-        targetRow.setOrientation(LinearLayout.HORIZONTAL);
-        comfortLabel = section();
-        targetRow.addView(comfortLabel, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
-        targetRow.addView(helpButton(HelpText.TARGET_LOUDNESS), new LinearLayout.LayoutParams(dp(46), dp(42)));
-        root.addView(targetRow);
-        SeekBar comfortSeek = new SeekBar(context);
-        comfortSeek.setMin(0); comfortSeek.setMax(100);
-        comfortSeek.setProgress(percentForLoudness(Prefs.targetLoudness(context)));
-        root.addView(comfortSeek); updateComfortLabel(comfortSeek.getProgress());
-        comfortSeek.setOnSeekBarChangeListener(listener((seek, progress) -> {
-            float target = loudnessForPercent(progress);
-            Prefs.get(getContext()).edit().putFloat(Prefs.TARGET_LOUDNESS, target)
-                    .putFloat(Prefs.TARGET_RMS, target)
-                    .putString(Prefs.NORMALIZATION_PRESET, NormalizationPreset.CUSTOM.key)
-                    .putBoolean(Prefs.NORMALIZE, true).apply();
-            DiagnosticLog.event("preference_change", String.format(Locale.US, "targetLoudness=%.1f", target));
-        }, this::updateComfortLabel));
+        relayCard = new RelayCardView(context, relayListener);
+        LinearLayout.LayoutParams relayLp = new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        relayLp.bottomMargin = dp(12);
+        root.addView(relayCard, relayLp);
 
-        minLabel = section(); minLabel.setPadding(0, dp(16), 0, 0); root.addView(minLabel);
-        minSeek = new SeekBar(context); minSeek.setMin(streamMin); minSeek.setMax(streamMax); root.addView(minSeek);
+        sessionDspSetupStatus = secondary("", 13);
+        sessionDspSetupStatus.setPadding(0, dp(2), 0, dp(6));
+        root.addView(sessionDspSetupStatus);
 
-        maxLabel = section(); maxLabel.setPadding(0, dp(16), 0, 0); root.addView(maxLabel);
-        maxSeek = new SeekBar(context); maxSeek.setMin(1); maxSeek.setMax(100); root.addView(maxSeek);
-        syncBoundsFromPrefs();
+        sourceAccess = new Button(context);
+        sourceAccess.setAllCaps(false);
+        sourceAccess.setText("Разрешить распознавание источника для DSP");
+        sourceAccess.setVisibility(View.GONE);
+        sourceAccess.setOnClickListener(v -> {
+            try { getContext().startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); }
+            catch (RuntimeException ignored) {}
+        });
+        root.addView(sourceAccess, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50)));
 
-        minSeek.setOnSeekBarChangeListener(listener((seek, progress) -> applyBounds(progress, maxSeek.getProgress()),
-                progress -> updateMinLabel(progress, streamMax)));
-        maxSeek.setOnSeekBarChangeListener(listener((seek, progress) -> applyBounds(minSeek.getProgress(), progress),
-                this::updateMaxLabel));
+        globalDsp = addSwitchWithHelp("PCM Shadow (без звука)", HelpText.GLOBAL_DSP,
+                Prefs.globalDspEnabled(context));
+        globalStatus = secondary("Shadow only · audible output blocked", 13);
+        globalStatus.setPadding(0, 0, 0, dp(10));
+        root.addView(globalStatus);
+        globalDsp.setOnCheckedChangeListener((button, checked) -> {
+            if (loading) return;
+            Prefs.setGlobalDspEnabled(getContext(), checked);
+            DiagnosticLog.event("preference_change", "globalDsp=" + checked);
+            refreshSharedControls();
+        });
 
-        normalizeLabel = section(); normalizeLabel.setPadding(0, dp(16), 0, 0); root.addView(normalizeLabel);
-        SeekBar normalizationSeek = new SeekBar(context);
-        normalizationSeek.setMin(0); normalizationSeek.setMax(100);
-        normalizationSeek.setProgress(Math.round(Prefs.normalizationStrength(context) * 100f));
-        root.addView(normalizationSeek); updateNormalizationLabel(normalizationSeek.getProgress());
-        normalizationSeek.setOnSeekBarChangeListener(listener((seek, progress) -> {
-            boolean enabled = progress > 0;
-            Prefs.get(getContext()).edit()
-                    .putFloat(Prefs.NORMALIZATION_STRENGTH, progress / 100f)
-                    .putString(Prefs.NORMALIZATION_PRESET, enabled ? NormalizationPreset.CUSTOM.key : NormalizationPreset.OFF.key)
-                    .putBoolean(Prefs.NORMALIZE, enabled).apply();
-            DiagnosticLog.event("preference_change", "normalizationStrength=" + progress);
-        }, this::updateNormalizationLabel));
+        linkedLock = addSwitchWithHelp("Default Linked Lock", HelpText.DEFAULT_LINKED_LOCK,
+                Prefs.defaultLinkedLock(context));
+        linkedHint = secondary("Управляется Default Linked Lock: Samsung Media slider сдвигает связанную точку только при реальном пользовательском движении.", 13);
+        linkedHint.setPadding(0, 0, 0, dp(8));
+        root.addView(linkedHint);
+        linkedLock.setOnCheckedChangeListener((button, checked) -> {
+            if (loading) return;
+            OutputCeilingState state = Prefs.outputCeilings(getContext()).withLinked(checked);
+            Prefs.saveOutputCeilings(getContext(), state);
+            DiagnosticLog.event("preference_change", "defaultLinkedLock=" + checked);
+            refreshSharedControls();
+        });
 
-        LinearLayout quietRow = new LinearLayout(context);
-        quietRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button quiet = new Button(context);
-        quiet.setAllCaps(false); quiet.setText("Quiet Now"); quiet.setTextSize(16);
-        quiet.setOnClickListener(v -> this.listener.onQuietNow());
-        quietRow.addView(quiet, new LinearLayout.LayoutParams(0, dp(52), 1f));
-        LinearLayout.LayoutParams quietHelpLp = new LinearLayout.LayoutParams(dp(52), dp(52));
-        quietHelpLp.leftMargin = dp(8); quietRow.addView(helpButton(HelpText.QUIET_NOW), quietHelpLp);
-        LinearLayout.LayoutParams quietLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(52));
-        quietLp.topMargin = dp(18); root.addView(quietRow, quietLp);
+        lowerLabel = section(); root.addView(lowerLabel);
+        lowerSeek = addCeilingSeek(); root.addView(lowerSeek);
+        upperLabel = section(); upperLabel.setPadding(0, dp(10), 0, 0); root.addView(upperLabel);
+        upperSeek = addCeilingSeek(); root.addView(upperSeek);
+        lowerSeek.setOnSeekBarChangeListener(ceilingListener(true));
+        upperSeek.setOnSeekBarChangeListener(ceilingListener(false));
+
+        safetyLabel = section(); safetyLabel.setPadding(0, dp(14), 0, 0); root.addView(safetyLabel);
+        safetySeek = new SeekBar(context); safetySeek.setMin(1); safetySeek.setMax(100);
+        safetySeek.setProgress(Prefs.maxVolumePercent(context)); root.addView(safetySeek);
+        updateSafetyLabel(safetySeek.getProgress());
+        safetySeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                updateSafetyLabel(progress);
+                if (fromUser) Prefs.get(getContext()).edit().putInt(Prefs.MAX_VOLUME_PERCENT, progress).apply();
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+
+        strictSafetyStatus = secondary("", 13);
+        strictSafetyStatus.setPadding(0, dp(4), 0, dp(6));
+        root.addView(strictSafetyStatus);
+        strictSafetyAccess = new Button(context);
+        strictSafetyAccess.setAllCaps(false);
+        strictSafetyAccess.setText("Включить Strict Safety (Accessibility)");
+        strictSafetyAccess.setOnClickListener(v -> {
+            try { getContext().startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
+            catch (RuntimeException ignored) {}
+        });
+        LinearLayout.LayoutParams strictLp = new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(50));
+        strictLp.bottomMargin = dp(8);
+        root.addView(strictSafetyAccess, strictLp);
+        refreshStrictSafety();
+
+        normalizeLabel = section(); normalizeLabel.setPadding(0, dp(14), 0, 0); root.addView(normalizeLabel);
+        SeekBar normalization = new SeekBar(context); normalization.setMin(0); normalization.setMax(100);
+        normalization.setProgress(Math.round(Prefs.normalizationStrength(context) * 100f)); root.addView(normalization);
+        updateNormalizationLabel(normalization.getProgress());
+        normalization.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                updateNormalizationLabel(progress);
+                if (!fromUser) return;
+                Prefs.get(getContext()).edit().putFloat(Prefs.NORMALIZATION_STRENGTH, progress / 100f)
+                        .putString(Prefs.NORMALIZATION_PRESET, progress == 0
+                                ? NormalizationPreset.OFF.key : NormalizationPreset.CUSTOM.key)
+                        .putBoolean(Prefs.NORMALIZE, progress > 0).apply();
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+
+        resetDefaults = new Button(context);
+        resetDefaults.setAllCaps(false);
+        resetDefaults.setText("Вернуть настройки по умолчанию");
+        resetDefaults.setOnClickListener(v -> new android.app.AlertDialog.Builder(getContext())
+                .setTitle("Вернуть настройки по умолчанию?")
+                .setMessage("Будут сброшены только настройки нормализации. Логи, калибровка и правила приложений сохранятся.")
+                .setNegativeButton("Отмена", null)
+                .setPositiveButton("Сбросить", (dialog, which) -> {
+                    Prefs.resetNormalizerDefaults(getContext());
+                    safetySeek.setProgress(Prefs.maxVolumePercent(getContext()));
+                    updateSafetyLabel(safetySeek.getProgress());
+                    refreshSharedControls();
+                    DiagnosticLog.event("preference_change", "reset_normalizer_defaults=true");
+                }).show());
+        LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50));
+        resetLp.topMargin = dp(14); root.addView(resetDefaults, resetLp);
 
         startStop = new Button(context); startStop.setAllCaps(false); startStop.setTextSize(18);
-        startStop.setOnClickListener(v -> this.listener.onStartStop());
+        startStop.setOnClickListener(v -> listener.onStartStop());
         LinearLayout.LayoutParams startLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(56));
-        startLp.topMargin = dp(10); root.addView(startStop, startLp);
-
+        startLp.topMargin = dp(12); root.addView(startStop, startLp);
+        refreshSharedControls();
     }
 
-    private void applyBounds(int requestedMin, int requestedMaxPercent) {
-        if (syncingBounds) return;
-        ControlSettingConstraints.Result c = ControlSettingConstraints.normalize(streamMin, streamMax,
-                requestedMin, requestedMaxPercent, Prefs.safetyLockPercent(getContext()), Prefs.quietIndex(getContext()));
-        Prefs.get(getContext()).edit()
-                .putInt(Prefs.MIN_MEDIA_INDEX, c.minIndex)
-                .putInt(Prefs.MAX_VOLUME_PERCENT, c.maxPercent)
-                .putInt(Prefs.SAFETY_LOCK_PERCENT, c.safetyPercent)
-                .putInt(Prefs.QUIET_INDEX, c.quietIndex).apply();
-        syncingBounds = true;
-        minSeek.setProgress(c.minIndex); maxSeek.setProgress(c.maxPercent);
-        syncingBounds = false;
-        updateMinLabel(c.minIndex, streamMax); updateMaxLabel(c.maxPercent);
-        DiagnosticLog.event("preference_change", "bounds min=" + c.minIndex + " maxPercent=" + c.maxPercent
-                + " safetyPercent=" + c.safetyPercent + " quiet=" + c.quietIndex);
+    private SeekBar addCeilingSeek() {
+        SeekBar seek = new SeekBar(getContext()); seek.setMin(0); seek.setMax(100); return seek;
     }
 
-    private void syncBoundsFromPrefs() {
-        ControlSettingConstraints.Result c = ControlSettingConstraints.normalize(streamMin, streamMax,
-                Prefs.minMediaIndex(getContext()), Prefs.maxVolumePercent(getContext()),
-                Prefs.safetyLockPercent(getContext()), Prefs.quietIndex(getContext()));
-        syncingBounds = true;
-        minSeek.setProgress(c.minIndex); maxSeek.setProgress(c.maxPercent);
-        syncingBounds = false;
-        updateMinLabel(c.minIndex, streamMax); updateMaxLabel(c.maxPercent);
-        Prefs.get(getContext()).edit().putInt(Prefs.MIN_MEDIA_INDEX, c.minIndex)
-                .putInt(Prefs.MAX_VOLUME_PERCENT, c.maxPercent)
-                .putInt(Prefs.SAFETY_LOCK_PERCENT, c.safetyPercent)
-                .putInt(Prefs.QUIET_INDEX, c.quietIndex).apply();
-    }
-
-    @Override public void render(RuntimeState state) {
-        startStop.setText(state.running ? "Остановить" : "Запустить");
-        statusCard.render(state);
-    }
-
-    private SeekBar.OnSeekBarChangeListener listener(ChangeAction save, LabelAction label) {
+    private SeekBar.OnSeekBarChangeListener ceilingListener(boolean lower) {
         return new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                label.update(progress); if (fromUser) save.save(seekBar, progress);
+                if (loading) return;
+                SimpleModeModel model = model();
+                model = lower ? model.withLowerProgress(progress) : model.withUpperProgress(progress);
+                if (fromUser) {
+                    Prefs.saveOutputCeilings(getContext(), model.ceilings());
+                    DiagnosticLog.event("preference_change", (lower ? "lowerOutputCeiling=" : "upperOutputCeiling=")
+                            + OutputCeilingScale.dbForPercent(progress));
+                }
+                applyModel(model);
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         };
     }
 
-    private void updateComfortLabel(int percent) {
-        String word = percent <= 30 ? "тихо" : percent <= 75 ? "комфортно" : "громче";
-        comfortLabel.setText(String.format(Locale.US, "Target: %d%% · %s · %.1f LUFS-like", percent, word, loudnessForPercent(percent)));
+    private SimpleModeModel model() {
+        boolean verified = runtime.sessionDspActive
+                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_POLICY_SCOPED
+                || runtime.dspTransportCapability == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
+        boolean globalMixActive = runtime.dspTransportCapability
+                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
+        return new SimpleModeModel(Prefs.outputCeilings(getContext()), curve, verified,
+                Prefs.globalDspEnabled(getContext()), globalMixActive);
     }
-    private void updateMinLabel(int index, int max) { minLabel.setText("Minimum: " + index + "/" + max + " · только нижняя граница"); }
-    private void updateMaxLabel(int percent) { maxLabel.setText("Maximum: " + percent + "% · верхняя граница Media"); }
+
+    private void refreshSharedControls() { applyModel(model()); }
+
+    private void applyModel(SimpleModeModel model) {
+        loading = true;
+        globalDsp.setChecked(model.globalDspPreferred());
+        linkedLock.setChecked(model.linkedChecked());
+        lowerSeek.setProgress(model.lowerProgress());
+        upperSeek.setProgress(model.upperProgress());
+        lowerSeek.setEnabled(model.ceilingControlsEnabled());
+        upperSeek.setEnabled(model.ceilingControlsEnabled());
+        lowerSeek.setAlpha(model.ceilingControlsEnabled() ? 1f : 0.45f);
+        upperSeek.setAlpha(model.ceilingControlsEnabled() ? 1f : 0.45f);
+        lowerLabel.setText("Минимальный потолок выхода: " + model.lowerValueText());
+        upperLabel.setText("Максимальный потолок выхода: " + model.upperValueText());
+        globalStatus.setText(model.globalDspStatusText());
+        loading = false;
+    }
+
+    @Override public void render(RuntimeState state) {
+        if (state != null) runtime = state;
+        startStop.setText(runtime.running ? "Остановить" : "Запустить");
+        statusCard.render(runtime);
+        relayCard.render(runtime);
+        sourceAccess.setVisibility(runtime.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING
+                ? View.VISIBLE : View.GONE);
+        refreshEnhancedSessionSetup();
+        refreshStrictSafety();
+        refreshSharedControls();
+    }
+
+    private void refreshStrictSafety() {
+        boolean enabled = StrictSafetyState.isAccessibilityServiceEnabled(getContext());
+        boolean connected = StrictSafetyState.accessibilityConnected();
+        long now = android.os.SystemClock.elapsedRealtime();
+        boolean keySeen = StrictSafetyState.keyEventSeenRecently(now);
+        strictSafetyStatus.setText(!enabled
+                ? "Strict Safety: реактивный clamp активен, но для аппаратной Volume Up нужен Accessibility-доступ"
+                : !connected
+                ? "Strict Safety: доступ включён, но сервис ещё не подключён"
+                : keySeen
+                ? "Strict Safety: активно · SoundCeiling владеет аппаратной Volume Up до Safety Maximum"
+                : "Strict Safety: подключено · нажми Volume Up для проверки перехвата");
+        strictSafetyAccess.setVisibility(enabled ? View.GONE : View.VISIBLE);
+    }
+
+    private void refreshEnhancedSessionSetup() {
+        sessionDspSetupStatus.setText(StatusText.sessionDsp(runtime) + "\n"
+                + StatusText.pcmDsp(runtime));
+    }
+
+    private void updateSafetyLabel(int percent) {
+        int index = MediaLevelScale.indexForPercent(percent, curve.minIndex(), curve.maxIndex());
+        safetyLabel.setText("Safety Maximum: " + percent + "% · ступень " + index + " из " + curve.maxIndex());
+    }
+
     private void updateNormalizationLabel(int percent) {
         String word = percent == 0 ? "выкл" : percent < 45 ? "мягко" : percent < 80 ? "средне" : "жёстко";
-        normalizeLabel.setText("Normalization: " + percent + "% · " + word + " · только вниз");
+        normalizeLabel.setText("Normalization: " + percent + "% · " + word);
     }
-    private static float loudnessForPercent(int percent) { return -28f + Math.max(0, Math.min(100, percent)) * 0.16f; }
-    private static int percentForLoudness(float loudness) { return Math.max(0, Math.min(100, Math.round((loudness + 28f) / 0.16f))); }
+
+    private Switch addSwitchWithHelp(String title, String helpKey, boolean checked) {
+        LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL);
+        Switch value = new Switch(getContext()); value.setText(title); value.setTextSize(16);
+        value.setTextColor(UiTheme.primaryText(getContext())); value.setChecked(checked);
+        row.addView(value, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(helpButton(helpKey), new LinearLayout.LayoutParams(dp(46), dp(42)));
+        root.addView(row);
+        return value;
+    }
+
     private TextView section() { return text("", 16, true); }
     private Button helpButton(String key) {
         Button b = new Button(getContext()); b.setAllCaps(false); b.setText("?"); b.setTextSize(16);
@@ -179,13 +294,12 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         return b;
     }
     private TextView text(String value, float sp, boolean bold) {
-        TextView v = new TextView(getContext()); v.setText(value); v.setTextSize(sp); v.setTextColor(UiTheme.primaryText(getContext()));
-        v.setLineSpacing(0, 1.08f); if (bold) v.setTypeface(Typeface.DEFAULT_BOLD); return v;
+        TextView v = new TextView(getContext()); v.setText(value); v.setTextSize(sp);
+        v.setTextColor(UiTheme.primaryText(getContext())); v.setLineSpacing(0, 1.08f);
+        if (bold) v.setTypeface(Typeface.DEFAULT_BOLD); return v;
     }
     private TextView secondary(String value, float sp) {
         TextView v = text(value, sp, false); v.setTextColor(UiTheme.secondaryText(getContext())); return v;
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
-    private interface ChangeAction { void save(SeekBar seekBar, int progress); }
-    private interface LabelAction { void update(int progress); }
 }

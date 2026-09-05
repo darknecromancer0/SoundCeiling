@@ -2,7 +2,7 @@ name: Build Sound Ceiling APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "feature/v0.7-adaptive-envelope" ]
   pull_request:
 jobs:
   build:
@@ -11,15 +11,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Upload source snapshot for v0.6 development
+      - name: Upload source snapshot for v0.9.2 field build
         uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.6-source-snapshot
+          name: SoundCeiling-v0.9.2-source-snapshot
           path: |
             .github
             app
             docs
             gradle
+            ci
             scripts
             tests
             build.gradle.kts
@@ -33,6 +34,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Check stable debug signing contract
+        run: bash ./scripts/check-stable-debug-signing-contract.sh
       - name: Run pure logic tests
         run: ./scripts/run-pure-tests.sh
       - name: Check v0.4 storage contract
@@ -45,6 +48,38 @@ jobs:
         run: ./scripts/check-source-invariants.sh
       - name: Check v0.6 one-way runtime contract
         run: bash ./scripts/check-v06-one-way-contract.sh
+      - name: Check v0.7 adaptive envelope contract
+        run: bash ./scripts/check-v07-adaptive-contract.sh
+      - name: Check v0.7.1 DSP integration contract
+        run: bash ./scripts/check-v071-dsp-contract.sh
+      - name: Check v0.7.1 Simple/Advanced UI contract
+        run: bash ./scripts/check-v071-ui-contract.sh
+      - name: Check v0.7.1 release contract
+        run: bash ./scripts/check-v071-release-contract.sh
+      - name: Check v0.7.2 corrective architecture contract
+        run: bash ./scripts/check-v072-corrective-contract.sh
+      - name: Check v0.7.2 release contract
+        run: bash ./scripts/check-v072-release-contract.sh
+      - name: Check v0.7.3 corrective contract
+        run: bash ./scripts/check-v073-corrective-contract.sh
+      - name: Check v0.7.4 corrective contract
+        run: bash ./scripts/check-v074-corrective-contract.sh
+      - name: Check v0.7.3 release contract
+        run: bash ./scripts/check-v073-release-contract.sh
+      - name: Check v0.7.4 release contract
+        run: bash ./scripts/check-v074-release-contract.sh
+      - name: Check v0.7.4.1 stop lifecycle contract
+        run: bash ./scripts/check-v0741-stop-contract.sh
+      - name: Check v0.7.4.2 repeated stop/restart contract
+        run: bash ./scripts/check-v0742-stop-restart-contract.sh
+      - name: Check v0.7.5 low-volume linked fallback contract
+        run: bash ./scripts/check-v075-low-volume-contract.sh
+      - name: Check v0.7.5.1 peak floor contract
+        run: bash ./scripts/check-v0751-peak-floor-contract.sh
+      - name: Check v0.7.5.2 coarse recovery contract
+        run: bash ./scripts/check-v0752-coarse-recovery-contract.sh
+      - name: Check v0.7 UI contract
+        run: bash ./scripts/check-v07-ui-contract.sh
       - name: Check v0.5 targeted PCM contract
         run: bash ./scripts/check-v05-pcm-contract.sh
       - name: Check v0.5 microphone isolation
@@ -65,19 +100,108 @@ jobs:
         run: bash ./scripts/check-v051-core-stability-contract.sh
       - name: Check v0.6 release contract
         run: bash ./scripts/check-v06-release-contract.sh
-      - uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Check v0.7 release contract
+        run: bash ./scripts/check-v07-release-contract.sh
+      - name: Check v0.7.6 control architecture contract
+        run: bash ./scripts/check-v076-control-architecture-contract.sh
+      - name: Check v0.7.6 release contract
+        run: bash ./scripts/check-v076-release-contract.sh
+      - name: Check v0.7.6.1 DSP safety contract
+        run: bash ./scripts/check-v0761-dsp-safety-contract.sh
+      - name: Check v0.7.6.1 release contract
+        run: bash ./scripts/check-v0761-release-contract.sh
+      - name: Check v0.7.6.2 output-domain contract
+        run: bash ./scripts/check-v0762-output-domain-contract.sh
+      - name: Check v0.7.6.2 release contract
+        run: bash ./scripts/check-v0762-release-contract.sh
+      - name: Check v0.7.6.3 DSP attach evidence contract
+        run: bash ./scripts/check-v0763-dsp-attach-evidence-contract.sh
+      - name: Check v0.7.6.3 release contract
+        run: bash ./scripts/check-v0763-release-contract.sh
+      - name: Check v0.7.7 Samsung 3-of-15 authority
+        run: bash ./scripts/run-v077-samsung-3of15-tests.sh
+      - name: Check v0.7.7 Session DSP telemetry
+        run: bash ./scripts/run-v077-session-telemetry-tests.sh
+      - name: Check v0.7.7 Android wiring contract
+        run: bash ./scripts/check-v077-android-wiring-contract.sh
+      - name: Check v0.7.7 release contract
+        run: bash ./scripts/check-v077-release-contract.sh
+      - name: Check v0.7.7.3 Samsung pre-enable sanitation contract
+        run: bash ./scripts/check-v0773-preenable-sanitization-contract.sh
+      - name: Check v0.7.7.3 deterministic readback pure test
+        run: bash ./scripts/run-v0771-readback-tests.sh
+      - name: Check v0.7.7.3 deterministic readback wiring
+        run: bash ./scripts/check-v0771-readback-wiring-contract.sh
+      - name: Check v0.7.7.3 release contract
+        run: bash ./scripts/check-v0773-release-contract.sh
+      - name: Check v0.7.7.6 Strict Safety contract
+        run: bash ./scripts/check-v0776-strict-safety-contract.sh
+      - name: Check v0.7.7.6 release contract
+        run: bash ./scripts/check-v0776-release-contract.sh
+      - name: Check v0.7.7.7 preemptive Volume-Up contract
+        run: bash ./scripts/check-v0777-preemptive-volume-up-contract.sh
+      - name: Check v0.7.7.7 release contract
+        run: bash ./scripts/check-v0777-release-contract.sh
+      - name: Check v0.7.7.8 release contract
+        run: bash ./scripts/check-v0778-release-contract.sh
+      - name: Check v0.7.7.9 release contract
+        run: bash ./scripts/check-v0779-release-contract.sh
+      - name: Check v0.7.7.10 emergency DSP quarantine pure test
+        run: bash ./scripts/run-v07710-emergency-dsp-quarantine-test.sh
+      - name: Check v0.7.7.10 emergency DSP quarantine contract
+        run: bash ./scripts/check-v07710-release-contract.sh
+      - name: Check historical v0.8 custom Session DSP pure tests
+        run: bash ./scripts/run-v080-safe-custom-matrix-tests.sh
+      - name: Check historical v0.8 custom Session DSP wiring
+        run: bash ./scripts/check-v080-session-matrix-contract.sh
+      - name: Check historical v0.8 release contract
+        run: bash ./scripts/check-v080-release-contract.sh
+      - name: Check v0.9 Session DSP quarantine pure test
+        run: bash ./scripts/run-v090-session-quarantine-tests.sh
+      - name: Check v0.9 Session DSP quarantine wiring
+        run: bash ./scripts/check-v090-session-quarantine-contract.sh
+      - name: Check v0.9 PCM feasibility gate
+        run: bash ./scripts/run-v090-pcm-feasibility-tests.sh
+      - name: Check v0.9 PCM shadow processor
+        run: bash ./scripts/run-v090-pcm-shadow-tests.sh
+      - name: Check v0.9 truthful runtime wiring
+        run: bash ./scripts/check-v090-runtime-wiring-contract.sh
+      - name: Check v0.9 release contract
+        run: bash ./scripts/check-v090-release-contract.sh
+      - name: Run v0.9.1 Accessibility Relay aggregate
+        run: bash ./scripts/run-v091-accessibility-relay-tests.sh
+      - name: Check v0.9.1 release contract
+        run: bash ./scripts/check-v091-release-contract.sh
+      - name: Check v0.9.2 Samsung Media last-write boundary
+        run: bash ./scripts/run-v092-media-write-bridge-tests.sh
+      - name: Install Android SDK 35 packages
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
       - name: Build debug APK
         run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
+      - name: Verify stable APK signer
+        run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -x "$APKSIGNER"
+          apksigner_output="$("$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk)"
+          printf '%s\n' "$apksigner_output"
+          echo "$apksigner_output" | grep -Fqi 'Signer #1 certificate SHA-256 digest: 5aa109027b8ae7675ce543eaf26402a2890bca97510bc2018661ea2231516be2'
       - name: APK checksum
         working-directory: app/build/outputs/apk/debug
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.6.0-debug-apk
-          path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/debug/app-debug.apk.sha256
+          name: SoundCeiling-v0.9.2-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SoundCeiling-v0.9.2-debug-apk-checksum
+          path: app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error
