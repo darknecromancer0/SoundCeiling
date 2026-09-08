@@ -171,6 +171,39 @@ final class PcmCaptureBackend implements AutoCloseable {
         return latestTimestamp;
     }
 
+    /** Called by the capture worker after an acknowledged Relay mute, between normal reads. */
+    boolean discardBufferedAudio() {
+        synchronized (readLock) {
+            if (closed || stopRequested || releaseRequested || readInFlight) return false;
+            readInFlight = true;
+        }
+        try {
+            short[] discarded = new short[4096];
+            int attempts = Math.max(4, record.getBufferSizeInFrames() * CHANNELS
+                    / discarded.length + 4);
+            for (int i = 0; i < attempts; i++) {
+                if (closed || stopRequested) return false;
+                int count = record.read(discarded, 0, discarded.length,
+                        AudioRecord.READ_NON_BLOCKING);
+                if (count == 0) return true;
+                if (count < 0) return false;
+                totalFramesRead += count / CHANNELS;
+            }
+            return false;
+        } catch (RuntimeException failure) {
+            return false;
+        } finally {
+            latestTimestamp = new CaptureTimestamp(false, 0L, 0L);
+            boolean releaseNow;
+            synchronized (readLock) {
+                readInFlight = false;
+                readLock.notifyAll();
+                releaseNow = releaseRequested && !released;
+            }
+            if (releaseNow) releaseRecordOnce();
+        }
+    }
+
     long sampleAgeMs(long nowElapsedMs) {
         long last = lastSampleElapsedMs;
         return last <= 0L ? Long.MAX_VALUE : Math.max(0L, nowElapsedMs - last);

@@ -8,6 +8,18 @@ final class FallbackFloorPolicy {
         return autoMuteEnabled && safetyCommand;
     }
 
+    static int writeFloor(ControlVolumeCurve curve, int userAnchorIndex,
+                          boolean explicitMinimum, int configuredMinimum,
+                          boolean automaticMedia, boolean autoMuteEnabled) {
+        if (automaticMedia) {
+            int minimum = curve == null ? 0 : curve.minIndex();
+            int maximum = curve == null ? Math.max(minimum + 1, configuredMinimum) : curve.maxIndex();
+            return autoMuteEnabled ? minimum
+                    : DbMath.clamp(Math.max(minimum + 1, configuredMinimum), minimum, maximum);
+        }
+        return ordinaryFloor(curve, userAnchorIndex, explicitMinimum, configuredMinimum);
+    }
+
     static int ordinaryFloor(ControlVolumeCurve curve, int userAnchorIndex,
                              boolean explicitMinimum, int configuredMinimum) {
         if (curve == null) return Math.max(0, configuredMinimum);

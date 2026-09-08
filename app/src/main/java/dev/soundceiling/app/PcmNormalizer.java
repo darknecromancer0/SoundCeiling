@@ -60,8 +60,7 @@ final class PcmNormalizer {
         }
     }
 
-    private final ContinuousDspController controller =
-            new ContinuousDspController();
+    private long lastAtMs = -1L;
     private float appliedGainDb;
 
     synchronized Result process(long atMs, short[] input, int sampleCount,
@@ -71,12 +70,26 @@ final class PcmNormalizer {
             OutputCeilingState ceilings, ControlProfile profile, Limits limits,
             boolean active) {
         validateBuffers(input, sampleCount, output);
-        if (!eligible(sampleCount, sourceLoudnessDb, outputRouteGainDb,
+        if (!eligible(sampleCount, outputRouteGainDb,
                 captureReference, ceilings, profile, limits, active)) {
             return reject(output, "pcm_output_domain_unavailable");
         }
 
         float pcmInputPeakDbfs = pcmPeakDbfs(input, sampleCount);
+        // Empty signal is valid PCM, but is never evidence to increase gain. Advance
+        // the clock so a long silent interval cannot turn into a large recovery step.
+        if (pcmInputPeakDbfs == Float.NEGATIVE_INFINITY
+                && (Float.isFinite(sourceLoudnessDb)
+                    || sourceLoudnessDb == Float.NEGATIVE_INFINITY)) {
+            lastAtMs = Math.max(lastAtMs, Math.max(0L, atMs));
+            Arrays.fill(output, 0, sampleCount, (short) 0);
+            return new Result(true, appliedGainDb, appliedGainDb,
+                    Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY,
+                    Float.NEGATIVE_INFINITY, 0, sampleCount, "pcm_silence");
+        }
+        if (!Float.isFinite(sourceLoudnessDb)) {
+            return reject(output, "pcm_output_domain_unavailable");
+        }
         float effectiveSourcePeakDbfs = conservativePeak(
                 sourcePeakDbfs, pcmInputPeakDbfs);
         if (!Float.isFinite(effectiveSourcePeakDbfs)) {
@@ -86,10 +99,24 @@ final class PcmNormalizer {
         OutputLevelModel.Snapshot current = project(effectiveSourcePeakDbfs,
                 sourceLoudnessDb, outputRouteGainDb, appliedGainDb,
                 captureReference);
-        ContinuousDspController.Decision decision = controller.update(
-                atMs, current, ceilings, profile, appliedGainDb, true);
-        float requested = Float.isFinite(decision.requestedGainDb)
-                ? decision.requestedGainDb : appliedGainDb;
+        if (!current.outputProjectionValid
+                || !Float.isFinite(current.projectedOutputLoudnessDb)) {
+            return reject(output, "pcm_output_domain_unavailable");
+        }
+        float targetDb = (ceilings.lowerDb() + ceilings.upperDb()) * .5f;
+        float errorDb = targetDb - current.projectedOutputLoudnessDb;
+        float desired = appliedGainDb + profile.normalizationStrength * errorDb;
+        long tauMs = desired < appliedGainDb
+                ? profile.downwardAttackMs : profile.upwardReleaseMs;
+        long nowMs = Math.max(0L, atMs);
+        long dtMs = lastAtMs < 0L ? Math.max(1L, tauMs)
+                : Math.max(0L, nowMs - lastAtMs);
+        lastAtMs = Math.max(lastAtMs, nowMs);
+        float alpha = 1f - (float) Math.exp(-dtMs / (double) Math.max(1L, tauMs));
+        // PCM evolves every block. An external actuator's command deadband would
+        // discard these small increments forever at capture-buffer cadence.
+        float requested = Math.abs(errorDb) <= profile.toleranceLu
+                ? appliedGainDb : appliedGainDb + alpha * (desired - appliedGainDb);
         float safe = clampGain(requested, limits);
 
         OutputLevelModel.Snapshot base = project(effectiveSourcePeakDbfs,
@@ -111,8 +138,9 @@ final class PcmNormalizer {
         Conversion conversion = convert(input, sampleCount, output, safe);
         OutputLevelModel.Snapshot applied = project(effectiveSourcePeakDbfs,
                 sourceLoudnessDb, outputRouteGainDb, safe, captureReference);
-        String reason = safe < requested - .001f
-                ? "pcm_safety_clamped" : decision.reason;
+        String reason = safe < requested - .001f ? "pcm_safety_clamped"
+                : Math.abs(errorDb) <= profile.toleranceLu ? "pcm_within_tolerance"
+                : errorDb < 0f ? "pcm_loudness_attenuation" : "pcm_loudness_recovery";
         return new Result(true, requested, safe, pcmInputPeakDbfs,
                 conversion.peakDbfs, applied.projectedOutputPeakDbfs,
                 conversion.clippedSamples, sampleCount, reason);
@@ -124,10 +152,10 @@ final class PcmNormalizer {
 
     synchronized void reset() {
         appliedGainDb = 0f;
-        controller.reset();
+        lastAtMs = -1L;
     }
 
-    private static boolean eligible(int sampleCount, float sourceLoudnessDb,
+    private static boolean eligible(int sampleCount,
             float outputRouteGainDb,
             CaptureReferenceEstimator.Mode captureReference,
             OutputCeilingState ceilings, ControlProfile profile, Limits limits,
@@ -135,7 +163,10 @@ final class PcmNormalizer {
         if (!active || sampleCount <= 0 || ceilings == null || profile == null
                 || limits == null
                 || profile.normalizationPreset == NormalizationPreset.OFF
-                || !Float.isFinite(sourceLoudnessDb)
+                || !Float.isFinite(profile.targetLoudness)
+                || !Float.isFinite(profile.normalizationStrength)
+                || !Float.isFinite(profile.toleranceLu)
+                || !Float.isFinite(profile.sourcePeakThresholdDbfs)
                 || captureReference == null
                 || captureReference == CaptureReferenceEstimator.Mode.UNKNOWN) {
             return false;

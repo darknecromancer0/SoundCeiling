@@ -27,7 +27,7 @@ final class HelpText {
         if (ACCESSIBILITY_RELAY.equals(key)) return tri(
                 "Accessibility Relay — экспериментальный audible-путь: точный разрешённый PCM обрабатывается локально и воспроизводится отдельным Accessibility output.",
                 "Media временно удерживается на 0; пользователь управляет Relay volume. PCM Shadow остаётся неслышимым и не получает renderer authority.",
-                "Точно только после PRE_VOLUME proof, Media-zero acknowledgement и ручного подтверждения тихой пробы; при любой неопределённости Relay останавливается.");
+                "После подтверждения Media 0 очищается очередь захвата и проверяется свежий звук. Затем нужна короткая проба и подтверждение одного потока; нажатие громкости вниз ставит обработку на паузу.");
         if (GLOBAL_DSP.equals(key) || WHOLE_OUTPUT_DSP.equals(key)) return tri(
                 "PCM Shadow v0.9 рассчитывает gain/leveling на отдельной копии разрешённого targeted PCM только в памяти.",
                 "Влияет только на feasibility-метрики и логи; Samsung Media и слышимый аудиовыход не изменяются.",
@@ -39,7 +39,7 @@ final class HelpText {
         if (OUTPUT_CEILINGS.equals(key)) return tri(
                 "Output ceilings задают нижнюю и верхнюю цель цифрового уровня.",
                 "Samsung Media Auto Volume сравнивает с ними PCM и меняет Media по одной ступени; Normalization strength меняет допуск.",
-                "При неизвестной точке PCM шаг разрешён только если PRE/POST границы согласны; Safety Maximum имеет приоритет.");
+                "В Linked Lock цель считается относительно выбранной пользователем громкости. Media использует оценку исходного PCM и кривую устройства; Safety Maximum ограничивает шаги. Это приближение, точнее работает Relay.");
         if (PCM.equals(key)) return tri("PCM — цифровые аудиосэмплы воспроизводимого сигнала.", "Даёт измерение уровня и может подтвердить UID-targeted source.", "Точно для source identity только после стабильного non-silent targeted PCM.");
         if (LUFS_LIKE.equals(key) || LUFS.equals(key)) return tri("LUFS-like — приближённая loudness-оценка воспринимаемой громкости; это не сертифицированное измерение настоящего LUFS.", "Используется нормализатором для сравнения тихих и громких участков.", "Надёжнее на устойчивом программном материале; это приблизительная метрика.");
         if (DBFS.equals(key)) return tri("dBFS — цифровая шкала сигнала, где 0 dBFS является цифровым максимумом.", "Используется для peak и цифровых ceilings.", "Точно для измеренного цифрового сигнала, но не означает dB SPL в комнате.");

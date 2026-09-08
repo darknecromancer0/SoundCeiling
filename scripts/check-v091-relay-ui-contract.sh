@@ -39,8 +39,8 @@ for label in \
   'Один чистый тихий поток' \
   'Эхо / громко / не работает' \
   'Relay volume' \
-  'Safe +3 dB' \
-  'Full experimental +12 dB' \
+  'Normal +24 dB' \
+  'Full +30 dB' \
   'Восстановить безопасный Media'; do
   need "$CARD" "$label"
 done

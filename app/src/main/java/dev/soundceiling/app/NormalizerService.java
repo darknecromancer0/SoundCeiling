@@ -176,6 +176,7 @@ public class NormalizerService extends Service {
         String action = intent == null ? "" : intent.getAction();
         if (ACTION_RELAY_START.equals(action)) {
             if (workerRunning.get() && !fastOnlyMode) {
+                StrictSafetyState.mediaAutomation().start();
                 pendingRelayRequested = true;
                 resetPcmShadowState("relay_requested", false);
             }
@@ -603,6 +604,11 @@ public class NormalizerService extends Service {
             ensureRelayRuntime();
             relayRuntime.onPcmBlock(relayFrame, buffer, n,
                     relayOutputBuffer);
+            PcmCaptureBackend relayCapture = pcmCapture;
+            if (relayRuntime.needsMutedCaptureDrain()) {
+                relayRuntime.onMutedCaptureDrained(relayCapture != null
+                        && relayCapture.discardBufferedAudio());
+            }
             if (relayRuntime.suppressesLegacyMediaWrites()) {
                 publishRelayHoldingState(observedMedia, signal, rms, loud,
                         blockPeak, bands, buffer, n);
@@ -1132,7 +1138,8 @@ public class NormalizerService extends Service {
         boolean safetyCommand = isSafetyCommand(command);
         boolean allowBelowMinimum = FallbackFloorPolicy.allowBelowConfiguredMinimum(
                 autoMuteEnabled, safetyCommand);
-        SafetySettings writeSettings = safetyCommand ? settings : ordinaryFallbackSettings(settings);
+        SafetySettings writeSettings = safetyCommand ? settings : ordinaryFallbackSettings(settings,
+                command.provenance() == ControlCommand.Provenance.AUTO_MEDIA, autoMuteEnabled);
         int applied = safeVolume.applyRequested(target, current, writeSettings, effectiveMax,
                 allowBelowMinimum, now, origin);
         if (applied != current && command.provenance() == ControlCommand.Provenance.COARSE_MEDIA) {
@@ -1144,12 +1151,13 @@ public class NormalizerService extends Service {
     }
 
 
-    private SafetySettings ordinaryFallbackSettings(SafetySettings settings) {
+    private SafetySettings ordinaryFallbackSettings(SafetySettings settings,
+                                                     boolean automaticMedia, boolean autoMuteEnabled) {
         MediaAnchorState anchor = controlCoordinator.mediaAnchorState();
         int userAnchor = anchor == null
                 ? audio.getStreamVolume(AudioManager.STREAM_MUSIC) : anchor.userAnchorIndex();
-        int floor = FallbackFloorPolicy.ordinaryFloor(controlCurve, userAnchor,
-                Prefs.fallbackMinUserSet(this), settings.minIndex);
+        int floor = FallbackFloorPolicy.writeFloor(controlCurve, userAnchor,
+                Prefs.fallbackMinUserSet(this), settings.minIndex, automaticMedia, autoMuteEnabled);
         return new SafetySettings(floor, settings.maxIndex, settings.safetyLockEnabled,
                 settings.safetyLockIndex, settings.quietIndex, settings.recoveryIntervalMs);
     }
@@ -1235,8 +1243,8 @@ public class NormalizerService extends Service {
                         blockPeak + controlCurve.gainDbForIndex(applied), loud.controlLoudnessDb,
                         controlCoordinator.snapshot().measurementMode().name(),
                         controlCoordinator.ceilingState().linked(),
-                        controlCoordinator.ceilingState().lowerDb(),
-                        controlCoordinator.ceilingState().upperDb(),
+                        controlCoordinator.runtimeTargetLowerDb(),
+                        controlCoordinator.runtimeTargetUpperDb(),
                         controlCurve.deltaDb(applied, Math.min(controlCurve.maxIndex(), applied + 1)),
                         controlCoordinator.snapshot().programActive(),
                         controlCoordinator.snapshot().directionDwell())
@@ -1392,8 +1400,8 @@ public class NormalizerService extends Service {
                         optionalDsp == null ? 0f : optionalDsp.appliedGainDb(), Float.NaN, Float.NaN,
                         controlCoordinator.snapshot().measurementMode().name(),
                         controlCoordinator.ceilingState().linked(),
-                        controlCoordinator.ceilingState().lowerDb(),
-                        controlCoordinator.ceilingState().upperDb(),
+                        controlCoordinator.runtimeTargetLowerDb(),
+                        controlCoordinator.runtimeTargetUpperDb(),
                         controlCurve.deltaDb(volume, Math.min(controlCurve.maxIndex(), volume + 1)),
                         controlCoordinator.snapshot().programActive(),
                         controlCoordinator.snapshot().directionDwell())

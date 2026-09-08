@@ -1,4 +1,37 @@
-# Sound Ceiling for Android - v0.9.2
+# Sound Ceiling for Android - v0.10.0
+
+## Audible normalization from field evidence
+
+v0.10 rebuilds the two usable output paths after the Samsung log/history audit.
+Ordinary Start controls Media one step at a time; explicit Accessibility Relay processes and
+renders the captured samples after muting the original. The two paths cannot write together.
+
+- **Linked Media follows the user's chosen listening level.** The runtime target is the profile's
+  source loudness plus the vendor curve at the user anchor. Own volume changes do not move that
+  anchor. Public playback capture is used as a source-level estimate, without claiming verified
+  PRE_VOLUME evidence. This removes the full PRE/POST ambiguity HOLD that blocked v0.9.2.
+- **Relay can reach audible startup.** UNKNOWN reference now permits the muted proof phase. After
+  acknowledged Media 0, the capture queue is drained and fresh non-silent PCM must continue for
+  500 ms. A five-second preview, capped at -18 dBFS, retains the current Accessibility level;
+  an unused Accessibility stream starts near the original Media route gain. Already muted Media
+  is never automatically unmuted. The user confirms one clean stream before full processing.
+- **Quiet passages can actually gain level.** PCM gain evolves every block without discarding small
+  updates. Linked DSP normalizes the source independently of hardware attenuation. Normal mode has
+  +24 dB available, Full +30 dB, and final rendered PCM remains at or below -6 dBFS.
+- **Volume Down pauses.** A detected hardware down or ordinary external Media decrease latches
+  automation off. In Relay it stops the renderer and keeps original Media muted. Explicit Start
+  rearms; changes to settings or Volume Up do not. Safety Maximum and source exclusions remain.
+- **Limits are explicit.** Ordinary Media is coarse and reactive. Relay is an experimental field
+  path, built-in speaker only; public Android capture permissions and source opt-outs still apply.
+  Session DSP remains quarantined (`field_quarantined_neutral_media_bypass`), and PCM Shadow remains
+  `SHADOW_ONLY`. PR #8 remains draft. Desktop tests and CI are not physical Samsung acceptance.
+
+Evidence: [architecture audit](docs/field-tests/2026-09-08-v010-architecture-audit.md).
+Next phone check: [v0.10 checklist](docs/field-tests/2026-09-08-v010-samsung-checklist.md).
+Earlier sections below describe their respective historical versions; v0.10 supersedes their
+PRE admission, +3/+12 dB pilot caps and full-interval ordinary Media behavior.
+
+## Sound Ceiling for Android - v0.9.2 (historical baseline)
 
 ## v0.9.2 Samsung Media Auto Volume
 

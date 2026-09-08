@@ -245,10 +245,9 @@ final class RelayPreflightPolicy {
         if (!input.playbackActive || !input.captureWarmupConfirmed) {
             return deny("relay_capture_not_ready");
         }
-        if (input.captureReference
-                != CaptureReferenceEstimator.Mode.PRE_VOLUME) {
-            return deny("relay_prevolume_not_proven");
-        }
+        // Admission is permission to test capture after muting the original, not permission
+        // to render. The runtime proves fresh PCM at Media=0 before opening any output.
+        // Requiring PRE here made that proof unreachable on the tested Samsung route.
         return new Verdict(true, "relay_preflight_passed");
     }
 

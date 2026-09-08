@@ -82,14 +82,14 @@ public final class V091RelayPreflightLatencyPureTest {
                 .playback(false, true).build(), "inactive playback is blocked");
         denied("relay_capture_not_ready", new RelayPreflightPolicy.Input.Builder(valid)
                 .playback(true, false).build(), "failed warmup is blocked");
-        denied("relay_prevolume_not_proven",
+        require(RelayPreflightPolicy.evaluate(
                 new RelayPreflightPolicy.Input.Builder(valid)
-                        .captureReference(CaptureReferenceEstimator.Mode.UNKNOWN).build(),
-                "unknown domain fails closed");
-        denied("relay_prevolume_not_proven",
+                        .captureReference(CaptureReferenceEstimator.Mode.UNKNOWN).build()).allowed,
+                "v0.10 unknown reference must reach the fresh muted-capture proof");
+        require(RelayPreflightPolicy.evaluate(
                 new RelayPreflightPolicy.Input.Builder(valid)
-                        .captureReference(CaptureReferenceEstimator.Mode.POST_VOLUME).build(),
-                "post-volume capture cannot relay");
+                        .captureReference(CaptureReferenceEstimator.Mode.POST_VOLUME).build()).allowed,
+                "v0.10 inferred POST must be checked against actual PCM after mute");
     }
 
     private static void preflightFailureOrderIsDeterministic() {

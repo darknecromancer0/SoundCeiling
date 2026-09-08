@@ -119,8 +119,8 @@ final class RelayCardView extends LinearLayout {
 
         gainMode = new RadioGroup(context);
         gainMode.setOrientation(HORIZONTAL);
-        safeMode = radio("Safe +3 dB");
-        fullMode = radio("Full experimental +12 dB");
+        safeMode = radio("Normal +24 dB");
+        fullMode = radio("Full +30 dB");
         safeMode.setId(View.generateViewId());
         fullMode.setId(View.generateViewId());
         gainMode.addView(safeMode, weightedButton());

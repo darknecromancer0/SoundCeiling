@@ -7,8 +7,8 @@ public final class V091RelayPcmDspPureTest {
             OutputCeilingState.of(true, -20f, -20f);
 
     public static void main(String[] args) {
-        safeModeRaisesQuietPcmWithinThreeDb();
-        explicitFullModeCanReachTwelveDb();
+        defaultModeRaisesQuietPcmWithinTwentyFourDb();
+        explicitFullModeCanReachThirtyDb();
         loudFirstBlockAttenuatesBelowFinalBoundary();
         inactiveAndUnknownOutputClearTheCompleteBuffer();
         digitalSilenceRemainsValidSilence();
@@ -18,7 +18,7 @@ public final class V091RelayPcmDspPureTest {
         System.out.println("V091RelayPcmDspPureTest: PASS");
     }
 
-    private static void safeModeRaisesQuietPcmWithinThreeDb() {
+    private static void defaultModeRaisesQuietPcmWithinTwentyFourDb() {
         RelayPcmDsp dsp = new RelayPcmDsp();
         short[] quiet = constantPcm(960, 600);
         short[] output = new short[quiet.length];
@@ -27,8 +27,8 @@ public final class V091RelayPcmDspPureTest {
                 BuiltInProfiles.balanced(), false, true);
 
         require(safe.active, "eligible safe block is processed");
-        require(safe.appliedGainDb > 0f && safe.appliedGainDb <= 3.0001f,
-                "safe quiet gain is positive and capped at +3 dB");
+        require(safe.appliedGainDb > 0f && safe.appliedGainDb <= 24.0001f,
+                "default quiet gain is positive and capped at +24 dB");
         require(Math.abs(output[0]) > Math.abs(quiet[0]),
                 "safe positive gain raises quiet PCM");
         require(safe.outputPeakDbfs <= -6f + .01f,
@@ -40,17 +40,20 @@ public final class V091RelayPcmDspPureTest {
                 "eligible block reports every processed sample");
     }
 
-    private static void explicitFullModeCanReachTwelveDb() {
+    private static void explicitFullModeCanReachThirtyDb() {
         RelayPcmDsp dsp = new RelayPcmDsp();
         short[] quiet = constantPcm(960, 100);
         short[] output = new short[quiet.length];
-        RelayPcmDsp.Result full = dsp.process(2000L, quiet, quiet.length,
-                output, -50f, -50f, -20f, TARGET,
-                BuiltInProfiles.balanced(), true, true);
+        RelayPcmDsp.Result full = null;
+        for (int i = 0; i < 4000; i++) {
+            full = dsp.process(2000L + i * 10L, quiet, quiet.length,
+                    output, -50f, -55f, -20f, TARGET,
+                    BuiltInProfiles.balanced(), true, true);
+        }
 
-        require(full.appliedGainDb > 3f
-                        && full.appliedGainDb <= 12.0001f,
-                "explicit full mode can exceed +3 but not +12 dB");
+        require(full.appliedGainDb > 24f
+                        && full.appliedGainDb <= 30.0001f,
+                "explicit full mode can exceed +24 but not +30 dB");
         require(Math.abs(output[0]) > Math.abs(quiet[0]),
                 "full mode raises eligible quiet PCM");
         require(full.outputPeakDbfs <= -6f + .01f,
@@ -128,8 +131,8 @@ public final class V091RelayPcmDspPureTest {
                 output, Float.NaN, -80f, -40f, TARGET,
                 BuiltInProfiles.balanced(), true, true);
 
-        require(result.requestedGainDb > RelayPcmDsp.FULL_MAX_POSITIVE_GAIN_DB,
-                "fixture requests more than the full experimental limit");
+        require(result.requestedGainDb > 0f,
+                "quiet loudness requests positive gain despite the high actual block peak");
         require(result.appliedGainDb < 0f,
                 "independent PCM headroom overrides the positive request");
         require(result.outputPeakDbfs <= -6f + .01f,

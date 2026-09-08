@@ -103,8 +103,8 @@ final class StatusText {
                     ? String.format(java.util.Locale.US,
                             "Relay активен · %s · gain %+.2f dB · output %.1f dBFS · %s",
                             s.relayFullExperimental
-                                    ? "Full experimental +12 dB"
-                                    : "Safe +3 dB",
+                                    ? "Full +30 dB"
+                                    : "Normal +24 dB",
                             s.relayAppliedGainDb,
                             s.relayOutputPeakDbfs, reason)
                     : "Relay: запуск подтверждённого выхода · " + reason;

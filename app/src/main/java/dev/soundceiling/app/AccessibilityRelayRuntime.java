@@ -18,10 +18,11 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
     private static final long MUTED_PROOF_WINDOW_MS = 500L;
     private static final long MUTED_CAPTURE_PROOF_TIMEOUT_MS = 2_000L;
     private static final long QUIET_PROBE_MS = 5_000L;
-    private static final float QUIET_PROBE_PEAK_DBFS = -30f;
+    private static final float QUIET_PROBE_PEAK_DBFS = -18f;
     private static final long SOURCE_END_GRACE_MS = 2_000L;
     private static final long OUTPUT_DOMAIN_RECHECK_MS = 500L;
     private static final long ACCESSIBILITY_RECHECK_MS = 1_000L;
+    private static final long PREFLIGHT_WAIT_MS = 5_000L;
     private static final int LATENCY_MIN_SAMPLES = 20;
     private static final float LATENCY_MEDIAN_LIMIT_MS = 120f;
     private static final float LATENCY_P95_LIMIT_MS = 200f;
@@ -165,6 +166,10 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
     private boolean recoveryRequired;
     private int mutedProofBlocks;
     private long mutedProofFirstMs;
+    private boolean mutedCaptureDrained;
+    private boolean mutedCaptureProven;
+    private long preflightStartedAtMs;
+    private String lastAbortReason = "";
     private long mediaZeroAckedAtMs;
     private long lastMuteWriteMs = Long.MIN_VALUE;
     private long probeDeadlineMs;
@@ -226,8 +231,27 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
             return publish(decision.reason);
         }
         resetEpochState();
+        preflightStartedAtMs = SystemClock.elapsedRealtime();
         expectedGenerations = generations;
         return publish(decision.reason);
+    }
+
+    synchronized boolean needsMutedCaptureDrain() {
+        return gate.state() == AccessibilityRelayGate.State.MEDIA_MUTED
+                && !mutedCaptureDrained;
+    }
+
+    synchronized void onMutedCaptureDrained(boolean drained) {
+        if (!needsMutedCaptureDrain()) return;
+        if (!drained) {
+            abort("relay_capture_drain_failed", AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
+            return;
+        }
+        mutedCaptureDrained = true;
+        mutedProofBlocks = 0;
+        mutedProofFirstMs = 0L;
+        mediaZeroAckedAtMs = SystemClock.elapsedRealtime();
+        DiagnosticLog.event("relay_capture_drained", "epoch=" + gate.epoch());
     }
 
     synchronized Snapshot acceptProbe(long epoch) {
@@ -342,6 +366,10 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
         if (gate.state() == AccessibilityRelayGate.State.OFF) {
             return snapshot();
         }
+        if (StrictSafetyState.mediaAutomation().paused()) {
+            abort("relay_paused_user_down", AccessibilityRelayGate.Cleanup.KEEP_USER_MEDIA);
+            return snapshot;
+        }
         if (frame.epoch != gate.epoch()) {
             abort("capture_replaced",
                     ownsMediaZero()
@@ -382,6 +410,9 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
             AccessibilityRelayGate.Cleanup cleanup) {
         String safeReason = abortReason == null || abortReason.isEmpty()
                 ? "relay_invalidated" : abortReason;
+        lastAbortReason = safeReason;
+        DiagnosticLog.event("relay_abort", "epoch=" + gate.epoch()
+                + " state=" + gate.state() + " reason=" + safe(safeReason));
         if (cleanup == AccessibilityRelayGate.Cleanup.RESTORE_OWNED
                 && ownsMediaZero() && isRouteChange(safeReason)) {
             cleanup = AccessibilityRelayGate.Cleanup.RECOVERY_REQUIRED;
@@ -543,6 +574,11 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
         RelayPreflightPolicy.Verdict verdict =
                 RelayPreflightPolicy.evaluate(input);
         if (!verdict.allowed) {
+            if ("relay_capture_not_ready".equals(verdict.reason)
+                    && frame.atMs - preflightStartedAtMs < PREFLIGHT_WAIT_MS) {
+                publish("relay_waiting_for_capture");
+                return;
+            }
             abort(verdict.reason,
                     AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
             return;
@@ -609,6 +645,8 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
                     gate.epoch(), "relay_media_zero_acked");
             mutedProofBlocks = 0;
             mutedProofFirstMs = 0L;
+            mutedCaptureDrained = false;
+            mutedCaptureProven = false;
             mediaZeroAckedAtMs = frame.atMs;
             publish("relay_media_zero_acked");
             return;
@@ -645,18 +683,22 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
 
     private void advanceMutedCaptureProof(Frame frame) {
         if (!observeOwnedMedia(frame)) return;
-        String invalid = invalidCommonFact(frame, true);
+        String invalid = invalidCommonFact(frame, false);
         if (invalid != null) {
             abort(invalid, AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
             return;
         }
+        // The service drains AudioRecord's pre-mute queue on this same capture worker.
+        // The block that acknowledged Media=0 cannot contribute to the proof.
         if (mediaZeroAckedAtMs <= 0L
                 || frame.atMs - mediaZeroAckedAtMs
                         > MUTED_CAPTURE_PROOF_TIMEOUT_MS) {
-            abort("relay_capture_lost_at_media_zero",
+            abort(mutedCaptureDrained ? "relay_capture_lost_at_media_zero"
+                            : "relay_capture_drain_timeout",
                     AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
             return;
         }
+        if (!mutedCaptureDrained) return;
         boolean nonSilent = Float.isFinite(frame.sourcePeakDbfs)
                 && frame.sourcePeakDbfs > -58f;
         if (!nonSilent) {
@@ -671,6 +713,10 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
                         < MUTED_PROOF_WINDOW_MS) {
             return;
         }
+        mutedCaptureProven = true;
+        DiagnosticLog.event("relay_muted_capture_proven", "epoch=" + gate.epoch()
+                + " blocks=" + mutedProofBlocks + " spanMs="
+                + (frame.atMs - mutedProofFirstMs) + " priorReference=" + frame.captureReference);
         AccessibilityRelayGate.Decision proof = gate.on(
                 AccessibilityRelayGate.Event.MUTED_CAPTURE_PROVEN,
                 gate.epoch(), "relay_muted_capture_proven");
@@ -691,18 +737,55 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
                     AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
             return;
         }
-        int currentAccessibility = readAccessibilityIndex();
-        if (currentAccessibility < outputDomain.probeIndex) {
-            abort("relay_accessibility_probe_level_required",
+        int originalMedia = lease == null ? 0 : lease.record().preMediaIndex;
+        if (originalMedia <= 0) {
+            abort("relay_media_muted_before_start",
                     AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
             return;
         }
-        if (!writeAccessibilityIndex(outputDomain.probeIndex, true)) return;
+        int currentAccessibility = readAccessibilityIndex();
+        if (currentAccessibility < outputDomain.minIndex) {
+            abort("relay_accessibility_output_unavailable",
+                    AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
+            return;
+        }
+        // Retain the user's existing Accessibility level, bounded by the explicit cap.
+        // Forcing hardware minimum as well as a quiet digital preview was often inaudible.
+        int previewIndex = Math.min(currentAccessibility, outputDomain.hardMaxIndex);
+        if (previewIndex < outputDomain.probeIndex) {
+            // Accessibility may never have been used. Explicit Relay Start transfers the
+            // existing listening level; an already muted original remains muted.
+            previewIndex = initialAccessibilityIndex(originalMedia);
+        }
+        if (previewIndex != currentAccessibility
+                && !writeAccessibilityIndex(previewIndex, true)) return;
         dsp.reset();
         fullExperimental = false;
         if (!openRenderer(true)) return;
         probeDeadlineMs = nowMs + QUIET_PROBE_MS;
         publish("relay_quiet_probe");
+    }
+
+    private int initialAccessibilityIndex(int mediaIndex) {
+        try {
+            float mediaGain = audio.getStreamVolumeDb(AudioManager.STREAM_MUSIC,
+                    mediaIndex, expectedDevice.getType());
+            if (Float.isFinite(mediaGain)) {
+                int best = outputDomain.probeIndex;
+                float error = Float.POSITIVE_INFINITY;
+                for (int index = outputDomain.probeIndex;
+                        index <= outputDomain.hardMaxIndex; index++) {
+                    float candidate = Math.abs(outputDomain.gainDbForIndex(index) - mediaGain);
+                    if (candidate < error) { best = index; error = candidate; }
+                }
+                return best;
+            }
+            int mediaMax = Math.max(1, audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+            return Math.max(outputDomain.probeIndex, Math.min(outputDomain.hardMaxIndex,
+                    Math.round(mediaIndex * outputDomain.maxIndex / (float) mediaMax)));
+        } catch (RuntimeException unavailable) {
+            return outputDomain.probeIndex;
+        }
     }
 
     private boolean openRenderer(boolean probe) {
@@ -978,10 +1061,10 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
             return "relay_renderer_topology_unproven";
         }
         if (!frame.captureWarmupConfirmed) return "relay_capture_not_ready";
-        if (frame.captureReference
-                != CaptureReferenceEstimator.Mode.PRE_VOLUME) {
-            return "relay_prevolume_not_proven";
-        }
+        AccessibilityRelayGate.State phase = gate.state();
+        if (phase != AccessibilityRelayGate.State.MEDIA_MUTING
+                && phase != AccessibilityRelayGate.State.MEDIA_MUTED
+                && !mutedCaptureProven) return "relay_muted_capture_not_proven";
         if (requirePlayback && !frame.playbackActive) {
             return "relay_capture_not_ready";
         }
@@ -1082,6 +1165,7 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
     }
 
     private void finishAbort(AccessibilityRelayGate.Decision decision) {
+        if (lastAbortReason.isEmpty()) lastAbortReason = decision.reason;
         if (decision.command
                 != AccessibilityRelayGate.Command.NEUTRALIZE_RENDERER) {
             publish(decision.reason);
@@ -1169,8 +1253,8 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
         outputDomain = null;
         expectedSourceUid = -1;
         expectedSourcePackage = "";
-        publish(cleanup == AccessibilityRelayGate.Cleanup.KEEP_USER_MEDIA
-                ? "relay_user_media_preserved" : "relay_cleanup_complete");
+        publish(lastAbortReason.isEmpty()
+                ? "relay_cleanup_complete" : lastAbortReason);
     }
 
     private boolean writeAndVerify(int stream, int target, int flags) {
@@ -1314,6 +1398,9 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
         expectedSourceUid = -1;
         mutedProofBlocks = 0;
         mutedProofFirstMs = 0L;
+        mutedCaptureDrained = false;
+        mutedCaptureProven = false;
+        lastAbortReason = "";
         mediaZeroAckedAtMs = 0L;
         lastMuteWriteMs = Long.MIN_VALUE;
         probeDeadlineMs = 0L;

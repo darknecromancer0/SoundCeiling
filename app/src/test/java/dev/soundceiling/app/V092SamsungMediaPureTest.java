@@ -10,7 +10,7 @@ public final class V092SamsungMediaPureTest {
     public static void main(String[] args) {
         userDownLatchesUntilExplicitRestart();
         ownAckDoesNotPauseButFollowingUserDownDoes();
-        boundedUnknownReferenceActsOnlyOnAgreement();
+        publicSourceEstimateReplacesFullIntervalHold();
         automaticStepsRespectMutePolicyPeakAndCap();
         coordinatorSelectsRealMediaAndPauseKeepsSafety();
         System.out.println("V092SamsungMediaPureTest: PASS");
@@ -40,29 +40,29 @@ public final class V092SamsungMediaPureTest {
         require(gate.paused(), "user 5 to 4 after own write must be visible");
     }
 
-    private static void boundedUnknownReferenceActsOnlyOnAgreement() {
+    private static void publicSourceEstimateReplacesFullIntervalHold() {
         CoarseMediaFallbackController c = new CoarseMediaFallbackController();
         OutputLevelModel.Snapshot quiet = unknown(3, -20, -35);
         automatic(c, 0, 3, 4, quiet, true, true);
         CoarseMediaFallbackController.Decision up =
                 automatic(c, 2500, 3, 4, quiet, true, true);
         require(up.shouldWrite && up.requestedIndex == 4
-                        && up.reason.contains("reference_bounded"),
-                "both PRE/POST interpretations safely quiet allow one UP");
-        require(!quiet.outputProjectionValid, "bounded interval cannot fabricate a reference");
+                        && up.reason.contains("source_estimate"),
+                "public source estimate permits adjacent UP");
+        require(!quiet.outputProjectionValid, "source assumption cannot fabricate verified reference");
 
         c = new CoarseMediaFallbackController();
         OutputLevelModel.Snapshot loud = unknown(5, -1, -3);
         automatic(c, 0, 5, 6, loud, true, true);
         require(automatic(c, 2500, 5, 6, loud, true, true).requestedIndex == 4,
-                "both interpretations loud allow one DOWN");
+                "source estimate loudness permits one DOWN");
 
         c = new CoarseMediaFallbackController();
         OutputLevelModel.Snapshot ambiguous = unknown(3, -1, -4);
         automatic(c, 0, 3, 6, ambiguous, true, true);
         require(automatic(c, 2500, 3, 6, ambiguous, true, true)
-                        .reason.contains("reference_ambiguous"),
-                "straddling interpretations hold");
+                        .requestedIndex == 2,
+                "v0.10 supersedes straddling full-interval HOLD with labeled source estimate");
     }
 
     private static void automaticStepsRespectMutePolicyPeakAndCap() {
@@ -72,9 +72,9 @@ public final class V092SamsungMediaPureTest {
                 true, true).shouldWrite, "automatic path cannot unmute user");
 
         c = new CoarseMediaFallbackController();
-        automatic(c, 0, 3, 6, unknown(3, -1, -35), true, true);
-        require(!automatic(c, 2500, 3, 6, unknown(3, -1, -35),
-                true, true).shouldWrite, "worst-case next peak blocks UP");
+        automatic(c, 0, 5, 6, unknown(5, -1, -35), true, true);
+        require(!automatic(c, 2500, 5, 6, unknown(5, -1, -35),
+                true, true).shouldWrite, "estimated next OUTPUT peak blocks UP");
 
         c = new CoarseMediaFallbackController();
         automatic(c, 0, 3, 6, unknown(3, -20, -35), true, false);
@@ -110,6 +110,7 @@ public final class V092SamsungMediaPureTest {
             long at, int current, boolean paused) {
         return new NormalizerControlCoordinator.Frame.Builder(at, current, current, CURVE)
                 .outputLevels(unknown(current, -20, -35)).rawProgramActive(true)
+                .controlProfile(BuiltInProfiles.balanced().withMaxMediaPercent(100))
                 .hardMediaCeilingIndex(4).hardPeakCeilingDbfs(-2)
                 .effectivePolicy("exact_allowed", true, true)
                 .sourceEvidence(EngineCapabilities.SourceIdentityConfidence.EXACT)
@@ -127,7 +128,7 @@ public final class V092SamsungMediaPureTest {
             CoarseMediaFallbackController c, long at, int current, int max,
             OutputLevelModel.Snapshot levels, boolean active, boolean positive) {
         return c.updateAutomatic(at, current, max, levels, TARGET, CURVE,
-                BuiltInProfiles.balanced(), active, positive);
+                BuiltInProfiles.balanced().withMaxMediaPercent(100), active, positive);
     }
 
     private static MediaAutoVolumeAuthority started() {

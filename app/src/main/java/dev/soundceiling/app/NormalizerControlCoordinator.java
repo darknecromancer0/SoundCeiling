@@ -232,6 +232,8 @@ public final class NormalizerControlCoordinator {
     private final CoarseMediaFallbackController coarseFallback = new CoarseMediaFallbackController();
     private OutputCeilingState ceilingState = OutputCeilingState.defaultLinked();
     private MediaAnchorState mediaAnchorState;
+    private ControlVolumeCurve runtimeRouteCurve;
+    private ControlProfile runtimeControlProfile;
     private boolean ceilingPersistenceRequested;
     private Snapshot snapshot = new Snapshot(0f, 0f, CaptureReferenceEstimator.Mode.UNKNOWN,
             false, false, "idle", "not_started", ControlCommand.Kind.NONE, false,
@@ -243,6 +245,8 @@ public final class NormalizerControlCoordinator {
         if (mediaAnchorState == null) {
             mediaAnchorState = MediaAnchorState.start(frame.currentMediaIndex, frame.atMs);
         }
+        runtimeRouteCurve = frame.routeCurve;
+        runtimeControlProfile = frame.controlProfile;
         applyVolumeAuthority(frame);
         boolean programActive = activityGate.update(frame.rawProgramActive, frame.atMs);
         refreshTransientGuard(frame);
@@ -315,27 +319,33 @@ public final class NormalizerControlCoordinator {
         }
 
         if (!frame.sourceControlEnabled || frame.effectivePolicy.contains("off")) {
+            coarseFallback.onCaptureReplaced();
             return record(ControlCommand.none("source_control_disabled"), plan.desiredCorrectionDb(),
                     frame, programActive, transientEvent.severity);
         }
 
         if (frame.mediaAutoVolume) {
+            float correction = CoarseMediaFallbackController.automaticCorrection(frame.outputLevels,
+                    ceilingState, frame.routeCurve, frame.controlProfile,
+                    mediaAnchorState.userAnchorIndex());
             if (frame.mediaAutoVolumePaused) {
                 coarseFallback.onCaptureReplaced();
                 return record(ControlCommand.none("media_auto_paused_user_down"),
-                        plan.desiredCorrectionDb(), frame, programActive, transientEvent.severity);
+                        correction, frame, programActive, transientEvent.severity);
             }
             int maximum = Math.min(frame.hardMediaCeilingIndex,
                     frame.routeCurve.capIndexFromPercent(frame.controlProfile.maxMediaPercent));
             CoarseMediaFallbackController.Decision automatic = coarseFallback.updateAutomatic(
-                    frame.atMs, frame.currentMediaIndex, maximum, frame.outputLevels, ceilingState,
-                    frame.routeCurve, frame.controlProfile, programActive,
+                    frame.atMs, frame.currentMediaIndex, mediaAnchorState.userAnchorIndex(), maximum,
+                    frame.outputLevels, ceilingState, frame.routeCurve, frame.controlProfile,
+                    programActive && frame.rawProgramActive && frame.playbackEndpointActive
+                            && frame.observedPlaybackEndpoints > 0,
                     allowsPositiveControl(frame));
             ControlCommand command = automatic.shouldWrite
                     ? ControlCommand.mediaIndex(automatic.requestedIndex, automatic.reason,
                             ControlCommand.Provenance.AUTO_MEDIA)
                     : ControlCommand.none(automatic.reason);
-            return record(command, plan.desiredCorrectionDb(), frame, programActive,
+            return record(command, correction, frame, programActive,
                     transientEvent.severity);
         }
 
@@ -383,6 +393,17 @@ public final class NormalizerControlCoordinator {
     }
 
     public OutputCeilingState ceilingState() { return ceilingState; }
+    /** The control target, including route attenuation below the presentation slider's minimum. */
+    public float runtimeTargetLowerDb() {
+        if (runtimeRouteCurve == null || runtimeControlProfile == null || mediaAnchorState == null) {
+            return ceilingState.lowerDb();
+        }
+        return CoarseMediaFallbackController.automaticTargetLower(ceilingState, runtimeRouteCurve,
+                runtimeControlProfile, mediaAnchorState.userAnchorIndex());
+    }
+    public float runtimeTargetUpperDb() {
+        return ceilingState.linked() ? runtimeTargetLowerDb() : ceilingState.upperDb();
+    }
     public void setCeilingState(OutputCeilingState state) {
         if (state != null) ceilingState = state;
         ceilingPersistenceRequested = false;
@@ -411,6 +432,8 @@ public final class NormalizerControlCoordinator {
         onCaptureReplaced();
         coarseFallback.resetForRoute();
         mediaAnchorState = null;
+        runtimeRouteCurve = null;
+        runtimeControlProfile = null;
     }
 
     public void onStopped() { onRouteChanged(); }

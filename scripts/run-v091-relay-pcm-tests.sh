@@ -17,5 +17,8 @@ javac -Xlint:all -Werror -d "$OUT" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/ContinuousDspController.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/PcmNormalizer.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/RelayPcmDsp.java" \
-  "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayPcmDspPureTest.java"
+  "$ROOT/app/src/test/java/dev/soundceiling/app/V091RelayPcmDspPureTest.java" \
+  "$ROOT/app/src/test/java/dev/soundceiling/app/V010PcmEnvelopePureTest.java"
 java -cp "$OUT" dev.soundceiling.app.V091RelayPcmDspPureTest
+
+java -cp "$OUT" dev.soundceiling.app.V010PcmEnvelopePureTest

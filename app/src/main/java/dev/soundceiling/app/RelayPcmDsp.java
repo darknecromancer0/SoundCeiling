@@ -5,8 +5,8 @@ import java.util.Arrays;
 /** Audible Relay PCM path with independent gain and final sample boundaries. */
 final class RelayPcmDsp {
     static final float MIN_GAIN_DB = -48f;
-    static final float SAFE_MAX_POSITIVE_GAIN_DB = 3f;
-    static final float FULL_MAX_POSITIVE_GAIN_DB = 12f;
+    static final float SAFE_MAX_POSITIVE_GAIN_DB = 24f;
+    static final float FULL_MAX_POSITIVE_GAIN_DB = 30f;
     static final float PCM_PEAK_CEILING_DBFS = -6f;
     private static final PcmNormalizer.Limits SAFE_LIMITS =
             new PcmNormalizer.Limits(MIN_GAIN_DB,
@@ -50,10 +50,10 @@ final class RelayPcmDsp {
         }
 
         static Result from(PcmNormalizer.Result value, float appliedGainDb,
-                float peakDbfs, String reason) {
+                float peakDbfs, float routeGainDb, String reason) {
             return new Result(true, value.requestedGainDb, appliedGainDb,
                     value.inputPeakDbfs, peakDbfs,
-                    value.projectedOutputPeakDbfs, value.processedSamples,
+                    peakDbfs + routeGainDb, value.processedSamples,
                     value.clippedSamples, reason);
         }
 
@@ -74,13 +74,17 @@ final class RelayPcmDsp {
             boolean active) {
         PcmNormalizer.Limits limits = fullExperimental
                 ? FULL_LIMITS : SAFE_LIMITS;
+        boolean linked = ceilings != null && ceilings.linked();
+        OutputCeilingState digitalTarget = linked && profile != null
+                ? OutputCeilingState.of(true, profile.targetLoudness,
+                        profile.targetLoudness) : ceilings;
         PcmNormalizer.Result result = normalizer.process(atMs, input, count,
                 output, sourcePeakDbfs, sourceLoudnessDb,
-                accessibilityRouteGainDb,
-                CaptureReferenceEstimator.Mode.PRE_VOLUME, ceilings, profile,
-                limits, active);
+                linked ? 0f : accessibilityRouteGainDb,
+                CaptureReferenceEstimator.Mode.PRE_VOLUME, digitalTarget, profile,
+                limits, active && Float.isFinite(accessibilityRouteGainDb));
         return finalClampAndMap(result, output, count,
-                PCM_PEAK_CEILING_DBFS);
+                PCM_PEAK_CEILING_DBFS, accessibilityRouteGainDb);
     }
 
     synchronized void reset() {
@@ -108,7 +112,7 @@ final class RelayPcmDsp {
     }
 
     private Result finalClampAndMap(PcmNormalizer.Result result,
-            short[] output, int count, float ceilingDbfs) {
+            short[] output, int count, float ceilingDbfs, float routeGainDb) {
         if (!result.active) {
             return Result.from(result);
         }
@@ -129,7 +133,8 @@ final class RelayPcmDsp {
         String reason = extraAttenuationDb < 0f
                 ? "relay_pcm_final_clamped" : result.reason;
         return Result.from(result,
-                result.appliedGainDb + extraAttenuationDb, finalPeak, reason);
+                result.appliedGainDb + extraAttenuationDb, finalPeak,
+                routeGainDb, reason);
     }
 
     private static void enforceIntegerCeiling(short[] samples, int count,
