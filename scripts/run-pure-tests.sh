@@ -26,6 +26,7 @@ javac -Xlint:all -Werror -d "$OUT" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/VolumeWriteOrigin.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/MediaAnchorState.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/FallbackFloorPolicy.java" \
+ "$ROOT/app/src/main/java/dev/soundceiling/app/IndependentMediaController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/StableOutputController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/ComfortScale.java" \

@@ -204,6 +204,7 @@ final class StrictSafetyState {
         ControlVolumeCurve curve = new ControlVolumeCurve(
                 audio.getStreamMinVolume(AudioManager.STREAM_MUSIC),
                 audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+        if (UserVolumeControl.ownsMedia()) return curve.maxIndex();
         ControlProfile profile = Prefs.currentControlProfile(context);
         int min = DbMath.clamp(profile.minMediaIndex, curve.minIndex(), curve.maxIndex());
         int max = Math.max(min, curve.capIndexFromPercent(profile.maxMediaPercent));

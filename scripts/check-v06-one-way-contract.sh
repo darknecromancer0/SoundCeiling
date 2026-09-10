@@ -132,8 +132,8 @@ require "$ROOT/gradle.properties" 'android.useAndroidX=true'
 # MediaProjection consent and persistent EQ architecture remain protected.
 require "$PKG/MainActivity.java" 'private void showProjectionExplanation()'
 require "$PKG/MainActivity.java" 'SoundCeiling не записывает видео экрана'
-require "$PKG/MainActivity.java" 'setPositiveButton("Продолжить", (dialog, which) -> requestProjection())'
-require "$PKG/MainActivity.java" 'setNegativeButton("Safe fallback", (dialog, which) -> startFastFallback())'
+require "$PKG/MainActivity.java" 'if (pendingStartMatches(request)) requestProjection();'
+require "$PKG/MainActivity.java" 'if (pendingStartMatches(request)) startFastFallback();'
 projection_mentions="$(grep -Fo 'requestProjection()' "$PKG/MainActivity.java" | wc -l | tr -d ' ')"
 [[ "$projection_mentions" -eq 2 ]] || { echo "Projection consent path regressed; found $projection_mentions requestProjection() mentions" >&2; exit 1; }
 require "$PKG/SoundCeilingApplication.java" 'EqController.get(this).applySaved()'

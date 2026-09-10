@@ -69,7 +69,7 @@ def section(start, end):
 
 loop = section('    private void loopPlaybackCapture()',
                '    private boolean rebindCaptureOnWorker')
-if loop.index('pcmShadowDsp.process(') > loop.index('controlCoordinator.onFrame('):
+if loop.index('pcmShadowDsp.process(') > loop.index('coordinateFrame('):
     raise SystemExit('shadow feasibility processing must happen before coordinator evaluation')
 if loop.index('PcmShadowEligibility.evaluate(') > loop.index('pcmShadowDsp.process('):
     raise SystemExit('pure eligibility must reject a block before shadow processing')
@@ -83,11 +83,12 @@ for start, end, label in (
          '    private void publishCaptureRebindUnavailable()', 'capture replacement'),
         ('    private void refreshRoute(boolean force)',
          '    private DeviceProfileV2 currentDeviceProfileV2()', 'route change'),
-        ('    private synchronized void stopSafe(',
+        ('    private void closeEngineResources(',
          '    @Override public void onDestroy()', 'stop'),
         ('    @Override public void onDestroy()',
          '    @Override public IBinder onBind', 'destroy')):
-    if 'resetPcmShadowState(' not in section(start, end):
+    body = section(start, end)
+    if 'resetPcmShadowState(' not in body and not (label == 'destroy' and 'closeEngineResources(' in body):
         raise SystemExit(f'PCM shadow controller must reset on {label}')
 
 reset = section('    private void resetPcmShadowState(',

@@ -32,11 +32,11 @@ need "$SERVICE" 'relayRuntime.abort("projection_stopped"'
 need "$SERVICE" 'relayRuntime.abort("capture_replaced"'
 need "$SERVICE" 'relayRuntime.abort("route_changed"'
 need "$SERVICE" 'relayRuntime.abort("service_stop"'
-need "$SERVICE" 'relayRuntime.abort("service_destroy"'
+need "$SERVICE" 'closeEngineResources("service_destroy")'
 need "$SERVICE" 'resetPcmShadowState("capture_replaced"'
 need "$SERVICE" 'resetPcmShadowState("route_changed"'
 need "$SERVICE" 'resetPcmShadowState("service_stopped"'
-need "$SERVICE" 'resetPcmShadowState("service_destroyed"'
+need "$SERVICE" 'else if (!stopping.getAndSet(true)) closeEngineResources("service_destroy")'
 reject "$SERVICE" 'new AudioTrack'
 reject "$SERVICE" 'import android.media.AudioTrack'
 reject "$SERVICE" 'requestStart(pcmDspCaptureEpoch)'
@@ -82,7 +82,7 @@ start = source.index('    private void loopPlaybackCapture()')
 end = source.index('    private boolean rebindCaptureOnWorker(', start)
 loop = source[start:end]
 
-while_pos = loop.index('while (workerRunning.get() && !fastOnlyMode)')
+while_pos = loop.index('while (currentWorkerActive() && !fastOnlyMode)')
 allocation = loop.index('short[] relayOutputBuffer = new short[CAPTURE_BLOCK_SHORTS]')
 if allocation >= while_pos:
     raise SystemExit('Relay output buffer must be allocated once before the capture loop')

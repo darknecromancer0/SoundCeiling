@@ -205,9 +205,8 @@ final class RelayPreflightPolicy {
                 || !input.accessibilityVolumeEnabled) {
             return deny("relay_accessibility_output_unavailable");
         }
-        if (!input.keyFilterCapable) {
-            return deny("relay_accessibility_key_filter_unavailable");
-        }
+        // Key filtering improves hardware controls but is not output-domain capability.
+        // v0.11 can run the user-confirmed probe with the in-app Relay controls.
         if (input.spokenAccessibilityConflict) {
             return deny("relay_spoken_accessibility_conflict");
         }

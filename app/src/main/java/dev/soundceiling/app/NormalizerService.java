@@ -14,7 +14,9 @@ import android.media.AudioManager;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.SystemClock;
 
 import java.io.IOException;
@@ -30,6 +32,8 @@ public class NormalizerService extends Service {
     static final String EXTRA_FAST_ONLY = "fast_only";
     static final String ACTION_STOP = "dev.soundceiling.app.STOP";
     static final String ACTION_QUIET = "dev.soundceiling.app.QUIET";
+    static final String ACTION_PAUSE = "dev.soundceiling.app.PAUSE";
+    static final String ACTION_RESUME = "dev.soundceiling.app.RESUME";
     static final String ACTION_RELAY_START =
             "dev.soundceiling.app.RELAY_START";
     static final String ACTION_RELAY_ACCEPT =
@@ -62,13 +66,19 @@ public class NormalizerService extends Service {
 
     private final AtomicBoolean workerRunning = new AtomicBoolean();
     private final AtomicBoolean stopping = new AtomicBoolean();
+    private final UserVolumeTarget userVolumeTarget = new UserVolumeTarget();
+    private UserVolumeActionApplier userVolumeActions;
+    private long lastUserVolumeTargetLog;
+    private final EngineSessionGate sessionGate = new EngineSessionGate();
+    private final ThreadLocal<Long> workerSession = new ThreadLocal<>();
+    private final Handler lifecycleHandler = new Handler(Looper.getMainLooper());
     private final LoudnessControlPolicy.State loudnessState = new LoudnessControlPolicy.State();
     private final NormalizerControlCoordinator controlCoordinator = new NormalizerControlCoordinator();
     private final HardCapLatch hardCapLatch = new HardCapLatch();
     private final LiveCaptureReference liveCaptureReference = new LiveCaptureReference();
     private AudioManager audio;
     private MediaProjection projection;
-    private PcmCaptureBackend pcmCapture;
+    private volatile PcmCaptureBackend pcmCapture;
     private HybridRuntimeResolver hybridRuntime;
     private HybridRuntimeResolver.Snapshot hybridSnapshot;
     private SystemStreamController systemStreams;
@@ -87,7 +97,7 @@ public class NormalizerService extends Service {
     private volatile AccessibilityRelayRuntime.Snapshot relaySnapshot;
     private String relayRuntimeRouteKey = "";
     private String relayImmediateStateKey = "";
-    private boolean pendingRelayRequested;
+    private volatile boolean pendingRelayRequested;
     private long relayEpochSequence = Math.max(
             1L, SystemClock.elapsedRealtime());
     private volatile long activeRelayEpoch;
@@ -105,7 +115,7 @@ public class NormalizerService extends Service {
     private long pcmDspCaptureEpoch;
     private AudioBackendStatus backendStatus = new AudioBackendStatus(
             AudioBackendStatus.Tier.MEDIA_ONLY, true, "not_started");
-    private boolean fastOnlyMode;
+    private volatile boolean fastOnlyMode;
     private Thread worker;
     private SessionLogger logger;
     private AudioDeviceInfo currentDevice;
@@ -153,6 +163,9 @@ public class NormalizerService extends Service {
         writeTracker = new VolumeWriteTracker(VolumeWriteTracker.DEFAULT_ACKNOWLEDGEMENT_WINDOW_MS);
         safeVolume = new SafeVolumeController(applier, writeTracker,
                 StrictSafetyState.mediaAutomation());
+        UserVolumeControl.initialize(this, audio);
+        userVolumeActions = new UserVolumeActionApplier(applier, safeVolume,
+                StrictSafetyState.mediaAutomation(), controlCurve.maxIndex());
         systemStreams = new SystemStreamController(audio);
         visualizer = new GlobalVisualizerBackend();
         optionalDsp = new OptionalDspController();
@@ -174,6 +187,30 @@ public class NormalizerService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? "" : intent.getAction();
+        if (UserVolumeControl.ACTION_CHANGED.equals(action)) {
+            sessionGate.runIfCurrent(sessionGate.current(), () -> {
+                if (!UserVolumeControl.ownsMedia()) return;
+                userVolumeActions.apply(UserVolumeControl.nominalIndex(this, controlCurve),
+                        intent.getBooleanExtra(UserVolumeControl.EXTRA_LOWER, false),
+                        intent.getBooleanExtra(UserVolumeControl.EXTRA_RESUME, false),
+                        SystemClock.elapsedRealtime());
+            });
+            return finishRelayActionIfIdle(startId);
+        }
+        if (ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action)) {
+            sessionGate.runIfCurrent(sessionGate.current(), () -> {
+                if (ACTION_RESUME.equals(action)) {
+                    if (!UserVolumeControl.ownsMedia()) return;
+                    userVolumeActions.apply(UserVolumeControl.nominalIndex(this, controlCurve),
+                            false, true, SystemClock.elapsedRealtime());
+                } else {
+                    StrictSafetyState.mediaAutomation().pause("media_auto_paused_by_user");
+                }
+                DiagnosticLog.event("media_auto_authority", "state="
+                        + StrictSafetyState.mediaAutomation().reason());
+            });
+            return finishRelayActionIfIdle(startId);
+        }
         if (ACTION_RELAY_START.equals(action)) {
             if (workerRunning.get() && !fastOnlyMode) {
                 StrictSafetyState.mediaAutomation().start();
@@ -228,6 +265,8 @@ public class NormalizerService extends Service {
         }
         if (workerRunning.get()) return START_NOT_STICKY;
 
+        sessionGate.start();
+        workerRunning.set(true);
         serviceGeneration = nextGeneration(serviceGeneration);
         if (intent != null) StrictSafetyState.mediaAutomation().start();
 
@@ -235,19 +274,25 @@ public class NormalizerService extends Service {
                 && intent.getBooleanExtra(EXTRA_FAST_ONLY, false);
         pendingRelayRequested = intent != null
                 && intent.getBooleanExtra(EXTRA_RELAY_REQUESTED, false);
+        UserVolumeControl.setEngineActive(!fastOnlyMode);
+        userVolumeTarget.reset();
+        refreshControlSettings(SystemClock.elapsedRealtime(), true);
         hybridRuntime.newEpoch();
         resetPcmShadowState("service_epoch", true);
         startForegroundNow();
+        if (UserVolumeControl.ownsMedia() && !pendingRelayRequested) {
+            userVolumeActions.applyAtStart(UserVolumeControl.nominalIndex(this, controlCurve),
+                    SystemClock.elapsedRealtime());
+        }
         RuntimeState starting = baseState(new RuntimeState.Builder(),
                 audio.getStreamVolume(AudioManager.STREAM_MUSIC))
                 .running(true).captureStatus(RuntimeState.CaptureStatus.STARTING)
                 .controlActivity(RuntimeState.ControlActivity.IDLE)
                 .message(fastOnlyMode ? "Запуск Safe fallback…" : "Запуск Smart PCM…")
                 .build();
-        RuntimeStateStore.publish(starting);
+        publishCurrentState(starting);
         StrictSafetyState.setEngineRunning(this, true);
         DiagnosticLog.event("strict_safety_runtime", StrictSafetyState.runtimeSummary(this));
-        updateNotification(starting);
 
         stopping.set(false);
         optionalDsp.probe();
@@ -286,10 +331,9 @@ public class NormalizerService extends Service {
             final long callbackProjectionGeneration = projectionGeneration;
             projection.registerCallback(new MediaProjection.Callback() {
                 @Override public void onStop() {
-                    if (projectionGeneration == callbackProjectionGeneration) {
-                        projectionGeneration = nextGeneration(
-                                projectionGeneration);
-                    }
+                    if (projectionGeneration != callbackProjectionGeneration
+                            || sessionGate.current() == 0L) return;
+                    projectionGeneration = nextGeneration(projectionGeneration);
                     DiagnosticLog.event("projection_stop", "Android stopped MediaProjection");
                     if (relayRuntime != null) {
                         relayRuntime.abort("projection_stopped",
@@ -323,7 +367,9 @@ public class NormalizerService extends Service {
 
     private void enterFallback(boolean visualizerReady, String reason) {
         resetPcmShadowState("fallback:" + reason, true);
+        leaveIndependentVolume();
         fastOnlyMode = true;
+        refreshControlSettings(SystemClock.elapsedRealtime(), true);
         backendStatus = visualizerReady
                 ? new AudioBackendStatus(AudioBackendStatus.Tier.VISUALIZER, true, reason)
                 : new AudioBackendStatus(AudioBackendStatus.Tier.MEDIA_ONLY, true, reason);
@@ -333,8 +379,18 @@ public class NormalizerService extends Service {
         DiagnosticLog.event("engine_mode_switch", "to=fallback reason=" + reason);
     }
 
-    private synchronized void switchToFallback(String reason) {
-        if (!workerRunning.get()) return;
+    private void switchToFallback(String reason) {
+        long session = currentSessionToken();
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            lifecycleHandler.post(() -> switchToFallback(session, reason));
+            return;
+        }
+        switchToFallback(session, reason);
+    }
+
+    private void switchToFallback(long session, String reason) {
+        if (!sessionGate.isCurrent(session)) return;
+        sessionGate.start();
         if (relayRuntime != null) {
             relayRuntime.abort("capture_replaced",
                     AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
@@ -348,21 +404,55 @@ public class NormalizerService extends Service {
             pcmCapture = null;
             captureGeneration = nextGeneration(captureGeneration);
         }
+        leaveIndependentVolume();
         fastOnlyMode = true;
+        refreshControlSettings(SystemClock.elapsedRealtime(), true);
         backendStatus = visualizer != null && visualizer.isOpen()
                 ? new AudioBackendStatus(AudioBackendStatus.Tier.VISUALIZER, true, reason)
                 : new AudioBackendStatus(AudioBackendStatus.Tier.MEDIA_ONLY, true, reason);
         Thread previous = worker;
         if (previous != null && previous != Thread.currentThread()) previous.interrupt();
-        worker = new Thread(this::loopFastGuard, "SoundCeilingFallbackGuard");
-        worker.start();
+        startWorker(this::loopFastGuard, "SoundCeilingFallbackGuard");
         DiagnosticLog.event("engine_mode_switch", "to=fallback reason=" + reason);
     }
 
     private void startWorker(Runnable runnable, String name) {
-        workerRunning.set(true);
-        worker = new Thread(runnable, name);
+        final long session = sessionGate.current();
+        if (session == 0L) return;
+        worker = new Thread(() -> {
+            workerSession.set(session);
+            try {
+                if (sessionGate.isCurrent(session)) runnable.run();
+            } catch (RuntimeException failure) {
+                DiagnosticLog.event("worker_error", "errorClass="
+                        + failure.getClass().getSimpleName());
+                requestStopForSession(session, "Ошибка аудиодвижка", true);
+            } finally {
+                workerSession.remove();
+                requestStopForSession(session, "Остановлено", false);
+            }
+        }, name);
         worker.start();
+    }
+
+    private long currentSessionToken() {
+        Long session = workerSession.get();
+        return session == null ? sessionGate.current() : session;
+    }
+
+    private boolean currentWorkerActive() {
+        return sessionGate.isCurrent(currentSessionToken());
+    }
+
+    private void publishCurrentState(RuntimeState state) {
+        sessionGate.runIfCurrent(currentSessionToken(), () -> {
+            RuntimeStateStore.publish(state);
+            updateNotification(state);
+        });
+    }
+
+    private void requestStopForSession(long session, String reason, boolean error) {
+        lifecycleHandler.post(() -> stopSession(session, reason, error));
     }
 
     private synchronized AccessibilityRelayRuntime ensureRelayRuntime() {
@@ -374,14 +464,26 @@ public class NormalizerService extends Service {
                     this::onRelaySnapshot);
             relayRuntimeRouteKey = routeKey;
             relaySnapshot = relayRuntime.snapshot();
+            updateRelayOwnership(relaySnapshot);
         }
         return relayRuntime;
     }
 
     private boolean onRelaySnapshot(
             AccessibilityRelayRuntime.Snapshot snapshot) {
+        Long session = workerSession.get();
+        if (session != null) {
+            return sessionGate.callIfCurrent(session,
+                    () -> publishRelaySnapshot(snapshot), false);
+        }
+        return publishRelaySnapshot(snapshot);
+    }
+
+    private boolean publishRelaySnapshot(
+            AccessibilityRelayRuntime.Snapshot snapshot) {
         relaySnapshot = snapshot;
         if (snapshot == null) return false;
+        updateRelayOwnership(snapshot);
         boolean foregroundReady = setRelayForegroundPlayback(
                 snapshot.state == AccessibilityRelayGate.State.QUIET_PROBE
                 || snapshot.state == AccessibilityRelayGate.State.ACTIVE
@@ -407,6 +509,14 @@ public class NormalizerService extends Service {
                     snapshot.probeRemainingMs);
         }
         return foregroundReady;
+    }
+
+    private void updateRelayOwnership(AccessibilityRelayRuntime.Snapshot snapshot) {
+        if (snapshot == null) return;
+        // Published before Relay can mute Media. User actions read this volatile flag,
+        // avoiding a session-gate -> Relay-lock inversion with worker callbacks.
+        UserVolumeControl.setRelayBlocksMedia(snapshot.recoveryRequired
+                || snapshot.state != AccessibilityRelayGate.State.OFF);
     }
 
     private boolean relayStartReady(HybridRuntimeResolver.Snapshot resolved,
@@ -500,13 +610,17 @@ public class NormalizerService extends Service {
     }
 
     private void requestRelayStartIfIdle() {
-        AccessibilityRelayRuntime runtime = ensureRelayRuntime();
-        AccessibilityRelayRuntime.Snapshot before = runtime.snapshot();
-        if (before.state == AccessibilityRelayGate.State.OFF
-                && !before.recoveryRequired) {
-            runtime.requestStart(nextRelayEpoch(),
-                    currentRelayGenerations(hybridSnapshot));
-        }
+        final long session = currentSessionToken();
+        // Relay takes its own lock and may publish while holding it. Do not invert that lock
+        // with sessionGate; main serializes startup with Stop before entering Relay.
+        lifecycleHandler.post(() -> {
+            if (!sessionGate.isCurrent(session)) return;
+            AccessibilityRelayRuntime runtime = ensureRelayRuntime();
+            AccessibilityRelayRuntime.Snapshot before = runtime.snapshot();
+            if (before.state == AccessibilityRelayGate.State.OFF && !before.recoveryRequired) {
+                runtime.requestStart(nextRelayEpoch(), currentRelayGenerations(hybridSnapshot));
+            }
+        });
     }
 
     private void publishRelayHoldingState(int observedMedia,
@@ -530,9 +644,7 @@ public class NormalizerService extends Service {
         LoudnessTracker tracker = new LoudnessTracker();
         LoudnessMeter loudnessMeter = new LoudnessMeter(SAMPLE_RATE, CHANNELS);
         FrequencyBandTracker bands = new FrequencyBandTracker(SAMPLE_RATE, CHANNELS);
-        String stopReason = "Остановлено";
-        boolean stopError = false;
-        while (workerRunning.get() && !fastOnlyMode) {
+        while (currentWorkerActive() && !fastOnlyMode) {
             long reconcileAt = SystemClock.elapsedRealtime();
             boolean callbackRequested = hybridRuntime.consumeCaptureReconcileRequest();
             CaptureRequestCoordinator.Decision captureDecision =
@@ -550,13 +662,17 @@ public class NormalizerService extends Service {
             }
 
             int n;
+            PcmCaptureBackend readingCapture = sessionGate.callIfCurrent(
+                    currentSessionToken(), () -> pcmCapture, null);
             try {
-                n = pcmCapture == null ? -1 : pcmCapture.read(buffer);
+                n = readingCapture == null ? -1 : readingCapture.read(buffer);
             } catch (RuntimeException e) {
+                if (!currentWorkerActive()) return;
                 DiagnosticLog.event("capture_exception", "errorClass=" + e.getClass().getSimpleName());
                 switchToFallback("capture_exception:" + e.getClass().getSimpleName());
                 return;
             }
+            if (!currentWorkerActive()) return;
             if (n < 0) {
                 DiagnosticLog.event("capture_error", "code=" + n);
                 switchToFallback("capture_read_error:" + n);
@@ -677,10 +793,11 @@ public class NormalizerService extends Service {
                                 liveCaptureReference.mode(), outputMix.peakDbfs,
                                 outputMix.rmsDbfs, outputMixEvidence));
             }
-            int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.maxMediaPercent);
-            ControlCommand command = controlCoordinator.onFrame(controlFrame(now, current, levels,
+            int policyMaxIndex = UserVolumeControl.ownsMedia() ? controlCurve.maxIndex()
+                    : controlCurve.capIndexFromPercent(hybridSnapshot.policy.maxMediaPercent);
+            ControlCommand command = coordinateFrame(now, current, levels,
                     signal, hybridSnapshot.policy, effectiveProfile, hybridSnapshot.sources.confidence,
-                    hybridSnapshot.playback, blockRms, signal));
+                    hybridSnapshot.playback, blockRms, signal);
             command = respectMediaPause(command);
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
@@ -731,11 +848,25 @@ public class NormalizerService extends Service {
             publishState(applied, signal, rms, loud, blockPeak, estRms, estPeak, activity,
                     message, reason, emergency, null, bands, buffer, n, reactionLatency);
         }
-        if (!fastOnlyMode) stopSafe(stopReason, stopError);
     }
 
     private boolean rebindCaptureOnWorker(CaptureRequestCoordinator.Decision decision, long now) {
         if (decision == null || decision.action == CaptureRequestCoordinator.Action.KEEP) return true;
+        final long session = currentSessionToken();
+        lifecycleHandler.post(() -> {
+            if (!sessionGate.isCurrent(session)) return;
+            sessionGate.start();
+            Thread previous = worker;
+            if (previous != null && previous != Thread.currentThread()) previous.interrupt();
+            if (rebindCaptureOnMain(decision, now)) {
+                startWorker(this::loopPlaybackCapture, "SoundCeilingAudio");
+            }
+        });
+        return false;
+    }
+
+    /** Lifecycle operations run on main; no session lock is held during capture open/close. */
+    private boolean rebindCaptureOnMain(CaptureRequestCoordinator.Decision decision, long now) {
         if (relayRuntime != null) {
             relayRuntime.abort("capture_replaced",
                     AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
@@ -834,11 +965,11 @@ public class NormalizerService extends Service {
                 .bandLevels(lastBands)
                 .message("Переподключение аудио…")
                 .build();
-        RuntimeStateStore.publish(state);
+        publishCurrentState(state);
     }
 
     private void loopFastGuard() {
-        while (workerRunning.get() && fastOnlyMode) {
+        while (currentWorkerActive() && fastOnlyMode) {
             long detectedAt = SystemClock.elapsedRealtime();
             refreshRoute(false);
             refreshControlSettings(detectedAt, false);
@@ -880,9 +1011,9 @@ public class NormalizerService extends Service {
                             CaptureReferenceEstimator.Mode.UNKNOWN, fallbackPeak, fallbackRms,
                             reading.levelAvailable));
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.fallbackMaxPercent);
-            ControlCommand command = controlCoordinator.onFrame(controlFrame(detectedAt, current, levels,
+            ControlCommand command = coordinateFrame(detectedAt, current, levels,
                     signal, hybridSnapshot.policy, effectiveProfile, hybridSnapshot.sources.confidence,
-                    hybridSnapshot.playback, fallbackRms, reading.levelAvailable));
+                    hybridSnapshot.playback, fallbackRms, reading.levelAvailable);
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
@@ -907,8 +1038,7 @@ public class NormalizerService extends Service {
                     .meterAgeMs(updateFallbackBands(reading, detectedAt))
                     .bandLevels(lastBands)
                     .build();
-            RuntimeStateStore.publish(state);
-            updateNotification(state);
+            publishCurrentState(state);
             if (applied < current) {
                 DiagnosticLog.event("fast_control_write", String.format(Locale.US,
                         "origin=%s reason=%s current=%d requested=%d applied=%d min=%d max=%d hardMax=%d configuredPeak=%.2f effectivePeak=%.2f peak=%.2f latencyMs=%d manualOffsetDb=%.2f source=%s pcm=%s confidence=%s",
@@ -923,10 +1053,14 @@ public class NormalizerService extends Service {
             try { Thread.sleep(reading.levelAvailable ? 20L : 50L); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
         }
-        if (workerRunning.get()) stopSafe("Остановлено", false);
     }
 
     private int observeVolumeAndEnforce(long now) {
+        return sessionGate.callIfCurrent(currentSessionToken(),
+                () -> observeVolumeAndEnforceCurrent(now), safetySettings.minIndex);
+    }
+
+    private int observeVolumeAndEnforceCurrent(long now) {
         unexpectedZeroThisPoll = false;
         int current;
         try { current = audio.getStreamVolume(AudioManager.STREAM_MUSIC); }
@@ -935,10 +1069,16 @@ public class NormalizerService extends Service {
         int hardMax = safetySettings.hardMax();
         VolumeWriteTracker.Observation observation = writeTracker.observe(current, now, hardMax);
         StrictSafetyState.mediaAutomation().observe(observation);
+        if (UserVolumeControl.ownsMedia() && observation.previousIndex >= 0
+                && observation.authorityOrigin() == VolumeWriteOrigin.USER
+                && observation.kind == VolumeWriteTracker.ObservationKind.USER_CHANGE) {
+            UserVolumeControl.observeNativeDelta(this,
+                    observation.observedIndex - observation.previousIndex, controlCurve.maxIndex());
+        }
         DiagnosticLog.transition("media_auto_authority",
                 StrictSafetyState.mediaAutomation().reason(),
                 "state=" + StrictSafetyState.mediaAutomation().reason() + " media=" + current
-                        + " resume=explicit_stop_start");
+                        + " resume=explicit_user_action");
         logVolumeObservation(observation, current, hardMax);
         HardCapLatch.Decision latch = hardCapLatch.update(current, hardMax, now);
         if (latch.entered) {
@@ -1011,6 +1151,16 @@ public class NormalizerService extends Service {
         }
     }
 
+    private ControlCommand coordinateFrame(long now, int current, OutputLevelModel.Snapshot levels,
+            boolean rawProgramActive, EffectivePolicy policy, ControlProfile profile,
+            EngineCapabilities.SourceIdentityConfidence sourceEvidence, PlaybackSnapshot playback,
+            float transientSignalDb, boolean transientEvidence) {
+        return sessionGate.callIfCurrent(currentSessionToken(),
+                () -> controlCoordinator.onFrame(controlFrame(now, current, levels, rawProgramActive,
+                        policy, profile, sourceEvidence, playback, transientSignalDb, transientEvidence)),
+                ControlCommand.none("session_stopped"));
+    }
+
     private NormalizerControlCoordinator.Frame controlFrame(long now, int current,
                                                               OutputLevelModel.Snapshot levels,
                                                               boolean rawProgramActive,
@@ -1027,7 +1177,8 @@ public class NormalizerService extends Service {
                         controlCurve.gainDbForIndex(current), 0f,
                         CaptureReferenceEstimator.Mode.UNKNOWN, Float.NaN, Float.NaN, false))
                 : levels;
-        return new NormalizerControlCoordinator.Frame.Builder(now, previous, current, controlCurve)
+        NormalizerControlCoordinator.Frame.Builder frame =
+                new NormalizerControlCoordinator.Frame.Builder(now, previous, current, controlCurve)
                 .rawPeakDbfs(actualLevels.sourcePeakDbfs)
                 .controlLoudnessDb(actualLevels.sourceLoudnessDb)
                 .currentDspGainDb(optionalDsp == null ? 0f : optionalDsp.appliedGainDb())
@@ -1057,8 +1208,28 @@ public class NormalizerService extends Service {
                                 && playback != null && playback.active
                                 && playback.observedPlayers == 1,
                         !StrictSafetyState.mediaAutomation().allowsWrites())
-                .observation(coordinatorObservation(observed), coordinatorOrigin(observed))
-                .build();
+                .observation(coordinatorObservation(observed), coordinatorOrigin(observed));
+        if (UserVolumeControl.ownsMedia()) {
+            float source = actualLevels.sourceLoudnessDb;
+            boolean validSource = rawProgramActive && policy.sourceControlEnabled
+                    && !fastOnlyMode && pcmCapture != null && pcmCapture.targeted()
+                    && sourceEvidence == EngineCapabilities.SourceIdentityConfidence.EXACT;
+            userVolumeTarget.observe(now, source, validSource);
+            // Old auto-created device/app Media caps belong to the retired actuator model.
+            // The visible independent maximum is the ordinary target's authority.
+            int desired = UserVolumeControl.percent(this);
+            float target = userVolumeTarget.targetDb(controlCurve, desired);
+            frame.independentUserVolume(target, desired == 0);
+            if (now - lastUserVolumeTargetLog >= 1000L) {
+                lastUserVolumeTargetLog = now;
+                DiagnosticLog.event("user_volume_target", "desiredPercent=" + desired
+                        + " maximum=" + UserVolumeControl.maximumPercent(this)
+                        + " referenceDb=" + userVolumeTarget.referenceDb() + " targetDb=" + target
+                        + " physical=" + current + " sourceDb=" + source
+                        + " ready=" + userVolumeTarget.ready() + " estimate=public_pcm_source");
+            }
+        }
+        return frame.build();
     }
 
     private static NormalizerControlCoordinator.VolumeObservation coordinatorObservation(
@@ -1094,6 +1265,13 @@ public class NormalizerService extends Service {
 
     private int applyCoordinatorCommand(ControlCommand command, int current, SafetySettings settings,
                                         int effectiveMax, boolean autoMuteEnabled, long now) {
+        return sessionGate.callIfCurrent(currentSessionToken(),
+                () -> applyCoordinatorCommandCurrent(command, current, settings,
+                        effectiveMax, autoMuteEnabled, now), current);
+    }
+
+    private int applyCoordinatorCommandCurrent(ControlCommand command, int current,
+            SafetySettings settings, int effectiveMax, boolean autoMuteEnabled, long now) {
         command = respectMediaPause(command);
         if (command == null || command.kind() == ControlCommand.Kind.NONE) return current;
         if (command.kind() == ControlCommand.Kind.DSP_GAIN) {
@@ -1213,8 +1391,7 @@ public class NormalizerService extends Service {
                 .controlActivity(quietActivity)
                 .controller(quietActivity.name(), "quiet_now", -1L, -1L)
                 .message("Quiet now · уровень только снижается или удерживается").build();
-        RuntimeStateStore.publish(state);
-        updateNotification(state);
+        publishCurrentState(state);
     }
 
     private void publishState(int applied, boolean signal, LoudnessTracker.Reading rms,
@@ -1250,8 +1427,7 @@ public class NormalizerService extends Service {
                         controlCoordinator.snapshot().directionDwell())
                 .message(message).lastVolumeChangeElapsedMs(lastChange)
                 .lastDecision(decision).meterAgeMs(Math.max(0L, now - lastBandMeasuredAtMs)).bandLevels(lastBands).build();
-        RuntimeStateStore.publish(state);
-        updateNotification(state);
+        publishCurrentState(state);
     }
 
     private void logControlSummary(long nowMs, ControlCommand command, int appliedMediaIndex,
@@ -1468,6 +1644,7 @@ public class NormalizerService extends Service {
         if (!force && now - lastSettingsRefresh < 250L) return;
         lastSettingsRefresh = now;
         ControlProfile next = Prefs.currentControlProfile(this);
+        if (UserVolumeControl.ownsMedia()) next = next.forIndependentVolume();
         boolean nextGlobalDsp = Prefs.globalDspEnabled(this);
         OutputCeilingState nextCeilings = Prefs.outputCeilings(this);
         String fingerprint = next.encode() + "|globalDsp=" + nextGlobalDsp
@@ -1788,6 +1965,9 @@ public class NormalizerService extends Service {
     }
 
     private SafetySettings toSafetySettings(ControlProfile profile) {
+        if (UserVolumeControl.ownsMedia()) return new SafetySettings(controlCurve.minIndex(),
+                controlCurve.maxIndex(), false, controlCurve.maxIndex(),
+                controlCurve.minIndex(), profile.recoveryIntervalMs);
         int min = DbMath.clamp(profile.minMediaIndex, controlCurve.minIndex(), controlCurve.maxIndex());
         int max = Math.max(min, controlCurve.capIndexFromPercent(profile.maxMediaPercent));
         int lock = Math.max(min, controlCurve.capIndexFromPercent(profile.safetyLockPercent));
@@ -1872,6 +2052,7 @@ public class NormalizerService extends Service {
             int observedMedia = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
             writeTracker.observeInitial(observedMedia);
             controlCoordinator.onRouteChanged();
+            userVolumeTarget.reset();
             loudnessState.lastUpAtMs = 0L;
             loudnessState.lastDownAtMs = 0L;
             loudnessState.loudHoldUntilMs = 0L;
@@ -1909,8 +2090,10 @@ public class NormalizerService extends Service {
         for (Map.Entry<SystemStreamPolicy.Kind, SystemStreamPolicy> entry
                 : deviceProfile.streamPolicies().entrySet()) {
             if (entry.getKey() == SystemStreamPolicy.Kind.MEDIA || !entry.getValue().enabled) continue;
-            SystemStreamController.Result result = systemStreams.enforce(entry.getKey(), entry.getValue());
-            if (result.changed) {
+            SystemStreamController.Result result = sessionGate.callIfCurrent(
+                    currentSessionToken(),
+                    () -> systemStreams.enforce(entry.getKey(), entry.getValue()), null);
+            if (result != null && result.changed) {
                 DiagnosticLog.event("system_stream_cap", "kind=" + entry.getKey()
                         + " from=" + result.observedIndex + " to=" + result.appliedIndex);
             }
@@ -1948,9 +2131,9 @@ public class NormalizerService extends Service {
         else level = "Контроль громкости";
         String text = StatusText.engine(state) + " · " + level + " · " + StatusText.media(state);
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
-        PendingIntent quiet = PendaingIntent.getService(this, 4101,
+        PendingIntent quiet = PendingIntent.getService(this, 4101,
                 new Intent(this, NormalizerService.class).setAction(ACTION_QUIET), pendingFlags);
-        PendingIntent stop = PendaingIntent.getService(this, 4102,
+        PendingIntent stop = PendingIntent.getService(this, 4102,
                 new Intent(this, NormalizerService.class).setAction(ACTION_STOP), pendingFlags);
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_sound_ceiling_notification)
@@ -1975,16 +2158,61 @@ public class NormalizerService extends Service {
         }
     }
 
-    private synchronized void stopSafe(String reason, boolean error) {
-        if (!stopping.compareAndSet(false, true)) return;
-        StrictSafetyState.mediaAutomation().stop();
+    private void stopSafe(String reason, boolean error) {
+        long session = currentSessionToken();
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            requestStopForSession(session, reason, error);
+            return;
+        }
+        stopSession(session, reason, error);
+    }
+
+    private void stopSession(long session, String reason, boolean error) {
+        if (session == 0L) { stopSelf(); return; }
+        final boolean restoreOrdinary = UserVolumeControl.ownsMedia();
+        if (!sessionGate.stopIfCurrent(session, () -> {
+            stopping.set(true);
+            pendingRelayRequested = false;
+            workerRunning.set(false);
+            StrictSafetyState.mediaAutomation().stop();
+            UserVolumeControl.setEngineActive(false);
+            StrictSafetyState.setEngineRunning(this, false);
+            RuntimeStateStore.publish(error
+                    ? new RuntimeState.Builder().running(false)
+                        .captureStatus(RuntimeState.CaptureStatus.ERROR)
+                        .controlActivity(RuntimeState.ControlActivity.ERROR)
+                        .message(reason).build()
+                    : RuntimeState.stopped(reason));
+            stopForeground(STOP_FOREGROUND_REMOVE);
+        })) return;
+        // Invalidation and the stopped publication precede every potentially blocking close.
+        if (restoreOrdinary) restoreIndependentNominal();
+        closeEngineResources(reason);
+        stopSelf();
+    }
+
+    private void restoreIndependentNominal() {
+        if (userVolumeActions == null || controlCurve == null) return;
+        try {
+            int applied = userVolumeActions.restoreNominalAtStop(
+                    UserVolumeControl.nominalIndex(this, controlCurve), SystemClock.elapsedRealtime());
+            DiagnosticLog.event("user_volume_release", "media=" + applied);
+        } catch (RuntimeException error) {
+            DiagnosticLog.event("user_volume_release", "error=" + error.getClass().getSimpleName());
+        }
+    }
+
+    private void leaveIndependentVolume() {
+        if (UserVolumeControl.ownsMedia()) restoreIndependentNominal();
+        UserVolumeControl.setEngineActive(false);
+    }
+
+    private void closeEngineResources(String reason) {
         if (relayRuntime != null) {
             relayRuntime.abort("service_stop",
                     AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
         }
         pendingRelayRequested = false;
-        StrictSafetyState.setEngineRunning(this, false);
-        workerRunning.set(false);
         relayForegroundPlayback = false;
         controlCoordinator.onStopped();
         hardCapLatch.reset();
@@ -2002,6 +2230,7 @@ public class NormalizerService extends Service {
         if (projection != null) {
             MediaProjection p = projection;
             projection = null;
+            projectionGeneration = nextGeneration(projectionGeneration);
             try { p.stop(); } catch (RuntimeException ignored) {}
         }
         if (visualizer != null) visualizer.close();
@@ -2012,34 +2241,13 @@ public class NormalizerService extends Service {
             DiagnosticLog.detach(old);
             old.close();
         }
-        RuntimeStateStore.publish(error
-                ? new RuntimeState.Builder().running(false).captureStatus(RuntimeState.CaptureStatus.ERROR)
-                    .controlActivity(RuntimeState.ControlActivity.ERROR).message(reason).build()
-                : RuntimeState.stopped(reason));
-        stopForeground(STOP_FOREGROUND_REMOVE);
-        stopSelf();
     }
 
     @Override public void onDestroy() {
-        StrictSafetyState.mediaAutomation().stop();
-        if (relayRuntime != null) {
-            relayRuntime.abort("service_destroy",
-                    AccessibilityRelayGate.Cleanup.RESTORE_OWNED);
-        }
-        pendingRelayRequested = false;
-        StrictSafetyState.setEngineRunning(this, false);
-        workerRunning.set(false);
-        relayForegroundPlayback = false;
-        controlCoordinator.onStopped();
-        hardCapLatch.reset();
-        resetGlobalDifferentialState();
-        resetPcmShadowState("service_destroyed", false);
-        if (enhancedSessionDsp != null) enhancedSessionDsp.onStopped();
-        if (optionalDsp != null) optionalDsp.onServiceStopped();
-        if (worker != null) worker.interrupt();
-        if (pcmCapture != null) pcmCapture.close();
-        if (visualizer != null) visualizer.close();
-        if (optionalDsp != null) optionalDsp.close();
+        long session = sessionGate.current();
+        if (session != 0L) stopSession(session, "Остановлено", false);
+        else if (!stopping.getAndSet(true)) closeEngineResources("service_destroy");
+        lifecycleHandler.removeCallbacksAndMessages(null);
         if (hybridRuntime != null) hybridRuntime.close();
         super.onDestroy();
     }
@@ -2058,10 +2266,11 @@ public class NormalizerService extends Service {
         if (relayForegroundPlayback == enabled) return true;
         boolean previous = relayForegroundPlayback;
         relayForegroundPlayback = enabled;
-        if (workerRunning.get()) {
+        if (sessionGate.current() != 0L) {
             try {
-                startForegroundWithNotification(
-                        buildNotification(RuntimeStateStore.get()));
+                sessionGate.runIfCurrent(currentSessionToken(), () ->
+                        startForegroundWithNotification(
+                                buildNotification(RuntimeStateStore.get())));
             } catch (RuntimeException failure) {
                 relayForegroundPlayback = previous;
                 DiagnosticLog.event(

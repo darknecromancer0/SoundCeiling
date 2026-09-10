@@ -19,7 +19,25 @@ final class StatusText {
         if (s.manualSafetyPause) {
             return "Автогромкость на паузе"
                     + (s.lastControllerReason.contains("user_down") ? " — Volume Down" : "")
-                    + ". Для возобновления: Остановить → Запустить. Safety Maximum активен.";
+                    + ". Нажмите «Продолжить» или измените громкость SoundCeiling.";
+        }
+        if (s.lastControllerReason.startsWith("user_volume_")) {
+            return switch (s.lastControllerReason) {
+                case "user_volume_learning" -> "Запоминает начальную громкость · 1–2 сек";
+                case "user_volume_loud_down", "user_volume_down_dwell" -> "Снижает громкий фрагмент";
+                case "user_volume_quiet_up", "user_volume_up_dwell" -> "Повышает тихий фрагмент";
+                case "user_volume_at_target" -> "Громкость близка к выбранной";
+                case "user_volume_nearest_step" -> "Ближайшая ступень Samsung к выбранной громкости";
+                case "user_volume_waiting_audio" -> "Ждёт звук для регулировки";
+                case "user_volume_waiting_source" -> "Ждёт доступный источник PCM";
+                case "user_volume_muted" -> "Громкость SoundCeiling: 0";
+                case "user_volume_lowest_step" -> "Достигнута минимальная ступень Samsung";
+                case "user_volume_highest_step" -> "Достигнута максимальная ступень Samsung";
+                case "user_volume_peak_limit" -> "Повышение ограничено пиком звука";
+                case "user_volume_raise_policy_blocked" -> "Повышение ограничено правилом источника";
+                case "user_volume_normalization_off" -> "Нормализация выключена в настройках";
+                default -> "Регулирует громкость SoundCeiling";
+            };
         }
         if (s.lastControllerReason.startsWith("media_auto_")) {
             if (s.controlActivity == RuntimeState.ControlActivity.RECOVERING)
@@ -119,6 +137,8 @@ final class StatusText {
         if (!s.running) return "Sound Ceiling выключен";
         if (s.relayAudible) return "Accessibility Relay";
         if (s.manualSafetyPause) return "Samsung Media: автогромкость на паузе";
+        if (s.lastControllerReason.startsWith("user_volume_"))
+            return "SoundCeiling · собственная громкость";
         if (s.lastControllerReason.startsWith("media_auto_"))
             return "Samsung Media Auto Volume";
         if (s.sessionDspActive && s.sessionId > 0) return "Session DSP";

@@ -23,10 +23,10 @@ require "$PKG/EqView.java" 'EQ Amount / Сила EQ'
 require "$PKG/EqView.java" 'Link Strength'
 # v0.7.1 Task 9 supersedes the old Simple Media Minimum row. Preserve the original
 # requirement that the simple UI exposes a truthful bounded floor/ceiling and discrete percent.
-require "$PKG/SimpleModeView.java" 'Минимальный потолок выхода:'
-require "$PKG/SimpleModeView.java" 'Safety Maximum:'
-require "$PKG/SimpleModeView.java" 'ступень '
-require "$PKG/SimpleModeView.java" '% · ступень'
+require "$PKG/UserVolumeCard.java" 'Громкость: '
+require "$PKG/UserVolumeCard.java" 'Максимум: '
+require "$PKG/UserVolumeCard.java" 'текущая ступень'
+require "$PKG/UserVolumeCard.java" 'Samsung Media: '
 reject "$PKG/SimpleModeView.java" 'только вниз'
 reject "$PKG/AdvancedModeView.java" 'Поведение · только снижение'
 

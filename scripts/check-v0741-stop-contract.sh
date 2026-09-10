@@ -15,7 +15,7 @@ require "$PCM" 'if (released || readInFlight) return;'
 require "$PCM" 'try { record.stop(); } catch (RuntimeException ignored) {}'
 require "$PCM" 'try { record.release(); } catch (RuntimeException ignored) {}'
 require "$SERVICE" 'workerRunning.set(false);'
-require "$SERVICE" 'if (!workerRunning.get()) return;'
+require "$SERVICE" 'if (!currentWorkerActive()) return;'
 python - "$BUILD" <<'PY'
 from pathlib import Path
 import re, sys

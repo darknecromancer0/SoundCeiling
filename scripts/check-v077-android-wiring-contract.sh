@@ -10,7 +10,7 @@ M="$R/app/src/main/AndroidManifest.xml"
 need "$S" 'session_dsp_apply'
 need "$S" 'enhancedSessionDsp.onApplyFailed("session_dsp_apply_failed")'
 need "$S" '.enhancedSession(enhancedSessionDsp != null && enhancedSessionDsp.permissionGranted()'
-need "$SM" 'runtime.sessionDspActive'
+need "$SM" 'refreshEnhancedSessionSetup()'
 need "$SM" 'StatusText.sessionDsp(runtime)'
 need "$SM" 'StatusText.pcmDsp(runtime)'
 need "$AD" 'runtime.sessionDspActive'

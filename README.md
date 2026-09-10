@@ -1,4 +1,37 @@
-# Sound Ceiling for Android - v0.10.0
+# Sound Ceiling for Android - v0.11.0
+
+## Independent user volume
+
+Nine v0.10 Samsung logs showed an actuator/target feedback error: automatic Media 4→2 followed by
+user 2→3 was interpreted as a lower user anchor, causing 3→2→1. v0.11 replaces that ordinary path.
+
+- **SoundCeiling has its own desired volume and maximum.** The primary card and Accessibility
+  overlay share these settings. Samsung Media becomes the full-range actuator while ordinary PCM
+  control runs. Old Linked Lock/output sliders no longer drive this path. The visible own maximum
+  bounds this target. Historical Media caps remain for fallback/Relay; source exclusions still apply.
+- **The initial level comes from the playing audio.** A 1.2-second source-reference window avoids
+  treating capture warmup or the old fixed −21 dB source target as the user's listening level.
+  Automatic ACKs, Samsung panel changes and capture rebinds never reanchor that reference.
+- **Up increases the independent target; Down pauses.** Explicit Continue or an own-slider gesture
+  resumes the existing capture. A native Media movement without Accessibility is interpreted as a
+  delta of user intent, never as the reduced actuator's absolute index. Zero remains available.
+- **Stop invalidates stale work.** Publications and ordinary writes are serialized with session
+  invalidation. Boosted ordinary Media is returned no higher than the nominal user level.
+- **Relay setup names its prerequisite.** Accessibility output access is needed for the separate
+  output stream. Hardware-key filtering alone no longer blocks the user-confirmed experiment.
+  Relay remains an experimental field path, built-in speaker only.
+- Session DSP remains `field_quarantined_neutral_media_bypass`; PCM Shadow is `SHADOW_ONLY` and
+  optional diagnostics. Ordinary normalization does not require Shadow. PR #8 remains draft.
+
+The overlay is shown on intercepted volume keys and identifiable SystemUI volume events, with a
+manual Show button. Samsung-specific placement, captured audio behavior, and listening quality
+require a real phone check. Media normalization is reactive and limited to the hardware steps.
+
+Design: [v0.11 architecture](docs/superpowers/specs/2026-09-09-v011-independent-volume-design.md).
+Phone check: [v0.11 checklist](docs/field-tests/2026-09-09-v011-samsung-checklist.md).
+Earlier version sections below are historical, not the current control contract.
+
+## Sound Ceiling for Android - v0.10.0 (historical field build)
 
 ## Audible normalization from field evidence
 

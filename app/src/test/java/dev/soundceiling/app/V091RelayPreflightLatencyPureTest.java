@@ -28,10 +28,9 @@ public final class V091RelayPreflightLatencyPureTest {
                 new RelayPreflightPolicy.Input.Builder(valid)
                         .accessibilityVolumeEnabled(false).build(),
                 "ineffective volume capability blocks start");
-        denied("relay_accessibility_key_filter_unavailable",
-                new RelayPreflightPolicy.Input.Builder(valid)
-                        .keyFilterCapable(false).build(),
-                "missing hardware-key ownership blocks start");
+        require(RelayPreflightPolicy.evaluate(new RelayPreflightPolicy.Input.Builder(valid)
+                        .keyFilterCapable(false).build()).allowed,
+                "v0.11 independent output can be tested without hardware-key filtering");
         denied("relay_spoken_accessibility_conflict",
                 new RelayPreflightPolicy.Input.Builder(valid)
                         .spokenAccessibilityConflict(true).build(),

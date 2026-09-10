@@ -35,6 +35,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private final Button strictSafetyAccess;
     private final Button startStop;
     private final StatusCardView statusCard;
+    private final UserVolumeCard userVolumeCard;
     private final RelayCardView relayCard;
     private final FrequencyMeterView frequencyMeter;
     private final SeekBar lowerOutput, upperOutput, minMedia, maxMedia, safetyPercent, quietIndex, peakThreshold,
@@ -64,6 +65,14 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         modeInfo = secondary("", 14); modeInfo.setPadding(0, dp(6), 0, dp(10)); root.addView(modeInfo);
         statusCard = new StatusCardView(context); root.addView(statusCard,
                 new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        userVolumeCard = new UserVolumeCard(context);
+        LinearLayout.LayoutParams volumeLp = new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        volumeLp.topMargin = dp(12);
+        root.addView(userVolumeCard, volumeLp);
+        startStop = button("Запустить");
+        startStop.setOnClickListener(v -> listener.onStartStop());
+        root.addView(startStop, fullButton());
 
         relayCard = new RelayCardView(context, relayListener);
         LinearLayout.LayoutParams relayLp = new LinearLayout.LayoutParams(
@@ -76,6 +85,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         sessionDspSetupStatus.setPadding(0, dp(8), 0, dp(6));
         root.addView(sessionDspSetupStatus);
 
+        int legacyStart = root.getChildCount();
         section("PCM feasibility");
         globalDsp = addSwitch("PCM Shadow (без звука)", HelpText.GLOBAL_DSP,
                 Prefs.globalDspEnabled(context),
@@ -86,7 +96,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                     Prefs.saveOutputCeilings(getContext(), Prefs.outputCeilings(getContext()).withLinked(value));
                     refreshSharedOutputControls();
                 });
-        linkedLockHint = secondary("Default Linked Lock действует одинаково в Простом и Расширенном режиме.", 13);
+        linkedLockHint = secondary("Прежний Default Linked Lock. Новая громкость SoundCeiling задаётся верхней карточкой и не привязана к текущей ступени Samsung Media.", 13);
         linkedLockHint.setPadding(0, 0, 0, dp(8)); root.addView(linkedLockHint);
         lowerOutput = addSlider("Минимальный потолок выхода", HelpText.OUTPUT_CEILINGS, 0, 100,
                 OutputCeilingScale.percentForDb(Prefs.lowerOutputCeilingDb(context)),
@@ -103,7 +113,6 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         save.setOnClickListener(v -> promptSaveProfile()); load.setOnClickListener(v -> promptLoadProfile());
         reset.setOnClickListener(v -> applyBuiltIn("Balanced", BuiltInProfiles.balanced()));
 
-        startStop = button("Запустить"); startStop.setOnClickListener(v -> listener.onStartStop()); root.addView(startStop, fullButton());
         LinearLayout quietRow = horizontal();
         Button quiet = button("Quiet Now"); quiet.setOnClickListener(v -> listener.onQuietNow());
         Button quietHelp = button("?"); quietHelp.setOnClickListener(v -> showHelp(HelpText.QUIET_NOW));
@@ -111,7 +120,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         root.addView(quietRow);
 
         section("Главное");
-        root.addView(secondary("v0.9.2: Samsung Media Auto Volume использует output ceilings и Normalization strength. Тихое повышается, громкое снижается по одной ступени, не выше Safety Maximum. Volume Down ставит обычное управление на паузу до Остановить → Запустить. Target ниже относится к PCM Shadow/Relay.", 13));
+        root.addView(secondary("Параметры Target и силы относятся к PCM Shadow/Relay и прежней нормализации. Обычную громкость и её максимум задаёт верхняя карточка. Down — тише и пауза; Up, ползунок или «Продолжить» возобновляют автогромкость.", 13));
         normalizationGroup = new RadioGroup(context); normalizationGroup.setOrientation(RadioGroup.HORIZONTAL);
         addNormalization("Off", NormalizationPreset.OFF); addNormalization("Light", NormalizationPreset.LIGHT);
         addNormalization("Medium", NormalizationPreset.MEDIUM); addNormalization("Strict", NormalizationPreset.STRICT);
@@ -127,7 +136,8 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                 Math.round(Prefs.loudnessTolerance(context) * 10f), p -> String.format(Locale.US, "%.1f LU", p / 10f),
                 p -> editNormalization(Prefs.LOUDNESS_TOLERANCE, p / 10f));
 
-        section("Media fallback и hard safety");
+        section("Прежние Media fallback и hard safety");
+        root.addView(secondary("Эти границы и output ceilings не ограничивают новую обычную автогромкость. Её предел — «Максимум» в карточке SoundCeiling.", 13));
         minMedia = addSlider("Fallback Media Minimum", HelpText.MIN_MEDIA, 0, 100,
                 MediaLevelScale.percentForIndex(Prefs.minMediaIndex(context), streamMin, streamMax),
                 p -> p + "% · фактически " + MediaLevelScale.indexForPercent(p, streamMin, streamMax) + "/" + streamMax,
@@ -186,7 +196,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         LinearLayout basisInfoRow = horizontal();
         LinearLayout basisInfoColumn = new LinearLayout(getContext()); basisInfoColumn.setOrientation(LinearLayout.VERTICAL);
         TextView basisInfo = secondary("Media % показывает системную шкалу. Digital dB показывает цифровой target. Calibrated dB SPL доступен только после калибровки текущего выхода.", 13);
-        TextView basisSub = secondary("Все варианты используют один coordinator и одни output ceilings.", 12);
+        TextView basisSub = secondary("Эти шкалы относятся к прежним output ceilings; новая обычная громкость задаётся в процентах сверху.", 12);
         basisInfoColumn.addView(basisInfo); basisInfoColumn.addView(basisSub);
         Button basisHelp = button("?"); basisHelp.setOnClickListener(v -> showHelp(HelpText.CEILING_BASIS));
         basisInfoRow.addView(basisInfoColumn, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
@@ -205,6 +215,8 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         splCeiling = addSlider("SPL ceiling", HelpText.DBSPL, 60, 100, Math.round(Prefs.splCeiling(context)),
                 p -> p + " dB SPL", p -> edit(Prefs.SPL_CEILING, (float) p));
 
+        int legacyCount = root.getChildCount() - legacyStart;
+        collapseLegacyControls(legacyStart, legacyCount);
         section("Живые показатели");
         liveDetails = secondary("", 13); root.addView(liveDetails);
         frequencyMeter = new FrequencyMeterView(context); frequencyMeter.setMinimumHeight(dp(166));
@@ -230,24 +242,46 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         loading = true; refreshControlsFromPrefs(); loading = false;
     }
 
+    private void collapseLegacyControls(int start, int count) {
+        LinearLayout legacy = new LinearLayout(getContext());
+        legacy.setOrientation(LinearLayout.VERTICAL);
+        legacy.setVisibility(View.GONE);
+        legacy.addView(secondary("Дополнительные параметры PCM Shadow/Relay и прежнего управления. Новая обычная громкость и её максимум находятся в верхней карточке SoundCeiling.", 13));
+        for (int i = 0; i < count; i++) {
+            View child = root.getChildAt(start);
+            root.removeViewAt(start);
+            legacy.addView(child);
+        }
+        Button expand = button("Показать дополнительные и прежние настройки");
+        expand.setOnClickListener(v -> {
+            boolean visible = legacy.getVisibility() != View.VISIBLE;
+            legacy.setVisibility(visible ? View.VISIBLE : View.GONE);
+            expand.setText(visible ? "Скрыть дополнительные и прежние настройки"
+                    : "Показать дополнительные и прежние настройки");
+        });
+        root.addView(expand, start, fullButton());
+        root.addView(legacy, start + 1, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+    }
+
     private void refreshStrictSafety() {
         boolean enabled = StrictSafetyState.isAccessibilityServiceEnabled(getContext());
         boolean connected = StrictSafetyState.accessibilityConnected();
         long now = android.os.SystemClock.elapsedRealtime();
         boolean keySeen = StrictSafetyState.keyEventSeenRecently(now);
         strictSafetyStatus.setText(!enabled
-                ? "Strict Safety: без Accessibility аппаратная Volume Up защищена только реактивным clamp"
+                ? "Strict Safety: включите Accessibility для отдельного ползунка и кнопок громкости"
                 : !connected
                 ? "Strict Safety: Accessibility включён, сервис не подключён"
                 : keySeen
-                ? "Strict Safety: активно · Volume Up полностью перехватывается"
-                : "Strict Safety: подключено · ожидается проверочный Volume Up");
+                ? "Strict Safety: события кнопок поступают · активный режим определяет их действие"
+                : "Strict Safety: подключено · ожидаются кнопки громкости");
         strictSafetyAccess.setVisibility(enabled ? View.GONE : View.VISIBLE);
     }
 
     @Override public void render(RuntimeState state) {
         if (state != null) runtime = state;
-        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); relayCard.render(runtime); frequencyMeter.renderState(runtime);
+        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); userVolumeCard.refresh(); relayCard.render(runtime); frequencyMeter.renderState(runtime);
         refreshEnhancedSessionSetup();
         refreshStrictSafety();
         refreshSharedOutputControls();

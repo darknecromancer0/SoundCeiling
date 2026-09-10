@@ -47,6 +47,9 @@ public final class NormalizerControlCoordinator {
         private final boolean ordinaryMediaFallbackAllowed;
         private final boolean mediaAutoVolume;
         private final boolean mediaAutoVolumePaused;
+        private final boolean independentUserVolume;
+        private final float userVolumeTargetDb;
+        private final boolean userVolumeMuted;
 
         private Frame(Builder b) {
             atMs = Math.max(0L, b.atMs);
@@ -90,6 +93,9 @@ public final class NormalizerControlCoordinator {
             ordinaryMediaFallbackAllowed = b.ordinaryMediaFallbackAllowed;
             mediaAutoVolume = b.mediaAutoVolume;
             mediaAutoVolumePaused = b.mediaAutoVolumePaused;
+            independentUserVolume = b.independentUserVolume;
+            userVolumeTargetDb = b.userVolumeTargetDb;
+            userVolumeMuted = b.userVolumeMuted;
         }
 
         public static final class Builder {
@@ -127,6 +133,9 @@ public final class NormalizerControlCoordinator {
             private boolean ordinaryMediaFallbackAllowed = true;
             private boolean mediaAutoVolume;
             private boolean mediaAutoVolumePaused;
+            private boolean independentUserVolume;
+            private float userVolumeTargetDb = Float.NaN;
+            private boolean userVolumeMuted;
 
             public Builder(long atMs, int previousMediaIndex, int currentMediaIndex,
                            ControlVolumeCurve routeCurve) {
@@ -177,6 +186,12 @@ public final class NormalizerControlCoordinator {
             }
             public Builder mediaAutoVolume(boolean enabled, boolean paused) {
                 mediaAutoVolume = enabled; mediaAutoVolumePaused = paused; return this;
+            }
+            public Builder independentUserVolume(float targetDb, boolean muted) {
+                independentUserVolume = true;
+                userVolumeTargetDb = targetDb;
+                userVolumeMuted = muted;
+                return this;
             }
             public Frame build() { return new Frame(this); }
         }
@@ -229,6 +244,9 @@ public final class NormalizerControlCoordinator {
     private float transientWarningDb = 6f;
     private float transientEmergencyDb = 10f;
     private final ContinuousDspController continuousDsp = new ContinuousDspController();
+    private final IndependentMediaController independentMedia = new IndependentMediaController();
+    private boolean runtimeIndependentVolume;
+    private float runtimeIndependentTarget = Float.NaN;
     private final CoarseMediaFallbackController coarseFallback = new CoarseMediaFallbackController();
     private OutputCeilingState ceilingState = OutputCeilingState.defaultLinked();
     private MediaAnchorState mediaAnchorState;
@@ -247,7 +265,9 @@ public final class NormalizerControlCoordinator {
         }
         runtimeRouteCurve = frame.routeCurve;
         runtimeControlProfile = frame.controlProfile;
-        applyVolumeAuthority(frame);
+        runtimeIndependentVolume = frame.independentUserVolume;
+        runtimeIndependentTarget = frame.userVolumeTargetDb;
+        if (!frame.independentUserVolume) applyVolumeAuthority(frame);
         boolean programActive = activityGate.update(frame.rawProgramActive, frame.atMs);
         refreshTransientGuard(frame);
         transientGuard.onPlaybackState(programActive, frame.atMs);
@@ -324,6 +344,35 @@ public final class NormalizerControlCoordinator {
                     frame, programActive, transientEvent.severity);
         }
 
+        if (frame.independentUserVolume) {
+            // Public targeted PCM is a stable source estimate on the recorded Samsung route.
+            // A correlation-based live reference is telemetry, not permission to reinterpret it.
+            float source = frame.outputLevels.sourceLoudnessDb;
+            float correction = frame.userVolumeTargetDb - source - frame.mediaGainDb;
+            if (!Float.isFinite(correction)) correction = 0f;
+            String blocked = frame.mediaAutoVolumePaused ? "media_auto_paused_user_down"
+                    : frame.userVolumeMuted ? "user_volume_muted"
+                    : !frame.mediaAutoVolume ? "user_volume_waiting_source"
+                    : frame.controlProfile.normalizationPreset == NormalizationPreset.OFF
+                            || !(frame.controlProfile.normalizationStrength > 0f)
+                            ? "user_volume_normalization_off" : null;
+            if (blocked != null) {
+                independentMedia.reset();
+                return record(ControlCommand.none(blocked), correction, frame, programActive,
+                        transientEvent.severity);
+            }
+            IndependentMediaController.Decision decision = independentMedia.update(frame.atMs,
+                    frame.currentMediaIndex, frame.hardMediaCeilingIndex, frame.userVolumeTargetDb,
+                    frame.outputLevels.sourceLoudnessDb, frame.outputLevels.sourcePeakDbfs,
+                    frame.routeCurve,
+                    programActive && frame.rawProgramActive && frame.playbackEndpointActive,
+                    allowsPositiveControl(frame), frame.hardPeakCeilingDbfs);
+            return record(decision.shouldWrite ? ControlCommand.mediaIndex(decision.requestedIndex,
+                            decision.reason, ControlCommand.Provenance.AUTO_MEDIA)
+                    : ControlCommand.none(decision.reason), correction, frame, programActive,
+                    transientEvent.severity);
+        }
+
         if (frame.mediaAutoVolume) {
             float correction = CoarseMediaFallbackController.automaticCorrection(frame.outputLevels,
                     ceilingState, frame.routeCurve, frame.controlProfile,
@@ -395,6 +444,7 @@ public final class NormalizerControlCoordinator {
     public OutputCeilingState ceilingState() { return ceilingState; }
     /** The control target, including route attenuation below the presentation slider's minimum. */
     public float runtimeTargetLowerDb() {
+        if (runtimeIndependentVolume) return runtimeIndependentTarget;
         if (runtimeRouteCurve == null || runtimeControlProfile == null || mediaAnchorState == null) {
             return ceilingState.lowerDb();
         }
@@ -402,6 +452,7 @@ public final class NormalizerControlCoordinator {
                 runtimeControlProfile, mediaAnchorState.userAnchorIndex());
     }
     public float runtimeTargetUpperDb() {
+        if (runtimeIndependentVolume) return runtimeIndependentTarget;
         return ceilingState.linked() ? runtimeTargetLowerDb() : ceilingState.upperDb();
     }
     public void setCeilingState(OutputCeilingState state) {
@@ -421,6 +472,7 @@ public final class NormalizerControlCoordinator {
     }
 
     public void onCaptureReplaced() {
+        independentMedia.reset();
         activityGate.reset();
         transientGuard.reset();
         continuousDsp.reset();
@@ -434,6 +486,8 @@ public final class NormalizerControlCoordinator {
         mediaAnchorState = null;
         runtimeRouteCurve = null;
         runtimeControlProfile = null;
+        runtimeIndependentVolume = false;
+        runtimeIndependentTarget = Float.NaN;
     }
 
     public void onStopped() { onRouteChanged(); }

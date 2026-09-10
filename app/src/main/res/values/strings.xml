@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Sound Ceiling</string>
+    <string name="volume_accessibility_description">Показывает ползунок SoundCeiling рядом с системной громкостью и управляет кнопками громкости. Использует только события панели SystemUI, без чтения содержимого экрана. Также обеспечивает отдельный выход Accessibility Relay.</string>
 </resources>

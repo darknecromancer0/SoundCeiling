@@ -4,11 +4,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG="$ROOT/app/src/main/java/dev/soundceiling/app"
 require(){ local file="$1"; local needle="$2"; grep -Fq "$needle" "$file" || { echo "Missing v0.4 UI contract: $(basename "$file") -> $needle" >&2; exit 1; }; }
 # Preserve the v0.4 surfaces while allowing later releases' clearer names.
-require "$PKG/SimpleModeView.java" "Минимальный потолок выхода"
-require "$PKG/SimpleModeView.java" "Максимальный потолок выхода"
+require "$PKG/UserVolumeCard.java" "Громкость: "
+require "$PKG/UserVolumeCard.java" "Максимум: "
 # v0.7.1 Task 9 intentionally removes Quiet Now from Simple; Advanced retains it.
 require "$PKG/AdvancedModeView.java" "Quiet Now"
-require "$PKG/SimpleModeView.java" "Normalization:"
+require "$PKG/SimpleModeView.java" "UserVolumeCard"
 require "$PKG/AdvancedModeView.java" "Safety Lock"
 require "$PKG/AdvancedModeView.java" "Peak и transient protection"
 require "$PKG/AdvancedModeView.java" "Normalization strength"

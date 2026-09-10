@@ -27,7 +27,7 @@ need "$NORMALIZER" 'hard_cap_latch_write'
 need "$NORMALIZER" 'hard_cap_latch_release'
 need "$NORMALIZER" 'case REJECTED_HARD_CAP_OVERSHOOT:'
 need "$COORD" 'REJECTED_HARD_CAP_OVERSHOOT'
-need "$R/app/src/main/java/dev/soundceiling/app/SimpleModeView.java" 'Strict Safety'
+need "$R/app/src/main/java/dev/soundceiling/app/UserVolumeCard.java" 'Strict Safety'
 need "$R/app/src/main/java/dev/soundceiling/app/AdvancedModeView.java" 'Strict Safety'
 # v0.7.7.4 OEM-default Enhanced Session fallback remains quarantined.
 need "$R/app/src/main/java/dev/soundceiling/app/AndroidDynamicsProcessingTransport.java" 'default_fallback_disabled'

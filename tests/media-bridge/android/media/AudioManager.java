@@ -5,6 +5,8 @@ public class AudioManager {
     public int index = 4;
     public int writes;
     public boolean readFails;
+    public int getStreamMaxVolume(int stream) { return 15; }
+    public int getStreamMinVolume(int stream) { return 0; }
     public int getStreamVolume(int stream) {
         if (readFails) throw new IllegalStateException("read");
         return index;

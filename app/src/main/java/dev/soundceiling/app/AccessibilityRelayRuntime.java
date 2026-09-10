@@ -1086,10 +1086,6 @@ final class AccessibilityRelayRuntime implements AutoCloseable {
                 reason = "relay_accessibility_output_unavailable";
                 return false;
             }
-            if (!StrictSafetyState.keyFilterCapable()) {
-                reason = "relay_accessibility_key_filter_unavailable";
-                return false;
-            }
             if (StrictSafetyState
                     .hasOtherSpokenFeedbackService(context)) {
                 reason = "relay_spoken_accessibility_conflict";

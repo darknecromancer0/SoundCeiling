@@ -16,7 +16,15 @@ final class MediaAutoVolumeAuthority {
     }
 
     synchronized void stop() { running = false; }
+
+    /** An explicit user action may resume a paused session, never resurrect a stopped one. */
+    synchronized void resumeByUser() {
+        if (!running) return;
+        paused = false;
+        reason = "media_auto_resumed_by_user";
+    }
     synchronized boolean allowsWrites() { return running && !paused; }
+    synchronized boolean running() { return running; }
     synchronized boolean paused() { return paused; }
     synchronized String reason() { return running ? reason : "media_auto_stopped"; }
 

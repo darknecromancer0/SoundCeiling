@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -22,8 +23,6 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 public class MainActivity extends Activity implements RelayCardView.Listener {
-private static final int REQ_RECORD_AUDIO = 100;
-private static final int REQ_MEDIA_PROJECTION = 101;
 private static final int REQ_NOTIFICATIONS = 102;
 private static final String STATE_PENDING_RELAY_PROJECTION =
 "pending_relay_projection";
@@ -39,12 +38,20 @@ private ToneController.Result lastCalibrationResult;
 private final CalibrationToneStateMachine toneStateMachine = new CalibrationToneStateMachine();
 private ToneController.Kind pendingToneKind;
 private boolean pendingRelayProjection;
+private int nextStartRequestCode = 200;
+private int pendingStartRequestCode;
+private int pendingRecordRequestCode;
+private int pendingProjectionRequestCode;
+private boolean pendingAccessibilitySetup;
+private boolean externalStartActivityPending;
+private AlertDialog startDialog;
 private static final long TONE_STOP_POLL_MS = 50L;
 private final Runnable toneStopPoll = this::pollToneStop;
 private final Runnable uiTick = new Runnable() {
 @Override public void run() {
 RuntimeState state = RuntimeStateStore.get();
 if (activeScreen != null) activeScreen.render(state);
+resumePendingRelaySetup();
 handler.postDelayed(this, 200L);
 }
 };
@@ -53,6 +60,14 @@ UiTheme.applyActivityTheme(this);
 super.onCreate(savedInstanceState);
 pendingRelayProjection = savedInstanceState != null
 && savedInstanceState.getBoolean(STATE_PENDING_RELAY_PROJECTION, false);
+if (savedInstanceState != null) {
+nextStartRequestCode = savedInstanceState.getInt("next_start_request_code", 200);
+pendingStartRequestCode = savedInstanceState.getInt("pending_start_request_code", 0);
+pendingRecordRequestCode = savedInstanceState.getInt("pending_record_request_code", 0);
+pendingProjectionRequestCode = savedInstanceState.getInt("pending_projection_request_code", 0);
+pendingAccessibilitySetup = savedInstanceState.getBoolean("pending_accessibility_setup", false);
+externalStartActivityPending = savedInstanceState.getBoolean("external_start_activity_pending", false);
+}
 audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 if (new RelayRecoveryStore(this).hasPending()) {
 RuntimeStateStore.publishRelay(0L, "RECOVERY_REQUIRED",
@@ -192,22 +207,24 @@ return scroll;
 }
 private void startStop() {
 RuntimeState state = RuntimeStateStore.get();
-if (state.running) {
+if (state.running || pendingStartRequestCode != 0) {
+cancelPendingStart();
 startService(new Intent(this, NormalizerService.class).setAction(NormalizerService.ACTION_STOP));
 return;
 }
-pendingRelayProjection = false;
+beginPendingStart(false);
 if (Prefs.splMode(this)) {
 AudioDeviceInfo device = DeviceDetector.detectOutputDevice(audio);
 if (ProfileStore.find(this, device) == null) {
 Toast.makeText(this,
 "Для режима dB SPL сначала откалибруйте текущий аудиовыход",
 Toast.LENGTH_LONG).show();
+cancelPendingStart();
 return;
 }
 }
 if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
+requestRecordPermission();
 return;
 }
 showProjectionExplanation();
@@ -217,10 +234,45 @@ Intent intent = new Intent(this, NormalizerService.class).setAction(NormalizerSe
 startService(intent);
 }
 @Override public void onStartRelay() {
-pendingRelayProjection = true;
+beginPendingStart(true);
+if (!relayAccessibilityReady()) {
+final int request = pendingStartRequestCode;
+startDialog = new AlertDialog.Builder(this)
+.setTitle("Разрешить Accessibility output")
+.setMessage("Для Relay включи службу SoundCeiling в настройках специальных возможностей Android. "
++ "Она предоставляет отдельный аудиовыход. После возвращения запуск продолжится.")
+.setPositiveButton("Открыть настройки", (dialog, which) -> {
+if (!pendingStartMatches(request)) return;
+pendingAccessibilitySetup = true;
+externalStartActivityPending = true;
+try { startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
+catch (RuntimeException error) {
+cancelPendingStart();
+Toast.makeText(this, "Не удалось открыть настройки специальных возможностей.", Toast.LENGTH_LONG).show();
+}
+})
+.setNegativeButton("Отмена", (dialog, which) -> cancelPendingStart())
+.setOnCancelListener(dialog -> cancelPendingStart())
+.show();
+return;
+}
+continueRelayStart();
+}
+private boolean relayAccessibilityReady() {
+return StrictSafetyState.accessibilityConnected()
+&& StrictSafetyState.accessibilityVolumeEnabled(this);
+}
+private void resumePendingRelaySetup() {
+if (!pendingAccessibilitySetup || pendingStartRequestCode == 0
+|| externalStartActivityPending || !relayAccessibilityReady()) return;
+pendingAccessibilitySetup = false;
+continueRelayStart();
+}
+private void continueRelayStart() {
+if (pendingStartRequestCode == 0 || !pendingRelayProjection) return;
 if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
 != PackageManager.PERMISSION_GRANTED) {
-requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
+requestRecordPermission();
 return;
 }
 showProjectionExplanation();
@@ -236,6 +288,7 @@ startService(new Intent(this, NormalizerService.class)
 .putExtra(NormalizerService.EXTRA_RELAY_EPOCH, epoch));
 }
 @Override public void onStopRelay() {
+cancelPendingStart();
 startService(new Intent(this, NormalizerService.class)
 .setAction(NormalizerService.ACTION_RELAY_STOP));
 }
@@ -254,6 +307,7 @@ startService(new Intent(this, NormalizerService.class)
 .putExtra(NormalizerService.EXTRA_RELAY_FULL_ENABLED, enabled));
 }
 private void requestCalibrationTone(ToneController.Kind kind) {
+cancelPendingStart();
 handler.removeCallbacks(toneStopPoll);
 toneController.cancel();
 pendingToneKind = kind;
@@ -420,6 +474,8 @@ DiagnosticLog.event("calibration_deleted", "route=" + DeviceDetector.label(devic
 Toast.makeText(this, "Профиль удалён.", Toast.LENGTH_SHORT).show();
 }
 private void showProjectionExplanation() {
+final int request = pendingStartRequestCode;
+if (!pendingStartMatches(request)) return;
 boolean relay = pendingRelayProjection;
 AlertDialog.Builder builder = new AlertDialog.Builder(this)
 .setTitle(relay ? "Экспериментальный Accessibility Relay" : "Точный анализ воспроизведения")
@@ -434,16 +490,26 @@ AlertDialog.Builder builder = new AlertDialog.Builder(this)
 + "Это нужно потому, что AudioPlaybackCapture авторизуется через MediaProjection.\n\n"
 + "SoundCeiling использует только PCM воспроизводимого аудио для измерения громкости. "
 + "SoundCeiling не записывает видео экрана.")
-.setPositiveButton("Продолжить", (dialog, which) -> requestProjection());
+.setPositiveButton("Продолжить", (dialog, which) -> {
+if (pendingStartMatches(request)) requestProjection();
+});
 if (relay) {
-builder.setNegativeButton("Отмена", (dialog, which) -> pendingRelayProjection = false);
+builder.setNegativeButton("Отмена", (dialog, which) -> cancelPendingStart());
 } else {
-builder.setNegativeButton("Safe fallback", (dialog, which) -> startFastFallback());
+builder.setNegativeButton("Safe fallback", (dialog, which) -> {
+if (pendingStartMatches(request)) startFastFallback();
+});
 }
-builder.show();
+startDialog = builder.setOnCancelListener(dialog -> cancelPendingStart()).show();
 }
 private void requestProjection() {
+if (!pendingStartMatches(pendingStartRequestCode)) return;
 if (pendingRelayProjection) {
+if (!relayAccessibilityReady()) {
+cancelPendingStart();
+onStartRelay();
+return;
+}
 RuntimeState state = RuntimeStateStore.get();
 boolean exactPcmRunning = state.running
 && state.captureStatus == RuntimeState.CaptureStatus.RUNNING
@@ -451,7 +517,7 @@ boolean exactPcmRunning = state.running
 && state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT
 && state.sourceConfidence == EngineCapabilities.SourceIdentityConfidence.EXACT;
 if (exactPcmRunning) {
-pendingRelayProjection = false;
+cancelPendingStart();
 startService(new Intent(this, NormalizerService.class)
 .setAction(NormalizerService.ACTION_RELAY_START));
 return;
@@ -463,9 +529,12 @@ startService(new Intent(this, NormalizerService.class)
 }
 MediaProjectionManager manager =
 (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-startActivityForResult(manager.createScreenCaptureIntent(), REQ_MEDIA_PROJECTION);
+pendingProjectionRequestCode = pendingStartRequestCode;
+externalStartActivityPending = true;
+startActivityForResult(manager.createScreenCaptureIntent(), pendingProjectionRequestCode);
 }
 private void startFastFallback() {
+cancelPendingStart();
 Intent service = new Intent(this, NormalizerService.class)
 .putExtra(NormalizerService.EXTRA_FAST_ONLY, true);
 startForegroundService(service);
@@ -473,20 +542,22 @@ Toast.makeText(this, "Точный PCM не запущен · пробую бы�
 }
 @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
 super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-if (requestCode == REQ_RECORD_AUDIO && grantResults.length > 0) {
-if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+if (requestCode == pendingRecordRequestCode && pendingStartMatches(requestCode)) {
+pendingRecordRequestCode = 0;
+externalStartActivityPending = false;
+if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
 showProjectionExplanation();
 } else {
-pendingRelayProjection = false;
+cancelPendingStart();
 Toast.makeText(this, "Без разрешения Android не даёт Sound Ceiling читать playback-meter APIs.", Toast.LENGTH_LONG).show();
 }
 }
 }
 @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 super.onActivityResult(requestCode, resultCode, data);
-if (requestCode != REQ_MEDIA_PROJECTION) return;
+if (requestCode != pendingProjectionRequestCode || !pendingStartMatches(requestCode)) return;
 boolean relayRequested = pendingRelayProjection;
-pendingRelayProjection = false;
+cancelPendingStart();
 if (resultCode == RESULT_OK && data != null) {
 Intent service = new Intent(this, NormalizerService.class)
 .putExtra(NormalizerService.EXTRA_RESULT_CODE, resultCode)
@@ -501,6 +572,32 @@ Toast.makeText(this, "Relay не запущен: MediaProjection не разре
 startFastFallback();
 }
 }
+private void beginPendingStart(boolean relay) {
+cancelPendingStart();
+pendingStartRequestCode = nextStartRequestCode++;
+if (nextStartRequestCode > 65535) nextStartRequestCode = 200;
+pendingRelayProjection = relay;
+}
+private boolean pendingStartMatches(int request) {
+return request != 0 && pendingStartRequestCode == request && !isFinishing() && !isDestroyed();
+}
+private void requestRecordPermission() {
+pendingRecordRequestCode = pendingStartRequestCode;
+externalStartActivityPending = true;
+requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, pendingRecordRequestCode);
+}
+private void cancelPendingStart() {
+pendingStartRequestCode = 0;
+pendingRecordRequestCode = 0;
+pendingProjectionRequestCode = 0;
+pendingRelayProjection = false;
+pendingAccessibilitySetup = false;
+externalStartActivityPending = false;
+if (startDialog != null) {
+startDialog.dismiss();
+startDialog = null;
+}
+}
 private void maybeRequestNotificationPermission() {
 if (Build.VERSION.SDK_INT >= 33
 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -509,6 +606,7 @@ requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOT
 }
 @Override protected void onResume() {
 super.onResume();
+externalStartActivityPending = false;
 handler.removeCallbacks(uiTick);
 handler.post(uiTick);
 }
@@ -516,9 +614,19 @@ handler.post(uiTick);
 handler.removeCallbacks(uiTick);
 super.onPause();
 }
+@Override protected void onStop() {
+if (!externalStartActivityPending && !isChangingConfigurations()) cancelPendingStart();
+super.onStop();
+}
 @Override protected void onSaveInstanceState(Bundle outState) {
 outState.putBoolean(STATE_PENDING_RELAY_PROJECTION,
 pendingRelayProjection);
+outState.putInt("next_start_request_code", nextStartRequestCode);
+outState.putInt("pending_start_request_code", pendingStartRequestCode);
+outState.putInt("pending_record_request_code", pendingRecordRequestCode);
+outState.putInt("pending_projection_request_code", pendingProjectionRequestCode);
+outState.putBoolean("pending_accessibility_setup", pendingAccessibilitySetup);
+outState.putBoolean("external_start_activity_pending", externalStartActivityPending);
 super.onSaveInstanceState(outState);
 }
 @Override protected void onDestroy() {
