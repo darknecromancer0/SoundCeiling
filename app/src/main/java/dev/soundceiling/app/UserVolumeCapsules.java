@@ -19,8 +19,8 @@ import android.widget.SeekBar;
 
 /** The overlay's icon-only controls. The ordinary in-app volume card stays unchanged. */
 final class UserVolumeCapsules extends LinearLayout {
-    static final int WIDTH_DP = 112;
-    static final int HEIGHT_DP = 304;
+    static final int WIDTH_DP = 80;
+    static final int HEIGHT_DP = 216;
     private final Capsule desired;
     private final Capsule maximum;
     private final Runnable interaction;
@@ -30,7 +30,7 @@ final class UserVolumeCapsules extends LinearLayout {
         this.interaction = interaction;
         setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER);
-        setPadding(dp(2), dp(2), dp(2), dp(2));
+        setPadding(0, 0, 0, 0);
 
         FrameLayout desiredColumn = new FrameLayout(context);
         desired = new Capsule(context, false);
@@ -41,13 +41,21 @@ final class UserVolumeCapsules extends LinearLayout {
         more.setOnClickListener(v -> { interaction.run(); expand.run(); });
         desiredColumn.addView(more, new FrameLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(48), Gravity.TOP));
-        LayoutParams first = new LayoutParams(0, heightPx - dp(4), 1f);
+        LayoutParams first = new LayoutParams(0, heightPx, 1f);
         first.rightMargin = dp(8);
         addView(desiredColumn, first);
 
         maximum = new Capsule(context, true);
-        addView(maximum, new LayoutParams(0, heightPx - dp(4), 1f));
+        addView(maximum, new LayoutParams(0, heightPx, 1f));
         refresh();
+    }
+
+    void setHeight(int heightPx) {
+        for (int i = 0; i < getChildCount(); i++) {
+            android.view.ViewGroup.LayoutParams params = getChildAt(i).getLayoutParams();
+            params.height = heightPx;
+            getChildAt(i).setLayoutParams(params);
+        }
     }
 
     void refresh() {
@@ -116,14 +124,15 @@ final class UserVolumeCapsules extends LinearLayout {
             paint.setStrokeWidth(dp(1));
             paint.setColor(isFocused() ? Color.WHITE : Color.rgb(69, 71, 75));
             canvas.drawRoundRect(bounds, radius, radius, paint);
-            drawIcon(canvas, bounds.centerX(), bounds.bottom - dp(29));
+            drawIcon(canvas, bounds.centerX(), bounds.bottom - Math.min(dp(24), getWidth() * 0.6f));
         }
 
         private void drawIcon(Canvas canvas, float cx, float cy) {
             int saved = canvas.save();
             canvas.translate(cx, cy);
             float density = getResources().getDisplayMetrics().density;
-            canvas.scale(density, density);
+            float iconScale = Math.min(1f, getWidth() / (32f * density));
+            canvas.scale(density * iconScale, density * iconScale);
             paint.setColor(Color.rgb(246, 247, 249));
             paint.setStrokeWidth(1.8f);
             paint.setStrokeCap(Paint.Cap.ROUND);

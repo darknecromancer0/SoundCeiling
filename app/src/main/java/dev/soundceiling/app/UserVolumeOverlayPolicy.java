@@ -3,7 +3,9 @@ package dev.soundceiling.app;
 /** Idle dismissal is suspended for the entire touch sequence, including a stationary hold. */
 final class UserVolumeOverlayPolicy {
     static final long DEFAULT_DISMISS_MS = 2_000L;
+    static final long INTERACTION_DISMISS_MS = 5_000L;
     private final long idleTimeoutMs;
+    private final long interactionTimeoutMs;
     private boolean visible;
     private boolean touching;
     private long deadlineMs;
@@ -12,16 +14,19 @@ final class UserVolumeOverlayPolicy {
 
     UserVolumeOverlayPolicy(long idleTimeoutMs) {
         this.idleTimeoutMs = Math.max(DEFAULT_DISMISS_MS, idleTimeoutMs);
+        this.interactionTimeoutMs = Math.max(INTERACTION_DISMISS_MS, idleTimeoutMs);
     }
 
     void show(long nowMs) {
-        if (!visible) touching = false;
+        if (!visible) {
+            touching = false;
+            deadlineMs = nowMs + idleTimeoutMs;
+        }
         visible = true;
-        interact(nowMs);
     }
 
     void interact(long nowMs) {
-        if (visible && !touching) deadlineMs = nowMs + idleTimeoutMs;
+        if (visible && !touching) deadlineMs = nowMs + interactionTimeoutMs;
     }
 
     void touchStarted() { if (visible) touching = true; }
@@ -38,6 +43,7 @@ final class UserVolumeOverlayPolicy {
 
     boolean shouldDismiss(long nowMs) { return visible && !touching && nowMs >= deadlineMs; }
     boolean visible() { return visible; }
+    boolean touching() { return touching; }
 
     boolean outsideTouch() {
         if (!visible) return false;

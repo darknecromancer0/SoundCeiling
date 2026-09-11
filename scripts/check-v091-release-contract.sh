@@ -21,8 +21,8 @@ reject() {
   fi
 }
 
-need "$GRADLE" 'versionCode=43'
-need "$GRADLE" 'versionName="0.11.3"'
+need "$GRADLE" 'versionCode=44'
+need "$GRADLE" 'versionName="0.11.4"'
 need "$GRADLE" 'signingConfig = signingConfigs.getByName("soundCeilingDev")'
 
 need "$MANIFEST" 'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK'
@@ -35,9 +35,9 @@ reject "$CAPTURE" 'USAGE_ASSISTANCE_ACCESSIBILITY'
 
 need "$WORKFLOW" 'run: bash ./scripts/run-v091-accessibility-relay-tests.sh'
 need "$WORKFLOW" 'run: bash ./scripts/check-v091-release-contract.sh'
-need "$WORKFLOW" 'name: SoundCeiling-v0.11.3-source-snapshot'
-need "$WORKFLOW" 'name: SoundCeiling-v0.11.3-debug-apk'
-need "$WORKFLOW" 'name: SoundCeiling-v0.11.3-debug-apk-checksum'
+need "$WORKFLOW" 'name: SoundCeiling-v0.11.4-source-snapshot'
+need "$WORKFLOW" 'name: SoundCeiling-v0.11.4-debug-apk'
+need "$WORKFLOW" 'name: SoundCeiling-v0.11.4-debug-apk-checksum'
 need "$WORKFLOW" 'path: app/build/outputs/apk/debug/app-debug.apk.sha256'
 
 need_file "$CHECKLIST"
@@ -50,7 +50,7 @@ need "$CHECKLIST" '10 минут'
 need "$CHECKLIST" 'median <= 120 ms'
 need "$CHECKLIST" 'p95 <= 200 ms'
 
-need "$README" '# Sound Ceiling for Android - v0.11.3'
+need "$README" '# Sound Ceiling for Android - v0.11.4'
 need "$README" 'experimental field path'
 need "$README" 'built-in speaker only'
 need "$README" 'field_quarantined_neutral_media_bypass'

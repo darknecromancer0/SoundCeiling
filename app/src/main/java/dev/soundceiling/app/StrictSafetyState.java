@@ -18,6 +18,8 @@ final class StrictSafetyState {
     private static final RelayKeyAuthority RELAY_KEYS_OFF =
             new RelayKeyAuthority(RelayVolumePolicy.Phase.OFF, 0, 0);
     private static volatile boolean accessibilityConnected;
+    private static volatile boolean engineRequested;
+    private static volatile Runnable keyFilterListener;
     private static volatile boolean keyFilterCapable;
     private static volatile long lastKeyEventAtMs;
     private static volatile long lastOwnedVolumeUpAtMs;
@@ -57,8 +59,19 @@ final class StrictSafetyState {
     }
 
     static void setEngineRunning(Context context, boolean running) {
+        engineRequested = running;
+        notifyKeyFilterListener(); // Disarm before preference I/O and synchronous audio teardown.
         if (context == null) return;
         Prefs.get(context).edit().putBoolean(ENGINE_RUNNING, running).apply();
+    }
+
+    static boolean keyGateActive() { return engineRequested || relayKeyAuthority.ownsKeys(); }
+
+    static void setKeyFilterListener(Runnable listener) { keyFilterListener = listener; }
+
+    private static void notifyKeyFilterListener() {
+        Runnable listener = keyFilterListener;
+        if (listener != null) listener.run();
     }
 
     static boolean engineRunning(Context context) {
@@ -93,8 +106,10 @@ final class StrictSafetyState {
             clearRelayKeyAuthority();
             return;
         }
+        boolean wasOwned = relayKeyAuthority.ownsKeys();
         relayKeyAuthority = new RelayKeyAuthority(
                 phase, minimumIndex, hardMaximumIndex);
+        if (!wasOwned) notifyKeyFilterListener();
     }
 
     static RelayKeyAuthority relayKeyAuthority() {
@@ -102,7 +117,9 @@ final class StrictSafetyState {
     }
 
     static void clearRelayKeyAuthority() {
+        boolean wasOwned = relayKeyAuthority.ownsKeys();
         relayKeyAuthority = RELAY_KEYS_OFF;
+        if (wasOwned) notifyKeyFilterListener();
     }
 
     static synchronized void noteRelayAccessibilityWrite(int index) {

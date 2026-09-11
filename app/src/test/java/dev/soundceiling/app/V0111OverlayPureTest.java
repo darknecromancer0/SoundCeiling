@@ -20,8 +20,8 @@ public final class V0111OverlayPureTest {
         no(panel.shouldDismiss(2_099), "panel remains until its deadline");
         panel.interact(2_000);
         no(panel.shouldDismiss(2_100), "an obsolete timer cannot dismiss a recently used panel");
-        equal(1_900L, panel.dismissDelay(2_100), "timer follows the most recent interaction");
-        yes(panel.shouldDismiss(4_000), "idle panel is dismissible at two seconds");
+        equal(4_900L, panel.dismissDelay(2_100), "timer follows the most recent interaction");
+        yes(panel.shouldDismiss(7_000), "used panel is dismissible after five seconds");
 
         panel = new UserVolumeOverlayPolicy(10_000L);
         panel.show(0);
@@ -33,19 +33,21 @@ public final class V0111OverlayPureTest {
         UserVolumeOverlayPolicy panel = new UserVolumeOverlayPolicy();
         panel.show(0);
         panel.touchStarted();
+        yes(panel.touching(), "geometry is deferred while a finger is held");
         no(panel.shouldDismiss(30_000), "a stationary held finger also prevents dismissal");
         equal(-1L, panel.dismissDelay(30_000), "no timer runs during the gesture");
         panel.interact(30_001);
         panel.show(30_002);
         no(panel.shouldDismiss(60_000), "refreshes and volume keys cannot dismiss an active drag");
         panel.touchFinished(60_000);
-        equal(2_000L, panel.dismissDelay(60_000), "release starts a fresh two seconds");
-        no(panel.shouldDismiss(61_999), "the release deadline is inclusive only at two seconds");
-        yes(panel.shouldDismiss(62_000), "released drag returns to idle dismissal");
+        no(panel.touching(), "release allows pending geometry to be applied");
+        equal(5_000L, panel.dismissDelay(60_000), "release starts a fresh five seconds");
+        no(panel.shouldDismiss(64_999), "the release deadline is inclusive only at five seconds");
+        yes(panel.shouldDismiss(65_000), "released drag returns to idle dismissal");
 
         panel.touchStarted();
         panel.touchFinished(70_000); // ACTION_CANCEL uses the same finish path as ACTION_UP.
-        yes(panel.shouldDismiss(72_000), "cancelled touch cannot leave the panel stuck open");
+        yes(panel.shouldDismiss(75_000), "cancelled touch cannot leave the panel stuck open");
     }
 
     private static void manualDismissalClearsEveryPendingInteraction() {

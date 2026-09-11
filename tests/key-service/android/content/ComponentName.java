@@ -1,0 +1,5 @@
+package android.content;
+public final class ComponentName {
+ public ComponentName(Context c, Class<?> type) {}
+ public ComponentName(String pkg, String name) {}
+}

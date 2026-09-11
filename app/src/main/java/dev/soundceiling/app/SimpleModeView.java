@@ -51,10 +51,6 @@ final class SimpleModeView extends ScrollView implements RuntimeScreen {
         relayCard = new RelayCardView(context, relayListener);
         root.addView(relayCard, spaced());
 
-        Button advanced = button("Расширенный режим");
-        advanced.setOnClickListener(v -> MainActivity.openAdvanced(getContext()));
-        root.addView(advanced, spaced());
-
         LinearLayout experimental = new LinearLayout(context);
         experimental.setOrientation(LinearLayout.VERTICAL);
         experimental.setVisibility(View.GONE);

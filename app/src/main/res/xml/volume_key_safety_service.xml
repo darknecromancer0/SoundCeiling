@@ -4,7 +4,7 @@
     android:packageNames="com.android.systemui"
     android:description="@string/volume_accessibility_description"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:notificationTimeout="100"
-    android:accessibilityFlags="flagRequestFilterKeyEvents|flagEnableAccessibilityVolume"
+    android:notificationTimeout="50"
+    android:accessibilityFlags="flagRequestFilterKeyEvents|flagEnableAccessibilityVolume|flagReportViewIds"
     android:canRequestFilterKeyEvents="true"
-    android:canRetrieveWindowContent="false" />
+    android:canRetrieveWindowContent="true" />

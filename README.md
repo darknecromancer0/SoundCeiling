@@ -1,4 +1,27 @@
-# Sound Ceiling for Android - v0.11.3
+# Sound Ceiling for Android - v0.11.4
+
+The latest Samsung test exposed short-gap up/down reversals, a slower intermediate-transient path,
+oversized fixed-position capsules and unnecessary Accessibility key work after Stop.
+
+- Current-block attack can lower one step immediately; upward recovery waits for a sustained quieter
+  passage using approximately 0.8 seconds of recent attack history. Larger fast reductions remain.
+- Key filtering switches off before Stop cleanup. Idle callbacks avoid AudioManager/preferences,
+  and owned-key panel creation runs after the callback.
+- Smaller capsules align to Samsung volume-node geometry when available, with a compact top-side
+  fallback. The bounded query runs off the main thread and reads only the supplied SystemUI volume
+  event family. Rotation/keyboard no longer determine the panel center.
+- The panel dismisses after two idle seconds, or five seconds after interaction. Outside tap closes
+  immediately. The expanded header fits inside the card; the duplicate Simple Advanced button is gone.
+
+Install-over preserves the own volume, maximum and Advanced profiles. The changed Accessibility
+geometry capability may need a one-time service off/on after updating. These are technical field
+fixes, not a product/monetization release. Ordinary Media still uses integer steps; acoustic latency
+and actual Samsung alignment require the next phone test. Shadow is diagnostic; Relay remains optional.
+
+Evidence, implementation limits and next phone test:
+[v0.11.4 field audit](docs/field-tests/2026-09-11-v0114-reaction-overlay-audit.md).
+
+## v0.11.3 Advanced strength and measurements
 
 Advanced now includes effective **leveling strength (0–100%)** and **Gentle / Balanced / Strict**
 reaction presets. Partial strength preserves a proportion of the original contrast even after the
@@ -29,8 +52,7 @@ switch and projected peak ceiling are directly accessible. Changes apply during 
 
 Reaction presets and named profiles save these five settings without changing desired volume or
 maximum. Old profiles remain available in the compatibility section. PCM Shadow/Relay retain
-their separate controls and current capabilities. Open Advanced from Simple, the navigation menu,
-or the expanded capsule panel. Opening Advanced or installing this update does not change dynamics.
+their separate controls and current capabilities. Open Advanced from the navigation menu or the expanded capsule panel. Opening Advanced or installing this update does not change dynamics.
 
 Details and next phone check: [v0.11.2 Advanced restoration](docs/field-tests/2026-09-11-v0112-advanced-mode.md).
 

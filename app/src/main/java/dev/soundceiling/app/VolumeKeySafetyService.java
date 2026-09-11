@@ -4,6 +4,8 @@ import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.media.AudioManager;
 import android.os.SystemClock;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
@@ -12,6 +14,13 @@ import android.view.accessibility.AccessibilityEvent;
  */
 public final class VolumeKeySafetyService extends AccessibilityService {
     private static volatile VolumeKeySafetyService connectedService;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private final Runnable filterChanged = this::updateKeyFilter;
+    private final Runnable showFromKey = () -> {
+        if (UserVolumeControl.ownsMedia()) showOwnPanel(true);
+    };
+    private SystemVolumePanelProbe panelProbe;
+    private boolean filterArmed;
     private AudioManager audio;
     private UserVolumeOverlay userVolumeOverlay;
     private final UserVolumeUiPolicy userVolumeKeys = new UserVolumeUiPolicy();
@@ -22,29 +31,65 @@ public final class VolumeKeySafetyService extends AccessibilityService {
         if (userVolumeOverlay != null) userVolumeOverlay.hide();
         userVolumeOverlay = new UserVolumeOverlay(this);
         connectedService = this;
+        if (panelProbe != null) panelProbe.close();
+        panelProbe = new SystemVolumePanelProbe(this, bounds -> {
+            if (UserVolumeControl.ownsMedia() && userVolumeOverlay != null) {
+                userVolumeOverlay.setNativeBounds(bounds);
+            }
+        });
         AccessibilityServiceInfo info = getServiceInfo();
         if (info != null) {
-            info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
-                    | AccessibilityServiceInfo.FLAG_ENABLE_ACCESSIBILITY_VOLUME;
+            info.flags |= AccessibilityServiceInfo.FLAG_ENABLE_ACCESSIBILITY_VOLUME
+                    | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
+            info.flags &= ~AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
             info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                     | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
             info.packageNames = new String[] { "com.android.systemui" };
             setServiceInfo(info);
         }
         StrictSafetyState.setAccessibilityConnected(true);
-        AccessibilityServiceInfo effective = getServiceInfo();
-        boolean keyFilterCapable = hasKeyFilterCapability(effective)
-                && effective != null
-                && (effective.flags & AccessibilityServiceInfo
-                        .FLAG_REQUEST_FILTER_KEY_EVENTS) != 0;
+        StrictSafetyState.setKeyFilterListener(() -> {
+            if (Looper.myLooper() == Looper.getMainLooper()) updateKeyFilter();
+            else { main.removeCallbacks(filterChanged); main.post(filterChanged); }
+        });
+        updateKeyFilter();
+        boolean keyFilterCapable = hasKeyFilterCapability(getServiceInfo());
         StrictSafetyState.setKeyFilterCapable(keyFilterCapable);
         DiagnosticLog.event("strict_safety_accessibility",
-                "state=connected keyFilterRequested=true accessibilityVolume=true capability="
+                "state=connected accessibilityVolume=true capability="
                         + keyFilterCapable);
     }
 
+    private void updateKeyFilter() {
+        boolean wanted = StrictSafetyState.keyGateActive();
+        if (!wanted) {
+            main.removeCallbacks(showFromKey);
+            if (panelProbe != null) panelProbe.cancel();
+            if (userVolumeOverlay != null) userVolumeOverlay.hide();
+        }
+        AccessibilityServiceInfo info = getServiceInfo();
+        if (info == null) return;
+        boolean armed = (info.flags & AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0;
+        if (wanted != armed) {
+            if (wanted) {
+                userVolumeKeys.reset();
+                info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
+            } else info.flags &= ~AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
+            setServiceInfo(info);
+        }
+        if (filterArmed != wanted) {
+            filterArmed = wanted;
+            DiagnosticLog.event("volume_key_filter", "active=" + wanted);
+        }
+    }
+
     @Override protected boolean onKeyEvent(KeyEvent event) {
-        if (event == null) return false;
+        if (event == null || (event.getKeyCode() != KeyEvent.KEYCODE_VOLUME_UP
+                && event.getKeyCode() != KeyEvent.KEYCODE_VOLUME_DOWN)) return false;
+        // No AudioManager, preferences or synchronized runtime reads after Stop.
+        if (!StrictSafetyState.keyGateActive()) {
+            return userVolumeKeys.onKey(false, event.getKeyCode(), event.getAction()).consume;
+        }
         StrictSafetyState.noteKeyEvent(SystemClock.elapsedRealtime());
         AudioManager manager = audio;
         if (manager == null) {
@@ -67,7 +112,8 @@ public final class VolumeKeySafetyService extends AccessibilityService {
         if (user.consume) {
             if (user.direction != 0) {
                 UserVolumeControl.step(this, user.direction);
-                showOwnPanel(true);
+                main.removeCallbacks(showFromKey);
+                main.post(showFromKey); // Native/own window creation is outside the key callback.
                 DiagnosticLog.event("user_volume_key", "direction=" + user.direction
                         + " percent=" + UserVolumeControl.percent(this)
                         + " paused=" + UserVolumeControl.paused());
@@ -98,7 +144,7 @@ public final class VolumeKeySafetyService extends AccessibilityService {
                         + error.getClass().getSimpleName());
             }
         }
-        if (userVolumeOverlay != null) userVolumeOverlay.show();
+        if (userVolumeOverlay != null) userVolumeOverlay.show(showNative);
     }
 
     private boolean handleRelayKey(AudioManager manager, KeyEvent event,
@@ -150,11 +196,12 @@ public final class VolumeKeySafetyService extends AccessibilityService {
 
     private boolean handleLegacyKey(AudioManager manager, KeyEvent event) {
 
+        boolean running = StrictSafetyState.engineRunning(this);
+        if (!running) return false;
         int current;
         try { current = manager.getStreamVolume(AudioManager.STREAM_MUSIC); }
         catch (RuntimeException error) { return false; }
         int hardMax = StrictSafetyState.hardMaxIndex(this, manager);
-        boolean running = StrictSafetyState.engineRunning(this);
         boolean consume = VolumeKeySafetyPolicy.shouldConsume(event.getKeyCode(), event.getAction(),
                 running, true, current, hardMax);
         if (consume) {
@@ -199,8 +246,10 @@ public final class VolumeKeySafetyService extends AccessibilityService {
         if (event == null || !UserVolumeControl.ownsMedia()) return;
         if (UserVolumeUiPolicy.isVolumeWindow(event.getEventType(), event.getPackageName(),
                 event.getClassName(), event.getContentDescription(), event.getText())) {
-            // Only supplied event metadata is used; never retrieve a source node or screen tree.
             showOwnPanel(false);
+            // Inspect only this SystemUI volume event on a background worker.
+            // No root from the foreground application or global window enumeration.
+            if (panelProbe != null) panelProbe.inspect(event);
         }
     }
 
@@ -211,7 +260,13 @@ public final class VolumeKeySafetyService extends AccessibilityService {
     }
 
     @Override public void onDestroy() {
-        if (connectedService == this) connectedService = null;
+        if (connectedService == this) {
+            connectedService = null;
+            StrictSafetyState.setKeyFilterListener(null);
+        }
+        main.removeCallbacksAndMessages(null);
+        if (panelProbe != null) panelProbe.close();
+        panelProbe = null;
         if (userVolumeOverlay != null) userVolumeOverlay.hide();
         userVolumeOverlay = null;
         StrictSafetyState.setAccessibilityConnected(false);

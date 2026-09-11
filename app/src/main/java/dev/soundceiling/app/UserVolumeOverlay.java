@@ -3,6 +3,8 @@ package dev.soundceiling.app;
 import android.accessibilityservice.AccessibilityService;
 import android.content.Context;
 import android.graphics.PixelFormat;
+import android.os.Build;
+import android.util.DisplayMetrics;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
@@ -30,6 +32,11 @@ final class UserVolumeOverlay {
     private UserVolumeCapsules capsules;
     private UserVolumeCard expandedCard;
     private WindowManager.LayoutParams windowParams;
+    private UserVolumeOverlayPlacement.Box nativeBounds;
+    private int nativeScreenWidth, nativeScreenHeight;
+    private int placedScreenWidth, placedScreenHeight;
+    private long suppressPassiveUntilMs;
+    private boolean pendingNativePlacement;
     private final Runnable dismiss = this::dismissIfIdle;
     private final Runnable refresh = new Runnable() {
         @Override public void run() {
@@ -50,32 +57,39 @@ final class UserVolumeOverlay {
         policy = new UserVolumeOverlayPolicy(timeout);
     }
 
-    void show() {
-        if (windows == null) return;
+    void show(boolean explicit) {
+        long now = SystemClock.uptimeMillis();
+        if (windows == null || (!explicit && now < suppressPassiveUntilMs)) return;
+        if (explicit) suppressPassiveUntilMs = 0L;
+        boolean alreadyVisible = root != null;
         if (root == null) {
             Context themed = new ContextThemeWrapper(service, UiTheme.isDark(service)
                     ? android.R.style.Theme_Material_NoActionBar
                     : android.R.style.Theme_Material_Light_NoActionBar);
             OverlayRoot next = new OverlayRoot(themed);
-            int compactHeight = Math.min(dp(UserVolumeCapsules.HEIGHT_DP), panelHeightLimit());
+            UserVolumeOverlayPlacement.Box box = placement(false);
+            int compactHeight = box.height();
             capsules = new UserVolumeCapsules(themed, compactHeight, this::onInteraction, this::expand);
             next.addView(capsules, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, compactHeight));
-            windowParams = new WindowManager.LayoutParams(panelWidth(false),
-                    WindowManager.LayoutParams.WRAP_CONTENT,
+            windowParams = new WindowManager.LayoutParams(box.width(), box.height(),
                     WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                             | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                            | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                            | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT);
-            windowParams.gravity = Gravity.RIGHT | Gravity.CENTER_VERTICAL;
-            windowParams.x = dp(88);
+            windowParams.gravity = Gravity.TOP | Gravity.LEFT;
+            windowParams.x = box.left;
+            windowParams.y = box.top;
+            windowParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
+            if (Build.VERSION.SDK_INT >= 30) windowParams.setFitInsetsTypes(0);
             windowParams.setTitle("SoundCeiling volume");
             try {
                 windows.addView(next, windowParams);
                 root = next;
                 main.post(refresh);
-                DiagnosticLog.event("user_volume_overlay", "state=shown presentation=capsules");
+                DiagnosticLog.event("user_volume_overlay", "state=shown presentation=capsules bounds=" + box);
             } catch (RuntimeException error) {
                 capsules = null;
                 windowParams = null;
@@ -85,14 +99,34 @@ final class UserVolumeOverlay {
             }
         }
         refreshControls();
-        policy.show(SystemClock.uptimeMillis());
+        policy.show(now);
+        if (alreadyVisible && explicit) policy.interact(now);
         scheduleDismiss();
+    }
+
+    void setNativeBounds(UserVolumeOverlayPlacement.Box bounds) {
+        if (bounds == null) return;
+        DisplayMetrics metrics = screenMetrics();
+        if (!UserVolumeOverlayPlacement.validNative(metrics.widthPixels, metrics.heightPixels,
+                metrics.density, bounds)) return;
+        nativeBounds = bounds;
+        nativeScreenWidth = metrics.widthPixels;
+        nativeScreenHeight = metrics.heightPixels;
+        // A late native query must not move a slider under a stationary finger.
+        pendingNativePlacement = policy.touching();
+        if (!pendingNativePlacement) updatePlacement(); // Does not reset the idle timer.
+    }
+
+    private void dismissByUser() {
+        suppressPassiveUntilMs = SystemClock.uptimeMillis() + 2_000L;
+        hide();
     }
 
     void hide() {
         main.removeCallbacks(dismiss);
         main.removeCallbacks(refresh);
         policy.hide();
+        pendingNativePlacement = false;
         OverlayRoot current = root;
         root = null;
         capsules = null;
@@ -109,58 +143,73 @@ final class UserVolumeOverlay {
         Context context = root.getContext();
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), dp(12), dp(12), dp(12));
+        content.setClipToOutline(true);
         GradientDrawable background = new GradientDrawable();
         background.setColor(UiTheme.surface(context));
         background.setCornerRadius(dp(20));
         background.setStroke(dp(1), UiTheme.meterGrid(context));
         content.setBackground(background);
 
-        FrameLayout header = new FrameLayout(context);
+        LinearLayout header = new LinearLayout(context);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
         android.widget.Button advanced = new android.widget.Button(context);
         advanced.setAllCaps(false);
         advanced.setText("Расширенный режим");
         advanced.setTextSize(14);
+        advanced.setGravity(Gravity.CENTER);
+        advanced.setMinWidth(0);
+        advanced.setMinimumWidth(0);
+        advanced.setMaxLines(2);
+        advanced.setPadding(dp(8), 0, dp(8), 0);
         advanced.setOnClickListener(v -> {
             try { MainActivity.openAdvanced(context); hide(); }
             catch (RuntimeException error) {
                 android.widget.Toast.makeText(context, "Откройте расширенный режим в SoundCeiling", android.widget.Toast.LENGTH_SHORT).show();
             }
         });
-        FrameLayout.LayoutParams advancedParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
-        advancedParams.rightMargin = dp(52);
+        LinearLayout.LayoutParams advancedParams = new LinearLayout.LayoutParams(0, dp(56), 1f);
+        advancedParams.rightMargin = dp(4);
         header.addView(advanced, advancedParams);
         UserVolumeCapsules.IconButton close = new UserVolumeCapsules.IconButton(context, true);
         close.setContentDescription("Закрыть ползунок SoundCeiling");
-        close.setOnClickListener(v -> hide());
-        header.addView(close, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.RIGHT));
+        close.setOnClickListener(v -> dismissByUser());
+        header.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
         content.addView(header, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
 
         expandedCard = new UserVolumeCard(context, true, dragging -> onInteraction());
+        expandedCard.setBackground(null);
+        expandedCard.setElevation(0);
+        expandedCard.setPadding(dp(4), dp(8), dp(4), 0);
         ensureReadableText(expandedCard);
         ScrollView scroll = new ScrollView(context);
         scroll.setFillViewport(false);
         scroll.addView(expandedCard, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         content.addView(scroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         root.removeAllViews();
         capsules = null;
         root.addView(content, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        windowParams.width = panelWidth(true);
-        try {
-            windows.updateViewLayout(root, windowParams);
-            DiagnosticLog.event("user_volume_overlay", "state=expanded");
-        } catch (RuntimeException error) {
-            hide();
-            return;
-        }
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        updatePlacement();
+        DiagnosticLog.event("user_volume_overlay", "state=expanded");
         onInteraction();
     }
 
     private void refreshControls() {
+        DisplayMetrics metrics = screenMetrics();
+        if (root != null && (placedScreenWidth != metrics.widthPixels
+                || placedScreenHeight != metrics.heightPixels)) {
+            if (policy.touching()) {
+                long now = SystemClock.uptimeMillis();
+                MotionEvent cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0);
+                try { root.dispatchTouchEvent(cancel); } finally { cancel.recycle(); }
+            }
+            updatePlacement();
+        }
         if (capsules != null) capsules.refresh();
         if (expandedCard != null) expandedCard.refresh();
     }
@@ -181,13 +230,39 @@ final class UserVolumeOverlay {
         if (root != null && delay >= 0L) main.postDelayed(dismiss, delay);
     }
 
-    private int panelWidth(boolean expanded) {
-        int available = service.getResources().getDisplayMetrics().widthPixels - dp(88) - dp(12);
-        return Math.max(dp(64), Math.min(dp(expanded ? 320 : UserVolumeCapsules.WIDTH_DP), available));
+    private DisplayMetrics screenMetrics() {
+        DisplayMetrics metrics = new DisplayMetrics();
+        metrics.setTo(service.getResources().getDisplayMetrics());
+        if (windows != null) windows.getDefaultDisplay().getRealMetrics(metrics);
+        return metrics;
     }
 
-    private int panelHeightLimit() {
-        return Math.max(dp(160), service.getResources().getDisplayMetrics().heightPixels - dp(64));
+    private UserVolumeOverlayPlacement.Box placement(boolean expanded) {
+        DisplayMetrics metrics = screenMetrics();
+        placedScreenWidth = metrics.widthPixels;
+        placedScreenHeight = metrics.heightPixels;
+        if (nativeScreenWidth != metrics.widthPixels || nativeScreenHeight != metrics.heightPixels) {
+            nativeBounds = null;
+        }
+        return expanded ? UserVolumeOverlayPlacement.expanded(metrics.widthPixels,
+                metrics.heightPixels, metrics.density, nativeBounds)
+                : UserVolumeOverlayPlacement.compact(metrics.widthPixels,
+                        metrics.heightPixels, metrics.density, nativeBounds);
+    }
+
+    private void updatePlacement() {
+        if (root == null || windowParams == null) return;
+        UserVolumeOverlayPlacement.Box box = placement(expandedCard != null);
+        windowParams.x = box.left; windowParams.y = box.top;
+        windowParams.width = box.width(); windowParams.height = box.height();
+        if (capsules != null) {
+            capsules.setHeight(box.height());
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) capsules.getLayoutParams();
+            params.height = box.height();
+            capsules.setLayoutParams(params);
+        }
+        try { windows.updateViewLayout(root, windowParams); }
+        catch (RuntimeException error) { hide(); }
     }
 
     private void ensureReadableText(View view) {
@@ -208,7 +283,7 @@ final class UserVolumeOverlay {
         @Override public boolean dispatchTouchEvent(MotionEvent event) {
             int action = event.getActionMasked();
             if (action == MotionEvent.ACTION_OUTSIDE) {
-                if (policy.outsideTouch()) hide();
+                if (policy.outsideTouch()) dismissByUser();
                 // The window is not touch-modal: Android still delivers the tap to the app below.
                 return false;
             }
@@ -219,17 +294,16 @@ final class UserVolumeOverlay {
             boolean handled = super.dispatchTouchEvent(event);
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                 policy.touchFinished(SystemClock.uptimeMillis());
+                if (pendingNativePlacement) {
+                    pendingNativePlacement = false;
+                    updatePlacement();
+                }
                 scheduleDismiss();
             }
             return handled;
         }
 
-        @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            int supplied = MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED
-                    ? panelHeightLimit() : MeasureSpec.getSize(heightMeasureSpec);
-            super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(
-                    Math.min(supplied, panelHeightLimit()), MeasureSpec.AT_MOST));
-        }
+
     }
 
     private int dp(int value) {

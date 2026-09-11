@@ -30,6 +30,9 @@ final class UserVolumeUiPolicy {
                 ownsMedia && action == 0 ? (keyCode == 24 ? 1 : -1) : 0);
     }
 
+    boolean hasHeldKeys() { return upHeld || downHeld; }
+    void reset() { upHeld = false; downHeld = false; }
+
     static boolean isVolumeWindow(int type, CharSequence packageName,
             CharSequence className, CharSequence description,
             List<? extends CharSequence> text) {
