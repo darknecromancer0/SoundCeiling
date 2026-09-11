@@ -129,6 +129,7 @@ final class Prefs {
             put(editor, entry.getKey(), entry.getValue());
         }
         editor.apply();
+        IndependentVolumePrefs.reset(c);
     }
 
     static NormalizationPreset normalizationPreset(Context c) {

@@ -24,6 +24,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 public class MainActivity extends Activity implements RelayCardView.Listener {
 private static final int REQ_NOTIFICATIONS = 102;
+private static final String ACTION_ADVANCED = "dev.soundceiling.app.OPEN_ADVANCED";
 private static final String STATE_PENDING_RELAY_PROJECTION =
 "pending_relay_projection";
 private final Handler handler = new Handler(Looper.getMainLooper());
@@ -78,8 +79,22 @@ measurementCurve = new MeasurementVolumeCurve(audio);
 toneController = new ToneController(this);
 setVolumeControlStream(AudioManager.STREAM_MUSIC);
 setContentView(buildShell());
-navigate(AppDestination.fromPreference(Prefs.uiMode(this)));
+navigate(ACTION_ADVANCED.equals(getIntent().getAction()) ? AppDestination.ADVANCED
+        : AppDestination.fromPreference(Prefs.uiMode(this)));
+if (ACTION_ADVANCED.equals(getIntent().getAction())) getIntent().setAction(null);
 maybeRequestNotificationPermission();
+}
+static void openAdvanced(Context context) {
+context.startActivity(new Intent(context, MainActivity.class).setAction(ACTION_ADVANCED)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+}
+@Override protected void onNewIntent(Intent intent) {
+super.onNewIntent(intent);
+setIntent(intent);
+if (ACTION_ADVANCED.equals(intent.getAction())) {
+navigate(AppDestination.ADVANCED);
+intent.setAction(null);
+}
 }
 private View buildShell() {
 LinearLayout main = new LinearLayout(this);

@@ -116,6 +116,20 @@ final class UserVolumeOverlay {
         content.setBackground(background);
 
         FrameLayout header = new FrameLayout(context);
+        android.widget.Button advanced = new android.widget.Button(context);
+        advanced.setAllCaps(false);
+        advanced.setText("Расширенный режим");
+        advanced.setTextSize(14);
+        advanced.setOnClickListener(v -> {
+            try { MainActivity.openAdvanced(context); hide(); }
+            catch (RuntimeException error) {
+                android.widget.Toast.makeText(context, "Откройте расширенный режим в SoundCeiling", android.widget.Toast.LENGTH_SHORT).show();
+            }
+        });
+        FrameLayout.LayoutParams advancedParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
+        advancedParams.rightMargin = dp(52);
+        header.addView(advanced, advancedParams);
         UserVolumeCapsules.IconButton close = new UserVolumeCapsules.IconButton(context, true);
         close.setContentDescription("Закрыть ползунок SoundCeiling");
         close.setOnClickListener(v -> hide());

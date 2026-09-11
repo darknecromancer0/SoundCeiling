@@ -37,6 +37,7 @@ javac -Xlint:all -Werror -d "$OUT" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/CoarseMediaFallbackController.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/ProgramActivityGate.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/TransientGuard.java" \
+  "$ROOT/app/src/main/java/dev/soundceiling/app/IndependentVolumeSettings.java" \
   "$ROOT/app/src/main/java/dev/soundceiling/app/IndependentMediaController.java" \
  "$ROOT/app/src/main/java/dev/soundceiling/app/NormalizerControlCoordinator.java" \
   "$ROOT/app/src/test/java/dev/soundceiling/app/V0771SessionAuthorityBridgePureTest.java"

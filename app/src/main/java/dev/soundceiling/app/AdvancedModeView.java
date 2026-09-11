@@ -36,6 +36,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private final Button startStop;
     private final StatusCardView statusCard;
     private final UserVolumeCard userVolumeCard;
+    private final IndependentVolumeSettingsCard dynamicsCard;
     private final RelayCardView relayCard;
     private final FrequencyMeterView frequencyMeter;
     private final SeekBar lowerOutput, upperOutput, minMedia, maxMedia, safetyPercent, quietIndex, peakThreshold,
@@ -74,6 +75,17 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         startStop.setOnClickListener(v -> listener.onStartStop());
         root.addView(startStop, fullButton());
 
+        dynamicsCard = new IndependentVolumeSettingsCard(context, () -> {
+            markCustomProfile();
+            refreshControlsFromPrefs();
+        });
+        root.addView(dynamicsCard);
+        section("Пиковый потолок");
+        root.addView(secondary("Ограничение расчётного цифрового пика. Это dBFS, а не измеренная громкость в комнате.", 13));
+        peakThreshold = addSlider("Projected peak ceiling", HelpText.SOURCE_PEAK, 0, 12,
+                Math.round(Prefs.sourcePeakThreshold(context) + 12f),
+                p -> String.format(Locale.US, "%.1f dBFS", -12f + p), p -> edit(Prefs.SOURCE_PEAK_THRESHOLD, -12f + p));
+
         relayCard = new RelayCardView(context, relayListener);
         LinearLayout.LayoutParams relayLp = new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
@@ -85,12 +97,12 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         sessionDspSetupStatus.setPadding(0, dp(8), 0, dp(6));
         root.addView(sessionDspSetupStatus);
 
-        int legacyStart = root.getChildCount();
-        section("PCM feasibility");
+        section("PCM Shadow");
         globalDsp = addSwitch("PCM Shadow (без звука)", HelpText.GLOBAL_DSP,
                 Prefs.globalDspEnabled(context),
                 v -> Prefs.setGlobalDspEnabled(getContext(), v));
         globalDspStatus = secondary("", 13); globalDspStatus.setPadding(0, 0, 0, dp(6)); root.addView(globalDspStatus);
+        int legacyStart = root.getChildCount();
         linkedLock = addSwitch("Default Linked Lock", HelpText.DEFAULT_LINKED_LOCK,
                 Prefs.defaultLinkedLock(context), value -> {
                     Prefs.saveOutputCeilings(getContext(), Prefs.outputCeilings(getContext()).withLinked(value));
@@ -164,9 +176,6 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                 p -> editBound(Prefs.QUIET_INDEX, MediaLevelScale.indexForPercent(p, streamMin, streamMax)));
 
         section("Peak и transient protection");
-        peakThreshold = addSlider("Projected peak ceiling", HelpText.SOURCE_PEAK, 0, 12,
-                Math.round(Prefs.sourcePeakThreshold(context) + 12f),
-                p -> String.format(Locale.US, "%.1f dBFS", -12f + p), p -> edit(Prefs.SOURCE_PEAK_THRESHOLD, -12f + p));
         transientWarning = addSlider("Transient warning", HelpText.TRANSIENT_WARNING, 0, 12,
                 Math.round(Prefs.transientWarning(context)), p -> p + " dB", p -> edit(Prefs.TRANSIENT_WARNING, (float) p));
         transientEmergency = addSlider("Transient emergency", HelpText.TRANSIENT_EMERGENCY, 0, 18,
@@ -246,18 +255,18 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         LinearLayout legacy = new LinearLayout(getContext());
         legacy.setOrientation(LinearLayout.VERTICAL);
         legacy.setVisibility(View.GONE);
-        legacy.addView(secondary("Дополнительные параметры PCM Shadow/Relay и прежнего управления. Новая обычная громкость и её максимум находятся в верхней карточке SoundCeiling.", 13));
+        legacy.addView(secondary("Дополнительные параметры PCM Shadow/Relay и старые сохранённые настройки. Время реакции обычной автогромкости регулируется в верхнем блоке «Настройка автогромкости».", 13));
         for (int i = 0; i < count; i++) {
             View child = root.getChildAt(start);
             root.removeViewAt(start);
             legacy.addView(child);
         }
-        Button expand = button("Показать дополнительные и прежние настройки");
+        Button expand = button("Параметры PCM Shadow / Relay и совместимость");
         expand.setOnClickListener(v -> {
             boolean visible = legacy.getVisibility() != View.VISIBLE;
             legacy.setVisibility(visible ? View.VISIBLE : View.GONE);
-            expand.setText(visible ? "Скрыть дополнительные и прежние настройки"
-                    : "Показать дополнительные и прежние настройки");
+            expand.setText(visible ? "Скрыть параметры PCM Shadow / Relay"
+                    : "Параметры PCM Shadow / Relay и совместимость");
         });
         root.addView(expand, start, fullButton());
         root.addView(legacy, start + 1, new LinearLayout.LayoutParams(
@@ -281,7 +290,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
 
     @Override public void render(RuntimeState state) {
         if (state != null) runtime = state;
-        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); userVolumeCard.refresh(); relayCard.render(runtime); frequencyMeter.renderState(runtime);
+        startStop.setText(runtime.running ? "Остановить" : "Запустить"); statusCard.render(runtime); userVolumeCard.refresh(); dynamicsCard.refresh(); relayCard.render(runtime); frequencyMeter.renderState(runtime);
         refreshEnhancedSessionSetup();
         refreshStrictSafety();
         refreshSharedOutputControls();

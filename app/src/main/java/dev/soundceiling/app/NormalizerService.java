@@ -1231,13 +1231,16 @@ public class NormalizerService extends Service {
             float target = userVolumeTarget.targetDb(controlCurve, desired);
             frame.independentUserVolume(target, desired == 0);
             frame.independentAttackLoudnessDb(attackLoudnessDb);
+            IndependentVolumeSettings dynamics = IndependentVolumePrefs.current(this);
+            frame.independentDynamics(dynamics);
             if (now - lastUserVolumeTargetLog >= 1000L) {
                 lastUserVolumeTargetLog = now;
                 DiagnosticLog.event("user_volume_target", "desiredPercent=" + desired
                         + " maximum=" + UserVolumeControl.maximumPercent(this)
                         + " referenceDb=" + userVolumeTarget.referenceDb() + " targetDb=" + target
                         + " physical=" + current + " sourceDb=" + source
-                        + " ready=" + userVolumeTarget.ready() + " estimate=public_pcm_source");
+                        + " ready=" + userVolumeTarget.ready() + " estimate=public_pcm_source"
+                        + " dynamics=" + dynamics.encode());
             }
         }
         return frame.build();

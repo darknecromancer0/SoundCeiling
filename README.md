@@ -1,4 +1,18 @@
-# Sound Ceiling for Android - v0.11.1
+# Sound Ceiling for Android - v0.11.2
+
+Advanced mode again exposes useful controls for the current independent-volume architecture:
+ordinary down dwell, one-step recovery dwell, hold after a loud reduction, tolerance and fast-attack
+threshold. Defaults preserve v0.11.1 exactly (40 / 150 / 300 ms, 1.5 / 6 dB). The normalization
+switch and projected peak ceiling are directly accessible. Changes apply during ordinary playback.
+
+Reaction presets and named profiles save these five settings without changing desired volume or
+maximum. Old profiles remain available in the compatibility section. PCM Shadow/Relay retain
+their separate controls and current capabilities. Open Advanced from Simple, the navigation menu,
+or the expanded capsule panel. Opening Advanced or installing this update does not change dynamics.
+
+Details and next phone check: [v0.11.2 Advanced restoration](docs/field-tests/2026-09-11-v0112-advanced-mode.md).
+
+## v0.11.1 reaction and compact controls
 
 The first v0.11 Samsung listening report confirms the independent-slider approach works.
 v0.11.1 retains that model and addresses delayed loud attacks and the oversized overlay.

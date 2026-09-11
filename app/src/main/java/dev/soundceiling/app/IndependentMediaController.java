@@ -25,6 +25,14 @@ final class IndependentMediaController {
     Decision update(long now, int current, int maximum, float target,
             float loudness, float peak, ControlVolumeCurve curve, boolean active,
             boolean allowRaise, float peakCeiling, float attackLoudness) {
+        return update(now, current, maximum, target, loudness, peak, curve, active,
+                allowRaise, peakCeiling, attackLoudness, IndependentVolumeSettings.DEFAULT);
+    }
+
+    Decision update(long now, int current, int maximum, float target,
+            float loudness, float peak, ControlVolumeCurve curve, boolean active,
+            boolean allowRaise, float peakCeiling, float attackLoudness, IndependentVolumeSettings settings) {
+        if (settings == null) settings = IndependentVolumeSettings.DEFAULT;
         if (!Float.isFinite(target)) return hold(current, "user_volume_learning");
         if (Float.compare(previousTarget, target) != 0) reset();
         previousTarget = target;
@@ -36,7 +44,7 @@ final class IndependentMediaController {
         float currentError = Math.abs(output - target);
         boolean peakViolation = peak + curve.gainDbForIndex(current) > peakCeiling;
         float attack = Float.isFinite(attackLoudness) ? Math.max(loudness, attackLoudness) : loudness;
-        if (attack + curve.gainDbForIndex(current) - target >= 6f || peakViolation) {
+        if (attack + curve.gainDbForIndex(current) - target >= settings.fastThresholdDb || peakViolation) {
             int best = current;
             float error = peakViolation ? Float.POSITIVE_INFINITY
                     : Math.abs(attack + curve.gainDbForIndex(current) - target);
@@ -48,11 +56,11 @@ final class IndependentMediaController {
             if (peakViolation && best == current) best = curve.minIndex() + 1;
             if (best < current) {
                 clearDwell();
-                raiseNotBeforeMs = now + 300L;
+                raiseNotBeforeMs = now + settings.holdMs;
                 return new Decision(best, true, "user_volume_fast_down");
             }
         }
-        if (currentError <= 1.5f && !peakViolation) return hold(current, "user_volume_at_target");
+        if (currentError <= settings.toleranceDb && !peakViolation) return hold(current, "user_volume_at_target");
         int wantedDirection = output > target || peakViolation ? -1 : 1;
         int next = current + wantedDirection;
         if (next <= curve.minIndex()) return hold(current, "user_volume_lowest_step");
@@ -71,7 +79,7 @@ final class IndependentMediaController {
         if (direction != wantedDirection || since < 0L) {
             direction = wantedDirection; since = now;
         }
-        long dwell = wantedDirection < 0 ? 40L : 150L;
+        long dwell = wantedDirection < 0 ? settings.downwardMs : settings.upwardMs;
         if (now - since < dwell) return new Decision(current, false,
                 wantedDirection < 0 ? "user_volume_down_dwell" : "user_volume_up_dwell");
         clearDwell();

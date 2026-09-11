@@ -50,6 +50,7 @@ public final class NormalizerControlCoordinator {
         private final boolean independentUserVolume;
         private final float userVolumeTargetDb;
         private final float independentAttackLoudnessDb;
+        private final IndependentVolumeSettings independentDynamics;
         private final boolean userVolumeMuted;
 
         private Frame(Builder b) {
@@ -97,6 +98,7 @@ public final class NormalizerControlCoordinator {
             independentUserVolume = b.independentUserVolume;
             userVolumeTargetDb = b.userVolumeTargetDb;
             independentAttackLoudnessDb = b.independentAttackLoudnessDb;
+            independentDynamics = b.independentDynamics;
             userVolumeMuted = b.userVolumeMuted;
         }
 
@@ -138,6 +140,7 @@ public final class NormalizerControlCoordinator {
             private boolean independentUserVolume;
             private float userVolumeTargetDb = Float.NaN;
             private float independentAttackLoudnessDb = Float.NaN;
+            private IndependentVolumeSettings independentDynamics = IndependentVolumeSettings.DEFAULT;
             private boolean userVolumeMuted;
 
             public Builder(long atMs, int previousMediaIndex, int currentMediaIndex,
@@ -198,6 +201,10 @@ public final class NormalizerControlCoordinator {
             }
             public Builder independentAttackLoudnessDb(float value) {
                 independentAttackLoudnessDb = value; return this;
+            }
+            public Builder independentDynamics(IndependentVolumeSettings value) {
+                independentDynamics = value == null ? IndependentVolumeSettings.DEFAULT : value;
+                return this;
             }
             public Frame build() { return new Frame(this); }
         }
@@ -373,7 +380,7 @@ public final class NormalizerControlCoordinator {
                     frame.routeCurve,
                     programActive && frame.rawProgramActive && frame.playbackEndpointActive,
                     allowsPositiveControl(frame), frame.hardPeakCeilingDbfs,
-                    frame.independentAttackLoudnessDb);
+                    frame.independentAttackLoudnessDb, frame.independentDynamics);
             return record(decision.shouldWrite ? ControlCommand.mediaIndex(decision.requestedIndex,
                             decision.reason, ControlCommand.Provenance.AUTO_MEDIA)
                     : ControlCommand.none(decision.reason), correction, frame, programActive,
