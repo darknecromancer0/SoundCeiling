@@ -18,7 +18,10 @@ final class UserVolumeActionApplier {
     int apply(int nominal, boolean lower, boolean resume, long now) {
         int current = applier.readIndex();
         if (!authority.running()) return current;
-        if (lower || nominal == 0) {
+        // Own slider callbacks change a continuous target. Only a hardware Down
+        // applies an immediate whole Media step; repeating that for each percent
+        // caused the recorded 1->0->1 mute/unmute cycle.
+        if ((lower && !resume) || nominal == 0) {
             authority.pause("media_auto_paused_user_down");
             int target = nominal == 0 ? 0 : Math.max(0, current - 1);
             current = safe.applyRequested(target, current, physical, physical.hardMax(), true,
@@ -26,7 +29,7 @@ final class UserVolumeActionApplier {
         }
         if (resume) {
             authority.resumeByUser();
-            if (current == 0 && nominal > 0) {
+            if (current == 0 && nominal > 0 && !lower) {
                 current = safe.applyRecovery(1, current, physical, physical.hardMax(),
                         physical.hardMax(), now);
             }

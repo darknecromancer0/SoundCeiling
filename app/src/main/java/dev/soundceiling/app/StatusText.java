@@ -24,7 +24,8 @@ final class StatusText {
         if (s.lastControllerReason.startsWith("user_volume_")) {
             return switch (s.lastControllerReason) {
                 case "user_volume_learning" -> "Запоминает начальную громкость · 1–2 сек";
-                case "user_volume_loud_down", "user_volume_down_dwell" -> "Снижает громкий фрагмент";
+                case "user_volume_loud_down", "user_volume_down_dwell", "user_volume_fast_down" -> "Снижает громкий фрагмент";
+                case "user_volume_attack_hold" -> "Удерживает уровень после громкого звука";
                 case "user_volume_quiet_up", "user_volume_up_dwell" -> "Повышает тихий фрагмент";
                 case "user_volume_at_target" -> "Громкость близка к выбранной";
                 case "user_volume_nearest_step" -> "Ближайшая ступень Samsung к выбранной громкости";

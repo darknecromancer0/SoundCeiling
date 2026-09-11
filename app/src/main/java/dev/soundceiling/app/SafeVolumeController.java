@@ -19,6 +19,13 @@ final class SafeVolumeController {
                 VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN);
     }
 
+    /** Independent downward attack; retains the same last-read and user-pause boundary. */
+    int applyFastReduction(int requestedIndex, int currentIndex, SafetySettings settings,
+                           int effectiveMax, long nowMs) {
+        return applyRequested(Math.max(1, requestedIndex), currentIndex, settings, effectiveMax,
+                false, nowMs, VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN, true);
+    }
+
     int applyRequested(int requestedIndex, int currentIndex, SafetySettings settings,
                        int effectiveMax, boolean allowBelowMinimum, long nowMs) {
         return applyRequested(requestedIndex, currentIndex, settings, effectiveMax,
@@ -28,6 +35,13 @@ final class SafeVolumeController {
     int applyRequested(int requestedIndex, int currentIndex, SafetySettings settings,
                        int effectiveMax, boolean allowBelowMinimum, long nowMs,
                        VolumeWriteTracker.WriteOrigin origin) {
+        return applyRequested(requestedIndex, currentIndex, settings, effectiveMax,
+                allowBelowMinimum, nowMs, origin, false);
+    }
+
+    private int applyRequested(int requestedIndex, int currentIndex, SafetySettings settings,
+                       int effectiveMax, boolean allowBelowMinimum, long nowMs,
+                       VolumeWriteTracker.WriteOrigin origin, boolean fastReduction) {
         int current = Math.max(0, currentIndex);
         boolean quietCommand = origin == VolumeWriteTracker.WriteOrigin.QUIET_NOW;
         VolumeWriteTracker.WriteOrigin actualOrigin = quietCommand
@@ -39,7 +53,7 @@ final class SafeVolumeController {
                 : requestedIndex;
         int guarded = SafetyGuard.clampAutomatic(
                 Math.min(current, requested), current, settings, effectiveMax, allowBelowMinimum);
-        if (actualOrigin == VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN) {
+        if (actualOrigin == VolumeWriteTracker.WriteOrigin.NORMALIZER_DOWN && !fastReduction) {
             guarded = Math.min(Math.min(settings.hardMax(), Math.max(0, effectiveMax)),
                     Math.max(current - 1, guarded));
         }

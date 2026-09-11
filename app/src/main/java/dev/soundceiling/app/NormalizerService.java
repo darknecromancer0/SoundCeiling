@@ -797,7 +797,7 @@ public class NormalizerService extends Service {
                     : controlCurve.capIndexFromPercent(hybridSnapshot.policy.maxMediaPercent);
             ControlCommand command = coordinateFrame(now, current, levels,
                     signal, hybridSnapshot.policy, effectiveProfile, hybridSnapshot.sources.confidence,
-                    hybridSnapshot.playback, blockRms, signal);
+                    hybridSnapshot.playback, blockRms, signal, loud.momentaryDbfs);
             command = respectMediaPause(command);
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
@@ -821,12 +821,13 @@ public class NormalizerService extends Service {
 
             if (command.kind() == ControlCommand.Kind.MEDIA_INDEX && applied != current) {
                 DiagnosticLog.event("hybrid_control_write", String.format(Locale.US,
-                        "reason=%s actuator=%s current=%d requested=%d applied=%d min=%d max=%d hardMax=%d rawPeak=%.2f projectedPeak=%.2f controlLoudness=%.2f latencyMs=%d source=%s pcm=%s confidence=%s",
+                        "reason=%s actuator=%s current=%d requested=%d applied=%d min=%d max=%d hardMax=%d rawPeak=%.2f projectedPeak=%.2f controlLoudness=%.2f latencyMs=%d source=%s pcm=%s confidence=%s attackLoudness=%.2f captureToWriteMs=%d",
                         reason, command.kind(), current, command.mediaIndex(), applied,
                         safetySettings.minIndex, safetySettings.maxIndex, safetySettings.hardMax(),
                         blockPeak, levels.projectedOutputPeakDbfs, loud.controlLoudnessDb, reactionLatency,
                         sourceSummary(hybridSnapshot), hybridSnapshot.pcmState,
-                        hybridSnapshot.sources.confidence));
+                        hybridSnapshot.sources.confidence, loud.momentaryDbfs,
+                        capturedBlockAgeMs(readingCapture)));
             }
 
             float estRms = Float.NaN;
@@ -1013,7 +1014,7 @@ public class NormalizerService extends Service {
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.fallbackMaxPercent);
             ControlCommand command = coordinateFrame(detectedAt, current, levels,
                     signal, hybridSnapshot.policy, effectiveProfile, hybridSnapshot.sources.confidence,
-                    hybridSnapshot.playback, fallbackRms, reading.levelAvailable);
+                    hybridSnapshot.playback, fallbackRms, reading.levelAvailable, Float.NaN);
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
@@ -1154,11 +1155,19 @@ public class NormalizerService extends Service {
     private ControlCommand coordinateFrame(long now, int current, OutputLevelModel.Snapshot levels,
             boolean rawProgramActive, EffectivePolicy policy, ControlProfile profile,
             EngineCapabilities.SourceIdentityConfidence sourceEvidence, PlaybackSnapshot playback,
-            float transientSignalDb, boolean transientEvidence) {
+            float transientSignalDb, boolean transientEvidence, float attackLoudnessDb) {
         return sessionGate.callIfCurrent(currentSessionToken(),
                 () -> controlCoordinator.onFrame(controlFrame(now, current, levels, rawProgramActive,
-                        policy, profile, sourceEvidence, playback, transientSignalDb, transientEvidence)),
+                        policy, profile, sourceEvidence, playback, transientSignalDb, transientEvidence,
+                        attackLoudnessDb)),
                 ControlCommand.none("session_stopped"));
+    }
+
+    private long capturedBlockAgeMs(PcmCaptureBackend capture) {
+        if (capture == null) return -1L;
+        PcmCaptureBackend.CaptureTimestamp stamp = capture.latestTimestamp();
+        long ageNs = System.nanoTime() - stamp.nanoTime;
+        return stamp.valid && ageNs >= 0L ? ageNs / 1_000_000L : -1L;
     }
 
     private NormalizerControlCoordinator.Frame controlFrame(long now, int current,
@@ -1169,7 +1178,8 @@ public class NormalizerService extends Service {
                                                               EngineCapabilities.SourceIdentityConfidence sourceEvidence,
                                                               PlaybackSnapshot playback,
                                                               float transientSignalDb,
-                                                              boolean transientEvidence) {
+                                                              boolean transientEvidence,
+                                                              float attackLoudnessDb) {
         VolumeWriteTracker.Observation observed = lastVolumeObservation;
         int previous = observed == null ? current : observed.previousIndex;
         OutputLevelModel.Snapshot actualLevels = levels == null
@@ -1220,6 +1230,7 @@ public class NormalizerService extends Service {
             int desired = UserVolumeControl.percent(this);
             float target = userVolumeTarget.targetDb(controlCurve, desired);
             frame.independentUserVolume(target, desired == 0);
+            frame.independentAttackLoudnessDb(attackLoudnessDb);
             if (now - lastUserVolumeTargetLog >= 1000L) {
                 lastUserVolumeTargetLog = now;
                 DiagnosticLog.event("user_volume_target", "desiredPercent=" + desired
@@ -1318,6 +1329,9 @@ public class NormalizerService extends Service {
                 autoMuteEnabled, safetyCommand);
         SafetySettings writeSettings = safetyCommand ? settings : ordinaryFallbackSettings(settings,
                 command.provenance() == ControlCommand.Provenance.AUTO_MEDIA, autoMuteEnabled);
+        if (UserVolumeControl.ownsMedia() && command.provenance() == ControlCommand.Provenance.AUTO_MEDIA) {
+            return safeVolume.applyFastReduction(target, current, writeSettings, effectiveMax, now);
+        }
         int applied = safeVolume.applyRequested(target, current, writeSettings, effectiveMax,
                 allowBelowMinimum, now, origin);
         if (applied != current && command.provenance() == ControlCommand.Provenance.COARSE_MEDIA) {

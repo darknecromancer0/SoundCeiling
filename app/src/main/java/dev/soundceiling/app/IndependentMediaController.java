@@ -1,6 +1,6 @@
 package dev.soundceiling.app;
 
-/** Source estimate + independent desired output -> one adjacent Media actuator step. */
+/** Independent target with immediate downward attack and gradual one-step recovery. */
 final class IndependentMediaController {
     static final class Decision {
         final int requestedIndex;
@@ -13,10 +13,18 @@ final class IndependentMediaController {
     private int direction;
     private long since = -1L;
     private float previousTarget = Float.NaN;
+    private long raiseNotBeforeMs;
 
     Decision update(long now, int current, int maximum, float target,
             float loudness, float peak,
             ControlVolumeCurve curve, boolean active, boolean allowRaise, float peakCeiling) {
+        return update(now, current, maximum, target, loudness, peak, curve,
+                active, allowRaise, peakCeiling, Float.NaN);
+    }
+
+    Decision update(long now, int current, int maximum, float target,
+            float loudness, float peak, ControlVolumeCurve curve, boolean active,
+            boolean allowRaise, float peakCeiling, float attackLoudness) {
         if (!Float.isFinite(target)) return hold(current, "user_volume_learning");
         if (Float.compare(previousTarget, target) != 0) reset();
         previousTarget = target;
@@ -27,12 +35,32 @@ final class IndependentMediaController {
         float output = loudness + curve.gainDbForIndex(current);
         float currentError = Math.abs(output - target);
         boolean peakViolation = peak + curve.gainDbForIndex(current) > peakCeiling;
+        float attack = Float.isFinite(attackLoudness) ? Math.max(loudness, attackLoudness) : loudness;
+        if (attack + curve.gainDbForIndex(current) - target >= 6f || peakViolation) {
+            int best = current;
+            float error = peakViolation ? Float.POSITIVE_INFINITY
+                    : Math.abs(attack + curve.gainDbForIndex(current) - target);
+            for (int i = Math.min(current - 1, maximum); i > curve.minIndex(); i--) {
+                if (peakViolation && peak + curve.gainDbForIndex(i) > peakCeiling) continue;
+                float candidate = Math.abs(attack + curve.gainDbForIndex(i) - target);
+                if (candidate + .75f < error) { best = i; error = candidate; }
+            }
+            if (peakViolation && best == current) best = curve.minIndex() + 1;
+            if (best < current) {
+                clearDwell();
+                raiseNotBeforeMs = now + 300L;
+                return new Decision(best, true, "user_volume_fast_down");
+            }
+        }
         if (currentError <= 1.5f && !peakViolation) return hold(current, "user_volume_at_target");
         int wantedDirection = output > target || peakViolation ? -1 : 1;
         int next = current + wantedDirection;
         if (next <= curve.minIndex()) return hold(current, "user_volume_lowest_step");
         if (next > Math.min(curve.maxIndex(), maximum)) return hold(current, "user_volume_highest_step");
         if (wantedDirection > 0 && !allowRaise) return hold(current, "user_volume_raise_policy_blocked");
+        if (wantedDirection > 0 && now < raiseNotBeforeMs) {
+            return hold(current, "user_volume_attack_hold");
+        }
         float candidateError = Math.abs(loudness + curve.gainDbForIndex(next) - target);
         if (!peakViolation && currentError - candidateError <= .75f) {
             return hold(current, "user_volume_nearest_step");
@@ -46,10 +74,11 @@ final class IndependentMediaController {
         long dwell = wantedDirection < 0 ? 40L : 150L;
         if (now - since < dwell) return new Decision(current, false,
                 wantedDirection < 0 ? "user_volume_down_dwell" : "user_volume_up_dwell");
-        reset();
+        clearDwell();
         return new Decision(next, true, wantedDirection < 0 ? "user_volume_loud_down" : "user_volume_quiet_up");
     }
 
-    void reset() { direction = 0; since = -1L; }
-    private Decision hold(int current, String why) { reset(); return new Decision(current, false, why); }
+    void reset() { clearDwell(); raiseNotBeforeMs = 0L; }
+    private void clearDwell() { direction = 0; since = -1L; }
+    private Decision hold(int current, String why) { clearDwell(); return new Decision(current, false, why); }
 }

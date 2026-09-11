@@ -27,7 +27,7 @@ public final class V011UserVolumeBridgeTest {
                             obs.authorityOrigin()).build());
             if (c.kind() == ControlCommand.Kind.MEDIA_INDEX) {
                 if (c.mediaIndex() > current) safe.applyRecovery(c.mediaIndex(), current, physical, 15, 15, at);
-                else safe.applyRequested(c.mediaIndex(), current, physical, 15, at);
+                else safe.applyFastReduction(c.mediaIndex(), current, physical, 15, at);
             }
         }
         check(audio.index > 4, "real Android write bridge must lift quiet material past old cap 4");

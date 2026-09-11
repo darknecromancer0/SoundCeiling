@@ -1,4 +1,27 @@
-# Sound Ceiling for Android - v0.11.0
+# Sound Ceiling for Android - v0.11.1
+
+The first v0.11 Samsung listening report confirms the independent-slider approach works.
+v0.11.1 retains that model and addresses delayed loud attacks and the oversized overlay.
+
+- A large loudness jump uses the current K-weighted PCM block and immediately selects the nearest
+  lower nonzero Media step. The Android write boundary permits that downward jump while preserving
+  fresh-read, acknowledgement and user-pause checks. Recovery remains gradual.
+- Short playback pauses keep the existing targeted capture for up to 1.5 seconds. Inactive playback
+  cannot authorize control, source changes still invalidate the target, and long pauses release it.
+- Own-slider movement changes the desired target without applying a whole Media step for each
+  percentage callback. This removes the recorded repeated 1→0→1 cycle. Hardware Down still lowers
+  immediately and pauses; explicit Up or Continue resumes.
+- The overlay uses two compact vertical capsules, speaker/maximum icons and an ellipsis to expand
+  the controls. It dismisses about two seconds after interaction and on outside touch, while an
+  active drag keeps it open. Expanded controls include an explicit close button.
+
+PCM Shadow remains diagnostic and does not alter audible output. Relay was OFF in both new logs;
+its audible effect has not been tested on this phone. Ordinary Media remains reactive: this build
+removes known software delays but does not promise to suppress audio before it has been captured.
+
+Evidence and next phone check: [v0.11.1 field audit](docs/field-tests/2026-09-10-v0111-reaction-audit.md).
+
+## v0.11.0 independent-volume baseline
 
 ## Independent user volume
 

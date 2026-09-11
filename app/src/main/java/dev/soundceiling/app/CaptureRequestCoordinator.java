@@ -8,6 +8,7 @@ import java.util.Objects;
 
 /** Pure live-capture state machine. Package candidates remain unconfirmed until targeted PCM proves them. */
 final class CaptureRequestCoordinator {
+    private static final long INACTIVE_CAPTURE_GRACE_MS = 1500L;
     enum Action { KEEP, OPEN_MIXED, OPEN_TARGETED, CLOSE }
     enum SourceAccessState {
         ACCESS_MISSING, NO_CANDIDATE, CANDIDATE_UNCONFIRMED, MULTIPLE_CANDIDATES,
@@ -66,6 +67,7 @@ final class CaptureRequestCoordinator {
     private int suppressedTargetUid = PcmCaptureRequest.NO_TARGET_UID;
     private String suppressedSignature = "";
     private Candidate confirmedCandidate;
+    private long inactiveSinceMs = -1L;
 
     CaptureRequestCoordinator(long coalescingWindowMs) {
         this.coalescingWindowMs = Math.max(0L, coalescingWindowMs);
@@ -128,12 +130,21 @@ final class CaptureRequestCoordinator {
         if (!playback.active || playback.observedPlayers <= 0) {
             confirmedCandidate = null;
             if (actual.targeted()) {
+                if (inactiveSinceMs < 0L || nowMs < inactiveSinceMs) inactiveSinceMs = nowMs;
+                boolean sameOrAbsentCandidate = candidates.isEmpty()
+                        || (single && actual.targetUid == only.source.uid);
+                if (mediaSessionAccess && sameOrAbsentCandidate
+                        && nowMs - inactiveSinceMs < INACTIVE_CAPTURE_GRACE_MS) {
+                    return decision(Action.KEEP, actual, false, false, false,
+                            "playback_inactive_keep_warm", only);
+                }
                 return decision(Action.OPEN_MIXED, PcmCaptureRequest.mixed(), false,
-                        positiveAllowed, globalAllowed, "playback_inactive_return_mixed", only);
+                        false, false, "playback_inactive_return_mixed", only);
             }
             return decision(Action.KEEP, actual, false, positiveAllowed, globalAllowed,
                     "playback_inactive", only);
         }
+        inactiveSinceMs = -1L;
 
         if (actual.targeted()) {
             if (!single || actual.targetUid != only.source.uid) {

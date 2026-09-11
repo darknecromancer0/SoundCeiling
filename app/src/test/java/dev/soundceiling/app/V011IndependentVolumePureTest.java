@@ -79,7 +79,9 @@ public final class V011IndependentVolumePureTest {
                             VolumeWriteOrigin.NORMALIZATION).build());
             previous = physical;
             if (cmd.kind() == ControlCommand.Kind.MEDIA_INDEX) {
-                require(Math.abs(cmd.mediaIndex() - physical) == 1, "only adjacent writes");
+                require(cmd.mediaIndex() > 0, "automatic movement never mutes");
+                require(cmd.mediaIndex() < physical || cmd.mediaIndex() == physical + 1,
+                        "recovery remains one step even when loud attacks skip downward steps");
                 physical = cmd.mediaIndex();
             }
             close(c.runtimeTargetLowerDb(), target, "own ACK cannot change desired output");
