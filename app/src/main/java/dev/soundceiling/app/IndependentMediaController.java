@@ -32,6 +32,14 @@ final class IndependentMediaController {
     Decision update(long now, int current, int maximum, float target,
             float loudness, float peak, ControlVolumeCurve curve, boolean active,
             boolean allowRaise, float peakCeiling, float attackLoudness, IndependentVolumeSettings settings) {
+        return update(now, current, maximum, target, loudness, peak, curve, active, allowRaise,
+                peakCeiling, attackLoudness, settings, Float.NaN, Float.NaN);
+    }
+
+    Decision update(long now, int current, int maximum, float target,
+            float loudness, float peak, ControlVolumeCurve curve, boolean active,
+            boolean allowRaise, float peakCeiling, float attackLoudness,
+            IndependentVolumeSettings settings, float referenceDb, float maximumTargetDb) {
         if (settings == null) settings = IndependentVolumeSettings.DEFAULT;
         if (!Float.isFinite(target)) return hold(current, "user_volume_learning");
         if (Float.compare(previousTarget, target) != 0) reset();
@@ -40,17 +48,21 @@ final class IndependentMediaController {
             return hold(current, "user_volume_waiting_audio");
         }
         if (current <= curve.minIndex()) return hold(current, "user_volume_muted");
+        // Dwell tracks the fixed user target above, never this audio-dependent partial goal.
+        float goal = settings.effectiveTargetDb(target, loudness, referenceDb, maximumTargetDb);
+        if (!Float.isFinite(goal)) return hold(current, "user_volume_learning");
         float output = loudness + curve.gainDbForIndex(current);
-        float currentError = Math.abs(output - target);
+        float currentError = Math.abs(output - goal);
         boolean peakViolation = peak + curve.gainDbForIndex(current) > peakCeiling;
         float attack = Float.isFinite(attackLoudness) ? Math.max(loudness, attackLoudness) : loudness;
-        if (attack + curve.gainDbForIndex(current) - target >= settings.fastThresholdDb || peakViolation) {
+        float attackGoal = settings.effectiveTargetDb(target, attack, referenceDb, maximumTargetDb);
+        if (attack + curve.gainDbForIndex(current) - attackGoal >= settings.fastThresholdDb || peakViolation) {
             int best = current;
             float error = peakViolation ? Float.POSITIVE_INFINITY
-                    : Math.abs(attack + curve.gainDbForIndex(current) - target);
+                    : Math.abs(attack + curve.gainDbForIndex(current) - attackGoal);
             for (int i = Math.min(current - 1, maximum); i > curve.minIndex(); i--) {
                 if (peakViolation && peak + curve.gainDbForIndex(i) > peakCeiling) continue;
-                float candidate = Math.abs(attack + curve.gainDbForIndex(i) - target);
+                float candidate = Math.abs(attack + curve.gainDbForIndex(i) - attackGoal);
                 if (candidate + .75f < error) { best = i; error = candidate; }
             }
             if (peakViolation && best == current) best = curve.minIndex() + 1;
@@ -61,7 +73,7 @@ final class IndependentMediaController {
             }
         }
         if (currentError <= settings.toleranceDb && !peakViolation) return hold(current, "user_volume_at_target");
-        int wantedDirection = output > target || peakViolation ? -1 : 1;
+        int wantedDirection = output > goal || peakViolation ? -1 : 1;
         int next = current + wantedDirection;
         if (next <= curve.minIndex()) return hold(current, "user_volume_lowest_step");
         if (next > Math.min(curve.maxIndex(), maximum)) return hold(current, "user_volume_highest_step");
@@ -69,7 +81,7 @@ final class IndependentMediaController {
         if (wantedDirection > 0 && now < raiseNotBeforeMs) {
             return hold(current, "user_volume_attack_hold");
         }
-        float candidateError = Math.abs(loudness + curve.gainDbForIndex(next) - target);
+        float candidateError = Math.abs(loudness + curve.gainDbForIndex(next) - goal);
         if (!peakViolation && currentError - candidateError <= .75f) {
             return hold(current, "user_volume_nearest_step");
         }

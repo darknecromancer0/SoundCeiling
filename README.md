@@ -1,4 +1,26 @@
-# Sound Ceiling for Android - v0.11.2
+# Sound Ceiling for Android - v0.11.3
+
+Advanced now includes effective **leveling strength (0–100%)** and **Gentle / Balanced / Strict**
+reaction presets. Partial strength preserves a proportion of the original contrast even after the
+controller settles; it is not just slower full normalization. The independent maximum and projected
+peak constraint still take priority. At 0%, ordinary leveling returns toward the nominal user gain,
+subject to those constraints. The full-strength field default remains unchanged.
+
+The live readout shows fast input loudness → estimated output, the independent slider target,
+the current partial-strength target, and signed Media correction relative to nominal user volume.
+Slow LUFS-like, RMS, input/projected peaks and the spectrum remain available. These are digital
+estimates, not room SPL or certified LUFS. Stopped/stale measurements and active Relay output are
+not presented as current ordinary output.
+
+Profiles now store strength plus five reaction settings. Saved v0.11.2 profiles load with 100%
+strength and their original timings; installing the update preserves the user's volume and maximum.
+Legacy Target/Linked Lock, Media caps and calibrated SPL stay in the compatibility section with
+clarified labels. Shadow is diagnostic; audible Relay remains untested on the user's phone.
+
+History audit, settings map and next phone check:
+[v0.11.3 Advanced audit](docs/field-tests/2026-09-11-v0113-advanced-audit.md).
+
+## v0.11.2 Advanced restoration
 
 Advanced mode again exposes useful controls for the current independent-volume architecture:
 ordinary down dwell, one-step recovery dwell, hold after a loud reduction, tolerance and fast-attack

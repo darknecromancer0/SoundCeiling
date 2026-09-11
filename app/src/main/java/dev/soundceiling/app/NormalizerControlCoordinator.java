@@ -50,6 +50,7 @@ public final class NormalizerControlCoordinator {
         private final boolean independentUserVolume;
         private final float userVolumeTargetDb;
         private final float independentAttackLoudnessDb;
+        private final float independentReferenceDb, independentMaximumTargetDb;
         private final IndependentVolumeSettings independentDynamics;
         private final boolean userVolumeMuted;
 
@@ -98,6 +99,8 @@ public final class NormalizerControlCoordinator {
             independentUserVolume = b.independentUserVolume;
             userVolumeTargetDb = b.userVolumeTargetDb;
             independentAttackLoudnessDb = b.independentAttackLoudnessDb;
+            independentReferenceDb = b.independentReferenceDb;
+            independentMaximumTargetDb = b.independentMaximumTargetDb;
             independentDynamics = b.independentDynamics;
             userVolumeMuted = b.userVolumeMuted;
         }
@@ -140,6 +143,7 @@ public final class NormalizerControlCoordinator {
             private boolean independentUserVolume;
             private float userVolumeTargetDb = Float.NaN;
             private float independentAttackLoudnessDb = Float.NaN;
+            private float independentReferenceDb = Float.NaN, independentMaximumTargetDb = Float.NaN;
             private IndependentVolumeSettings independentDynamics = IndependentVolumeSettings.DEFAULT;
             private boolean userVolumeMuted;
 
@@ -204,6 +208,10 @@ public final class NormalizerControlCoordinator {
             }
             public Builder independentDynamics(IndependentVolumeSettings value) {
                 independentDynamics = value == null ? IndependentVolumeSettings.DEFAULT : value;
+                return this;
+            }
+            public Builder independentVolumeReference(float referenceDb, float maximumTargetDb) {
+                independentReferenceDb = referenceDb; independentMaximumTargetDb = maximumTargetDb;
                 return this;
             }
             public Frame build() { return new Frame(this); }
@@ -361,7 +369,9 @@ public final class NormalizerControlCoordinator {
             // Public targeted PCM is a stable source estimate on the recorded Samsung route.
             // A correlation-based live reference is telemetry, not permission to reinterpret it.
             float source = frame.outputLevels.sourceLoudnessDb;
-            float correction = frame.userVolumeTargetDb - source - frame.mediaGainDb;
+            float correction = frame.independentDynamics.effectiveTargetDb(frame.userVolumeTargetDb,
+                    source, frame.independentReferenceDb, frame.independentMaximumTargetDb)
+                    - source - frame.mediaGainDb;
             if (!Float.isFinite(correction)) correction = 0f;
             String blocked = frame.mediaAutoVolumePaused ? "media_auto_paused_user_down"
                     : frame.userVolumeMuted ? "user_volume_muted"
@@ -380,7 +390,8 @@ public final class NormalizerControlCoordinator {
                     frame.routeCurve,
                     programActive && frame.rawProgramActive && frame.playbackEndpointActive,
                     allowsPositiveControl(frame), frame.hardPeakCeilingDbfs,
-                    frame.independentAttackLoudnessDb, frame.independentDynamics);
+                    frame.independentAttackLoudnessDb, frame.independentDynamics,
+                    frame.independentReferenceDb, frame.independentMaximumTargetDb);
             return record(decision.shouldWrite ? ControlCommand.mediaIndex(decision.requestedIndex,
                             decision.reason, ControlCommand.Provenance.AUTO_MEDIA)
                     : ControlCommand.none(decision.reason), correction, frame, programActive,

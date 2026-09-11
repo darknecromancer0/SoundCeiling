@@ -17,7 +17,7 @@ import java.util.Locale;
 final class IndependentVolumeSettingsCard extends LinearLayout {
     private final TextView profile;
     private final Switch enabled;
-    private final SeekBar down, up, hold, tolerance, fast;
+    private final SeekBar down, up, hold, tolerance, fast, strength;
     private boolean loading;
     private String shown = "";
 
@@ -43,12 +43,15 @@ final class IndependentVolumeSettingsCard extends LinearLayout {
         addView(enabled);
         profile = text("", 15, true); addView(profile);
         LinearLayout presets = row();
-        addButton(presets, "Как в v0.11.1", () -> apply(IndependentVolumeSettings.DEFAULT, "Как в v0.11.1"));
-        addButton(presets, "Быстрее", () -> apply(new IndependentVolumeSettings(20, 100, 200, 1.5f, 4f), "Быстрее"));
-        addButton(presets, "Плавнее", () -> apply(new IndependentVolumeSettings(80, 500, 800, 2f, 6f), "Плавнее"));
+        addButton(presets, "Мягко", () -> apply(IndependentVolumeSettings.GENTLE, "Мягко"));
+        addButton(presets, "Баланс", () -> apply(IndependentVolumeSettings.BALANCED, "Баланс"));
+        addButton(presets, "Строго", () -> apply(IndependentVolumeSettings.STRICT, "Строго"));
         addView(presets);
+        addView(text("Мягко — сохраняет больше перепадов; Баланс — сглаживает сильнее; Строго — полное выравнивание и более ранняя быстрая реакция. Пресет меняет шесть настроек ниже.", 13, false));
 
         IndependentVolumeSettings value = IndependentVolumePrefs.current(context);
+        strength = slider("Сила выравнивания", 0, 100, Math.round(value.strength * 100), p -> p + "%",
+                "100% — стремиться к постоянной громкости; 50% — сглаживать примерно половину перепада в дБ; 0% — сохранять исходную динамику. Максимум пользователя и пиковый потолок продолжают ограничивать громкие участки. Это сила эффекта, а не время реакции. Точность ограничена ступенями Media.");
         down = slider("Время обычного снижения", 0, 500, value.downwardMs, p -> p + " мс",
                 "Сколько ждать перед небольшой коррекцией вниз. Резкий громкий скачок обрабатывается сразу, когда превышен порог быстрой реакции.");
         up = slider("Время восстановления", 50, 5000, value.upwardMs, p -> p + " мс",
@@ -66,7 +69,7 @@ final class IndependentVolumeSettingsCard extends LinearLayout {
         addButton(profiles, "Сохранить профиль", this::saveProfile);
         addButton(profiles, "Загрузить", this::loadProfile);
         addView(profiles);
-        addView(text("Профиль сохраняет эти пять параметров реакции. Желаемая громкость и максимум задаются отдельно.", 13, false));
+        addView(text("Профиль сохраняет силу и пять параметров реакции. Желаемая громкость, максимум и пиковый потолок задаются отдельно. Профили v0.11.2 загружаются с прежней силой 100%.", 13, false));
         Button reset = button("Вернуть динамику по умолчанию");
         reset.setOnClickListener(v -> apply(IndependentVolumeSettings.DEFAULT, "Как в v0.11.1"));
         addView(reset, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
@@ -84,6 +87,7 @@ final class IndependentVolumeSettingsCard extends LinearLayout {
         if (key.equals(shown)) return;
         loading = true;
         down.setProgress(value.downwardMs); up.setProgress(value.upwardMs); hold.setProgress(value.holdMs);
+        strength.setProgress(Math.round(value.strength * 100));
         tolerance.setProgress(Math.round(value.toleranceDb * 10)); fast.setProgress(Math.round(value.fastThresholdDb * 10));
         profile.setText("Профиль реакции: " + name);
         shown = key;
@@ -93,7 +97,7 @@ final class IndependentVolumeSettingsCard extends LinearLayout {
     private void saveValues() {
         if (loading) return;
         apply(new IndependentVolumeSettings(down.getProgress(), up.getProgress(), hold.getProgress(),
-                tolerance.getProgress() / 10f, fast.getProgress() / 10f), "Свои настройки");
+                tolerance.getProgress() / 10f, fast.getProgress() / 10f, strength.getProgress() / 100f), "Свои настройки");
     }
 
     private void apply(IndependentVolumeSettings value, String name) {

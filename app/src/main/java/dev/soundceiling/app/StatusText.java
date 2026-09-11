@@ -1,6 +1,44 @@
 package dev.soundceiling.app;
 
 final class StatusText {
+    static String independentLevels(RuntimeState s) {
+        if (!s.running) return "Показатели появятся после запуска и захвата звука.";
+        if (s.relayAudible) return "Активен Relay — его выход и усиление показаны в карточке Relay.";
+        if (!s.signalPresent || s.meterAgeMs > 1500L) return "Нет свежего звука для измерения.";
+        if (s.meteringCapability == EngineCapabilities.MeteringCapability.OUTPUT_MIX_PEAK_RMS) {
+            return "Резервный измеритель общего выхода\nRMS: " + db(s.rmsDbfs)
+                    + " · Peak: " + db(s.rawPeakDbfs) + " dBFS\nРаздельное измерение источника недоступно.";
+        }
+        if (s.meteringCapability != EngineCapabilities.MeteringCapability.PCM_EXACT
+                && s.meteringCapability != EngineCapabilities.MeteringCapability.PCM_MIXED) {
+            return "Измерение уровня PCM недоступно.";
+        }
+        String meters = "LUFS-like (≈3 с): " + db(s.sourceLoudness)
+                + " · RMS: " + db(s.rmsDbfs) + " dBFS"
+                + "\nPeak вход / расчётный выход: " + db(s.rawPeakDbfs) + " / "
+                + db(s.projectedPeakDbfs) + " dBFS";
+        if (s.meteringCapability == EngineCapabilities.MeteringCapability.PCM_MIXED) {
+            return "PCM содержит смесь источников.\n" + meters;
+        }
+        if (!Float.isFinite(s.independentTargetDb)) {
+            return "Вход (быстрый): " + db(s.controlLoudnessDb)
+                    + " LUFS-like\nЦель обычной автогромкости ещё не определена.\n" + meters;
+        }
+        return "Вход → расчётный выход: " + db(s.controlLoudnessDb) + " → "
+                + db(s.independentOutputDb) + " LUFS-like"
+                + "\nЦель ползунка: " + db(s.independentTargetDb)
+                + " · текущая цель: " + db(s.independentEffectiveTargetDb) + " LUFS-like"
+                + "\nКоррекция Media: " + signedDb(s.independentGainDb) + " дБ"
+                + " · ступень " + s.volumeIndex + "/" + s.volumeMax + "\n" + meters;
+    }
+
+    private static String db(float value) {
+        return Float.isFinite(value) ? String.format(java.util.Locale.US, "%.1f", value) : "—";
+    }
+    private static String signedDb(float value) {
+        return Float.isFinite(value) ? String.format(java.util.Locale.US, "%+.1f", value) : "—";
+    }
+
     static String capture(RuntimeState s) {
         return switch (s.captureStatus) {
             case RUNNING -> "Захват работает";

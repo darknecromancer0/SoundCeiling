@@ -1230,6 +1230,8 @@ public class NormalizerService extends Service {
             int desired = UserVolumeControl.percent(this);
             float target = userVolumeTarget.targetDb(controlCurve, desired);
             frame.independentUserVolume(target, desired == 0);
+            frame.independentVolumeReference(userVolumeTarget.referenceDb(),
+                    userVolumeTarget.targetDb(controlCurve, UserVolumeControl.maximumPercent(this)));
             frame.independentAttackLoudnessDb(attackLoudnessDb);
             IndependentVolumeSettings dynamics = IndependentVolumePrefs.current(this);
             frame.independentDynamics(dynamics);
@@ -1239,6 +1241,12 @@ public class NormalizerService extends Service {
                         + " maximum=" + UserVolumeControl.maximumPercent(this)
                         + " referenceDb=" + userVolumeTarget.referenceDb() + " targetDb=" + target
                         + " physical=" + current + " sourceDb=" + source
+                        + " effectiveTargetDb=" + dynamics.effectiveTargetDb(target, source,
+                                userVolumeTarget.referenceDb(), userVolumeTarget.targetDb(controlCurve,
+                                        UserVolumeControl.maximumPercent(this)))
+                        + " estimatedOutputDb=" + (source + controlCurve.gainDbForIndex(current))
+                        + " mediaCorrectionDb=" + (controlCurve.gainDbForIndex(current)
+                                - (target - userVolumeTarget.referenceDb()))
                         + " ready=" + userVolumeTarget.ready() + " estimate=public_pcm_source"
                         + " dynamics=" + dynamics.encode());
             }
@@ -1422,8 +1430,17 @@ public class NormalizerService extends Service {
             lastBandUpdate = now;
             lastBandMeasuredAtMs = now;
         }
-        RuntimeState state = baseState(new RuntimeState.Builder(), applied)
-                .running(true)
+        RuntimeState.Builder builder = baseState(new RuntimeState.Builder(), applied);
+        if (UserVolumeControl.ownsMedia() && userVolumeTarget.ready() && signal) {
+            float target = controlCoordinator.runtimeTargetLowerDb();
+            float routeGain = controlCurve.gainDbForIndex(applied);
+            float effectiveTarget = IndependentVolumePrefs.current(this).effectiveTargetDb(target,
+                    loud.controlLoudnessDb, userVolumeTarget.referenceDb(),
+                    userVolumeTarget.targetDb(controlCurve, UserVolumeControl.maximumPercent(this)));
+            builder.independentVolume(loud.controlLoudnessDb + routeGain, target, effectiveTarget,
+                    routeGain - (target - userVolumeTarget.referenceDb()));
+        }
+        RuntimeState state = builder.running(true)
                 .captureStatus(signal ? RuntimeState.CaptureStatus.RUNNING : RuntimeState.CaptureStatus.WAITING_SIGNAL)
                 .controlActivity(activity).signalPresent(signal)
                 .levels(rms.controlRmsDb, rms.peakHoldDb, estRms, estPeak)

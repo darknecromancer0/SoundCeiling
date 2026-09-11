@@ -1,6 +1,7 @@
 package dev.soundceiling.app;
 
 final class HelpText {
+    static final String INDEPENDENT_LEVELS = "INDEPENDENT_LEVELS";
     static final String MIN_MEDIA="MIN_MEDIA", MAX_MEDIA="MAX_MEDIA", SAFETY_LOCK="SAFETY_LOCK", QUIET_NOW="QUIET_NOW",
             QUIET_LEVEL="QUIET_LEVEL", MAX_DOWN_STEPS="MAX_DOWN_STEPS", CEILING_BASIS="CEILING_BASIS",
             SOURCE_PEAK="SOURCE_PEAK", TRANSIENT_WARNING="TRANSIENT_WARNING", TRANSIENT_EMERGENCY="TRANSIENT_EMERGENCY",
@@ -33,13 +34,14 @@ final class HelpText {
                 "Влияет только на feasibility-метрики и логи; Samsung Media и слышимый аудиовыход не изменяются.",
                 "Режим всегда SHADOW_ONLY: public playback capture сохраняет исходный звук, поэтому audibleOutputAllowed=false и AudioTrack не создаётся.");
         if (DEFAULT_LINKED_LOCK.equals(key)) return tri(
-                "Default Linked Lock связывает Minimum Output Ceiling и Maximum Output Ceiling в одну точку.",
-                "При ON оба sliders видимы, но заблокированы в Simple и Advanced; пользовательское движение Samsung Media slider сдвигает связанную точку, app-owned Media write её не двигает.",
-                "Точно, когда изменение Media классифицировано VolumeWriteTracker как USER, а не APP_ACK/STALE/MISMATCH.");
+                "Прежний Default Linked Lock связывает сохранённые Minimum Output Ceiling и Maximum Output Ceiling в одну точку.",
+                "Относится к прежним потолкам PCM Shadow/Relay. Цель обычной автогромкости задаёт собственный ползунок SoundCeiling.",
+                "В обычном режиме движения Samsung Media не привязывают цель к уменьшенной ступени. Громкость и максимум доступны в верхней карточке.");
         if (OUTPUT_CEILINGS.equals(key)) return tri(
-                "Output ceilings задают нижнюю и верхнюю цель цифрового уровня.",
-                "Samsung Media Auto Volume сравнивает с ними PCM и меняет Media по одной ступени; Normalization strength меняет допуск.",
-                "В Linked Lock цель считается относительно выбранной пользователем громкости. Media использует оценку исходного PCM и кривую устройства; Safety Maximum ограничивает шаги. Это приближение, точнее работает Relay.");
+                "Прежние Output ceilings — нижняя и верхняя цель для PCM Shadow/Relay и совместимости.",
+                "Обычная автогромкость использует независимые громкость и максимум SoundCeiling в верхней карточке. Эти прежние потолки её цель не меняют.",
+                "Для обычного режима смотрите «Живые показатели» и «Настройка автогромкости». Relay требует отдельной проверки на устройстве.");
+        if (INDEPENDENT_LEVELS.equals(key)) return "Вход — быстрая K-взвешенная оценка громкости захваченного PCM. Расчётный выход учитывает фактическую ступень Media и кривую устройства. Это приблизительные LUFS-like, не измерение громкости в комнате.\n\nЦель ползунка задаёт выбранную громкость SoundCeiling. При силе ниже 100% текущая цель сохраняет часть перепадов исходного звука, но ограничена максимумом пользователя. Коррекция Media — усиление (+) или ослабление (−) относительно номинального уровня ползунка.\n\nLUFS-like за ≈3 секунды удобно сравнивать между фрагментами; быстрый показатель нужен контроллеру для реакции. RMS и Peak — цифровые уровни в dBFS, спектр — состав сигнала. Пиковый потолок действует отдельно от силы выравнивания. При паузе уровни продолжают измеряться, автоматические изменения остановлены.";
         if (PCM.equals(key)) return tri("PCM — цифровые аудиосэмплы воспроизводимого сигнала.", "Даёт измерение уровня и может подтвердить UID-targeted source.", "Точно для source identity только после стабильного non-silent targeted PCM.");
         if (LUFS_LIKE.equals(key) || LUFS.equals(key)) return tri("LUFS-like — приближённая loudness-оценка воспринимаемой громкости; это не сертифицированное измерение настоящего LUFS.", "Используется нормализатором для сравнения тихих и громких участков.", "Надёжнее на устойчивом программном материале; это приблизительная метрика.");
         if (DBFS.equals(key)) return tri("dBFS — цифровая шкала сигнала, где 0 dBFS является цифровым максимумом.", "Используется для peak и цифровых ceilings.", "Точно для измеренного цифрового сигнала, но не означает dB SPL в комнате.");
@@ -64,9 +66,9 @@ final class HelpText {
         if (QUIET_NOW.equals(key)) return "Quiet Now — одноразовое снижение Media до настроенного уровня. Доступно только в Расширенном режиме.";
         if (QUIET_LEVEL.equals(key)) return "Quiet Now level — предел Media для Quiet Now; команда никогда не повышает громкость.";
         if (CEILING_BASIS.equals(key)) return "Шкала управления меняет представление output ceilings: Media %, Digital dB или калиброванный dB SPL. Без действующей калибровки dB SPL используется Safe fallback. Смена шкалы не создаёт права на повышение и не создаёт отдельный controller.";
-        if (TARGET_LOUDNESS.equals(key)) return "Target — цель вычисления нормализации в PCM Shadow. В v0.9 он не разрешает слышимый gain и не создаёт нового права повышать Samsung Media; fallback-восстановление возвращает только ранее сделанное SoundCeiling снижение. Hard safety остаётся отдельным путём.";
-        if (NORMALIZATION_STRENGTH.equals(key)) return "Normalization strength — доля рассчитанной обычной коррекции. Hard safety остаётся отдельным приоритетным путём.";
-        if (TOLERANCE.equals(key)) return "Tolerance — зона вокруг target, где normalizer удерживает текущий уровень.";
+        if (TARGET_LOUDNESS.equals(key)) return "Прежний Target — цель для PCM Shadow и совместимости. PCM Shadow не разрешает слышимый gain; этот Target не создаёт нового права повышать Media. Старый fallback восстанавливает только ранее сделанное SoundCeiling снижение. В обычной автогромкости цель в LUFS-like показана в разделе «Живые показатели» и меняется собственным ползунком громкости SoundCeiling.";
+        if (NORMALIZATION_STRENGTH.equals(key)) return "Прежняя Normalization strength относится к PCM Shadow/Relay. Для обычной автогромкости используйте «Сила выравнивания» в верхнем блоке. Нулевое значение этого старого параметра также выключает общую нормализацию; включить её можно верхним переключателем.";
+        if (TOLERANCE.equals(key)) return "Прежняя Tolerance — зона вокруг target для PCM Shadow/Relay. В обычной автогромкости её аналог — «Допустимое отклонение» в верхнем блоке.";
         if (DOWN_ATTACK.equals(key)) return "Downward attack — скорость обычного снижения; hard peak/transient safety работает отдельно.";
         if (MAX_DOWN_STEPS.equals(key)) return "Max down steps — максимум шагов fallback Media, на которые обычный контроллер может снизить громкость за один цикл решения.";
         if (UP_RELEASE.equals(key)) return "Upward release — минимальная пауза между шагами ограниченного восстановления ранее сделанного SoundCeiling снижения.";

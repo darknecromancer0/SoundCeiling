@@ -29,7 +29,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
     private final AudioManager audio;
     private final int streamMin, streamMax;
     private final LinearLayout root;
-    private final TextView modeInfo, profileInfo, liveDetails, decisionDetails, globalDspStatus, linkedLockHint;
+    private final TextView modeInfo, profileInfo, liveDetails, legacyDetails, decisionDetails, globalDspStatus, linkedLockHint;
     private final TextView sessionDspSetupStatus;
     private final TextView strictSafetyStatus;
     private final Button strictSafetyAccess;
@@ -75,6 +75,12 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         startStop.setOnClickListener(v -> listener.onStartStop());
         root.addView(startStop, fullButton());
 
+        section("Живые показатели");
+        liveDetails = secondary("", 15); root.addView(liveDetails);
+        Button levelsHelp = button("Как читать показатели");
+        levelsHelp.setOnClickListener(v -> showHelp(HelpText.INDEPENDENT_LEVELS));
+        root.addView(levelsHelp, fullButton());
+
         dynamicsCard = new IndependentVolumeSettingsCard(context, () -> {
             markCustomProfile();
             refreshControlsFromPrefs();
@@ -103,6 +109,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
                 v -> Prefs.setGlobalDspEnabled(getContext(), v));
         globalDspStatus = secondary("", 13); globalDspStatus.setPadding(0, 0, 0, dp(6)); root.addView(globalDspStatus);
         int legacyStart = root.getChildCount();
+        legacyDetails = secondary("", 13); root.addView(legacyDetails);
         linkedLock = addSwitch("Default Linked Lock", HelpText.DEFAULT_LINKED_LOCK,
                 Prefs.defaultLinkedLock(context), value -> {
                     Prefs.saveOutputCeilings(getContext(), Prefs.outputCeilings(getContext()).withLinked(value));
@@ -226,8 +233,8 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
 
         int legacyCount = root.getChildCount() - legacyStart;
         collapseLegacyControls(legacyStart, legacyCount);
-        section("Живые показатели");
-        liveDetails = secondary("", 13); root.addView(liveDetails);
+        section("Частоты и диагностика");
+        root.addView(secondary("Полосы частот показывают состав входного сигнала. Это измеритель, настройки эквалайзера здесь нет.", 13));
         frequencyMeter = new FrequencyMeterView(context); frequencyMeter.setMinimumHeight(dp(166));
         LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT); flp.topMargin = dp(10); root.addView(frequencyMeter, flp);
         decisionDetails = secondary("Последнее решение: —", 13); decisionDetails.setPadding(0, dp(12), 0, 0); root.addView(decisionDetails);
@@ -295,6 +302,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         refreshStrictSafety();
         refreshSharedOutputControls();
         state = runtime;
+        liveDetails.setText(StatusText.independentLevels(state));
         String source = state.sourcePackage.isEmpty() ? "не определён" : state.sourcePackage;
         String globalTrust = state.pcmState == PcmAvailabilityState.ACTIVE
                 && (state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_MIXED
@@ -312,21 +320,19 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         }
         updateSplControlState();
         modeInfo.setText("PCM: " + state.pcmState + " · Metering: " + state.meteringCapability
-                + "\nController: " + state.controlActivity + " · " + globalTrust
-                + "\nCeiling basis: " + ceilingBasisStatus
-                + "\nSource: " + source + " · confidence=" + state.sourceConfidence
+                + "\nИсточник: " + source + " · " + state.sourceConfidence
                 + (state.downgradeReason.isEmpty() ? "" : "\nBlock/reason: " + state.downgradeReason));
         String splEstimate = Float.isNaN(state.estimatedRmsSpl)
                 ? "SPL estimate —"
                 : String.format(Locale.US, "SPL estimate %.1f dB · peak %.1f dB", state.estimatedRmsSpl, state.estimatedPeakSpl);
-        liveDetails.setText(String.format(Locale.US,
-                "LUFS-like %.1f · RMS %.1f dBFS · Peak %.1f dBFS · raw %.1f dBFS\nMedia %d/%d · %d%% · effective max %d · DSP %s\nUser ceiling %d/%d · Safety ceiling %d/%d · recoverable to %d/%d · auto attenuation %.1f dB\n%s",
-                state.sourceLoudness, state.rmsDbfs, state.peakDbfs, state.rawPeakDbfs,
+        legacyDetails.setText("Ceiling basis: " + ceilingBasisStatus + " · " + globalTrust + "\n" + String.format(Locale.US,
+                "Диагностика прежнего контроллера (не цель обычной автогромкости):\nMedia %d/%d · %d%% · effective max %d · DSP %s\nUser ceiling %d/%d · Safety ceiling %d/%d · recoverable to %d/%d · auto attenuation %.1f dB\n%s",
                 state.volumeIndex, state.volumeMax, MediaLevelScale.percentForIndex(state.volumeIndex, state.volumeMax),
                 state.effectiveMaxIndex, state.dspTransportCapability,
                 state.userCeilingIndex, state.volumeMax, state.safetyCeilingIndex, state.volumeMax,
                 state.recoverableCeilingIndex, state.volumeMax, state.automaticAttenuationDb, splEstimate));
-        if (state.lastDecision == null) decisionDetails.setText("Последнее решение: Hybrid controller · см. причину/статус выше");
+        if (state.lastDecision == null) decisionDetails.setText("Последнее решение: " + StatusText.controller(state)
+                + "\n" + state.lastControllerReason);
         else decisionDetails.setText("Последнее решение: " + state.lastDecision.action + " · " + state.lastDecision.reason
                 + " · requested=" + state.lastDecision.requestedIndex + " applied=" + state.lastDecision.appliedIndex);
     }

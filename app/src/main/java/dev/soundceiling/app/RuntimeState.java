@@ -44,6 +44,8 @@ final class RuntimeState {
     final boolean controlCapabilityVerified, linkedCeilings, programActive;
     final float desiredGainDb, appliedGainDb, projectedPeakDbfs, controlLoudnessDb;
     final float lowerOutputCeilingDb, upperOutputCeilingDb, routeStepGainDb;
+    // Ordinary Media estimates from the current PCM block and the applied route index.
+    final float independentOutputDb, independentTargetDb, independentEffectiveTargetDb, independentGainDb;
 
     // v0.7.7 Enhanced Session DSP setup and bound-session telemetry.
     final boolean enhancedSessionPermissionGranted, sessionDspActive;
@@ -109,6 +111,8 @@ final class RuntimeState {
         projectedPeakDbfs=b.projectedPeakDbfs; controlLoudnessDb=b.controlLoudnessDb;
         lowerOutputCeilingDb=b.lowerOutputCeilingDb; upperOutputCeilingDb=b.upperOutputCeilingDb;
         routeStepGainDb=b.routeStepGainDb;
+        independentOutputDb=b.independentOutputDb; independentTargetDb=b.independentTargetDb;
+        independentEffectiveTargetDb=b.independentEffectiveTargetDb; independentGainDb=b.independentGainDb;
         enhancedSessionPermissionGranted=b.enhancedSessionPermissionGranted;
         sessionId=b.sessionId > 0 ? b.sessionId : -1;
         sessionUid=b.sessionUid > 0 ? b.sessionUid : -1;
@@ -194,6 +198,8 @@ final class RuntimeState {
                         projectedPeakDbfs, controlLoudnessDb, captureReferenceMode, linkedCeilings,
                         lowerOutputCeilingDb, upperOutputCeilingDb, routeStepGainDb, programActive,
                         directionDwell)
+                .independentVolume(independentOutputDb, independentTargetDb,
+                        independentEffectiveTargetDb, independentGainDb)
                 .enhancedSession(enhancedSessionPermissionGranted, sessionDspActive, sessionId,
                         sessionUid, sessionPackage, sessionDspRequestedGainDb,
                         sessionDspAppliedGainDb, sessionDspReason)
@@ -248,6 +254,8 @@ final class RuntimeState {
         float desiredGainDb, appliedGainDb, projectedPeakDbfs=Float.NaN, controlLoudnessDb=Float.NaN;
         float lowerOutputCeilingDb=OutputCeilingState.DEFAULT_DB;
         float upperOutputCeilingDb=OutputCeilingState.DEFAULT_DB, routeStepGainDb;
+        float independentOutputDb=Float.NaN, independentTargetDb=Float.NaN;
+        float independentEffectiveTargetDb=Float.NaN, independentGainDb=Float.NaN;
         boolean enhancedSessionPermissionGranted, sessionDspActive;
         int sessionId=-1, sessionUid=-1;
         String sessionPackage="", sessionDspReason="not_discovered";
@@ -332,6 +340,10 @@ final class RuntimeState {
             controlLoudnessDb=loudness; captureReferenceMode=captureMode; linkedCeilings=linked;
             lowerOutputCeilingDb=lowerCeiling; upperOutputCeilingDb=upperCeiling;
             routeStepGainDb=routeStepGain; programActive=active; directionDwell=dwell; return this;
+        }
+        Builder independentVolume(float outputDb, float targetDb, float effectiveTargetDb, float gainDb) {
+            independentOutputDb=outputDb; independentTargetDb=targetDb;
+            independentEffectiveTargetDb=effectiveTargetDb; independentGainDb=gainDb; return this;
         }
         Builder enhancedSession(boolean permissionGranted, boolean active, int id, int uid,
                                 String pkg, float requestedGainDb, float appliedGainDb,
