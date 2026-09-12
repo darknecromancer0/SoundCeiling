@@ -10,7 +10,7 @@ public final class HybridPolicyPureTest {
         testStrictestCustomCeilingWins();
         testMixedSourcesBlockRaise();
         testOffSourceBlocksSharedStreamPolicy();
-        testLimiterOnlyBlocksRaise();
+        testLimiterOnlyAllowsBoundedRecovery();
         testFallbackUsesStrictestSafeCeiling();
         testSourceTransitionHold();
         testUnverifiedAdaptersStayUnavailable();
@@ -57,7 +57,7 @@ public final class HybridPolicyPureTest {
         if (p.allowAutomaticRaise) throw new AssertionError("OFF conflict must block raise");
     }
 
-    private static void testLimiterOnlyBlocksRaise() {
+    private static void testLimiterOnlyAllowsBoundedRecovery() {
         SourceDescriptor game = source("com.example.game", 10030);
         Map<String, AppPolicy> rules = new HashMap<>();
         rules.put(game.packageName, AppPolicy.custom(-18f, 60, 1f, true,
@@ -66,8 +66,10 @@ public final class HybridPolicyPureTest {
                 set(game, EngineCapabilities.SourceIdentityConfidence.EXACT), rules,
                 SystemStreamPolicies.defaults().get(SystemStreamPolicy.Kind.MEDIA), exactPcm(),
                 PcmAvailabilityState.ACTIVE, 10_000L, 0L);
-        if (p.allowAutomaticRaise) throw new AssertionError("limiter-only must remain downward-only");
-        if (!p.limiterOnly) throw new AssertionError("limiter-only flag must survive resolution");
+        if (!p.allowBoundedRecovery) {
+            throw new AssertionError("legacy limiter/downward-only must not block repayment of proven SoundCeiling-owned attenuation");
+        }
+        if (!p.limiterOnly) throw new AssertionError("legacy limiter diagnostic flag must survive resolution");
     }
 
     private static void testFallbackUsesStrictestSafeCeiling() {
@@ -98,7 +100,8 @@ public final class HybridPolicyPureTest {
     private static void testUnverifiedAdaptersStayUnavailable() {
         EngineCapabilities c = CapabilityResolver.resolve(true,
                 EngineCapabilities.SourceIdentityConfidence.EXACT, true, false,
-                false, false, true, "stock_android");
+                false, DspTransport.Capability.UNAVAILABLE, DspScope.NONE,
+                true, "stock_android");
         assertEquals(EngineCapabilities.VolumeControlCapability.STREAM_MEDIA, c.volumeControl,
                 "unverified per-app controller must not claim verification");
         assertEquals(EngineCapabilities.DspTransportCapability.UNAVAILABLE, c.dspTransport,

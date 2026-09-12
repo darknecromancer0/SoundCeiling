@@ -112,7 +112,10 @@ public final class HybridEnginePureTest {
         if (!global.allowsAutomaticRaise()) throw new AssertionError("GLOBAL may raise only after later confidence gates");
         if (AppPolicy.off().allowsAutomaticRaise()) throw new AssertionError("OFF must never auto-raise");
         AppPolicy limiterOnly = AppPolicy.custom(-18f, 55, 0.4f, true, -2f, 6f, 10f, 45, AppPolicy.DspPreference.AUTO, "");
-        if (limiterOnly.allowsAutomaticRaise()) throw new AssertionError("Limiter only must be downward-only");
+        if (!limiterOnly.downwardOnly) throw new AssertionError("legacy limiter flag must remain readable");
+        if (!limiterOnly.allowsBoundedRecovery()) {
+            throw new AssertionError("legacy limiter flag must not revoke v0.7 owned bounded recovery");
+        }
         assertEquals(55, limiterOnly.maxMediaPercent, "custom max media");
         assertEquals(45, limiterOnly.fallbackMaxPercent, "custom fallback max");
     }

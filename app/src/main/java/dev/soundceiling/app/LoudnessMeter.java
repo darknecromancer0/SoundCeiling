@@ -9,18 +9,30 @@ package dev.soundceiling.app;
  * quickly without making the displayed LUFS-like number jitter on every 10 ms capture block.
  */
 final class LoudnessMeter {
-    private static final double CONTROL_TAU_SECONDS = 0.070;
     private static final double DISPLAY_TAU_SECONDS = 3.0;
+    private static final float CONTROL_ATTACK_MS = 60f;
+    private static final float CONTROL_RELEASE_MS = 650f;
 
     static final class Reading {
         final float lufsLike;
         final float rmsDbfs;
         final float controlLoudnessDb;
+        final float rawDbfs;
+        final float momentaryDbfs;
+        final float controlEnvelopeDbfs;
+        final float rawPeakDbfs;
+        final float projectedPeakDbfs;
 
-        Reading(float lufsLike, float rmsDbfs, float controlLoudnessDb) {
+        Reading(float lufsLike, float rmsDbfs, float controlLoudnessDb,
+                float rawPeakDbfs, float projectedPeakDbfs, float momentaryDbfs) {
             this.lufsLike = lufsLike;
             this.rmsDbfs = rmsDbfs;
             this.controlLoudnessDb = controlLoudnessDb;
+            this.rawDbfs = rmsDbfs;
+            this.momentaryDbfs = momentaryDbfs;
+            this.controlEnvelopeDbfs = controlLoudnessDb;
+            this.rawPeakDbfs = rawPeakDbfs;
+            this.projectedPeakDbfs = projectedPeakDbfs;
         }
     }
 
@@ -28,9 +40,11 @@ final class LoudnessMeter {
     private final int channels;
     private final Biquad[] shelf;
     private final Biquad[] highPass;
+    private final AsymmetricLoudnessEnvelope controlEnvelope =
+            new AsymmetricLoudnessEnvelope(CONTROL_ATTACK_MS, CONTROL_RELEASE_MS);
     private boolean initialized;
-    private double controlPower;
     private double shortPower;
+    private long processedSamples;
 
     LoudnessMeter(int sampleRate, int channels) {
         this.sampleRate = Math.max(8000, sampleRate);
@@ -44,36 +58,50 @@ final class LoudnessMeter {
     }
 
     Reading update(short[] pcm, int length) {
+        return update(pcm, length, 0f);
+    }
+
+    Reading update(short[] pcm, int length, float projectedGainDb) {
         int n = Math.max(0, Math.min(length, pcm.length));
         if (n == 0) {
             return new Reading(DbMath.SILENCE_DBFS, DbMath.SILENCE_DBFS,
-                    DbMath.SILENCE_DBFS);
+                    DbMath.SILENCE_DBFS, DbMath.SILENCE_DBFS,
+                    DbMath.SILENCE_DBFS, DbMath.SILENCE_DBFS);
         }
         double weightedSq = 0.0;
         double rawSq = 0.0;
+        double rawPeak = 0.0;
         for (int i = 0; i < n; i++) {
             int channel = i % channels;
             double x = pcm[i] / 32768.0;
             rawSq += x * x;
+            rawPeak = Math.max(rawPeak, Math.abs(x));
             double y = sampleRate == 48000 ? highPass[channel].process(shelf[channel].process(x)) : x;
             weightedSq += y * y;
         }
         double blockPower = weightedSq / n;
         double seconds = n / (double) (sampleRate * channels);
         if (!initialized) {
-            controlPower = blockPower;
             shortPower = blockPower;
             initialized = true;
         } else {
-            double controlAlpha = 1.0 - Math.exp(-Math.max(.001, seconds) / CONTROL_TAU_SECONDS);
             double displayAlpha = 1.0 - Math.exp(-Math.max(.001, seconds) / DISPLAY_TAU_SECONDS);
-            controlPower += controlAlpha * (blockPower - controlPower);
             shortPower += displayAlpha * (blockPower - shortPower);
         }
+        processedSamples += n;
+        long samplesPerSecond = (long) sampleRate * channels;
+        long wholeSeconds = processedSamples / samplesPerSecond;
+        long remainingSamples = processedSamples % samplesPerSecond;
+        long envelopeTimeMs = wholeSeconds * 1000L
+                + remainingSamples * 1000L / samplesPerSecond;
         float lufs = weightedPowerToLoudness(shortPower);
-        float controlLoudness = weightedPowerToLoudness(controlPower);
+        float momentary = weightedPowerToLoudness(blockPower);
+        float controlLoudness = controlEnvelope.update(momentary, envelopeTimeMs);
         float rms = DbMath.powerToDb(rawSq / n);
-        return new Reading(lufs, rms, controlLoudness);
+        float peak = DbMath.amplitudeToDbfs(rawPeak);
+        float projectedPeak = peak <= DbMath.SILENCE_DBFS
+                ? peak : peak + (Float.isFinite(projectedGainDb) ? projectedGainDb : 0f);
+        return new Reading(lufs, rms, controlLoudness, peak, projectedPeak, momentary);
     }
 
     private static float weightedPowerToLoudness(double power) {

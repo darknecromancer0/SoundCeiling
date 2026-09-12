@@ -59,7 +59,8 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
         if (state == null) return;
         boolean changed = !state.sourcePackage.equals(runtime.sourcePackage)
                 || state.pcmState != runtime.pcmState
-                || state.meteringCapability != runtime.meteringCapability;
+                || state.meteringCapability != runtime.meteringCapability
+                || state.dspTransportCapability != runtime.dspTransportCapability;
         runtime = state;
         if (changed && appsHost != null) rebuildApps();
     }
@@ -67,6 +68,10 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
     private void showList() {
         root.removeAllViews();
         addHeader();
+        if (globalDspActive()) {
+            TextView locked = secondary("Недоступно при Global DSP: обрабатывается весь аудиовыход.", 13);
+            locked.setPadding(0, dp(8), 0, dp(8)); root.addView(locked);
+        }
         addSystemStreams();
         TextView appTitle = text("Приложения", 20, true);
         appTitle.setPadding(0, dp(20), 0, dp(8));
@@ -75,6 +80,7 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
         search.setHint("Поиск приложений");
         search.setSingleLine(true);
         search.setTextColor(UiTheme.primaryText(getContext()));
+        search.setEnabled(!globalDspActive()); search.setAlpha(globalDspActive() ? 0.45f : 1f);
         search.setHintTextColor(UiTheme.secondaryText(getContext()));
         root.addView(search, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(52)));
         search.addTextChangedListener(new TextWatcher() {
@@ -133,6 +139,7 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
     private void addFilterButton(LinearLayout host, String label, Filter value) {
         Button button = new Button(getContext()); button.setAllCaps(false); button.setText(label);
         button.setOnClickListener(v -> { filter = value; rebuildApps(); });
+        button.setEnabled(!globalDspActive()); button.setAlpha(globalDspActive() ? 0.45f : 1f);
         host.addView(button, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(48)));
     }
 
@@ -153,10 +160,12 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
         final SystemStreamPolicy initialPolicy = initial;
         LinearLayout card = new LinearLayout(getContext()); card.setOrientation(LinearLayout.VERTICAL); card.setPadding(dp(10), dp(6), dp(10), dp(8));
         CheckBox enabled = new CheckBox(getContext()); enabled.setText(label + (kind == SystemStreamPolicy.Kind.ASSISTANT ? " · может быть unavailable" : ""));
-        enabled.setTextColor(UiTheme.primaryText(getContext())); enabled.setChecked(initialPolicy.enabled); card.addView(enabled);
+        enabled.setTextColor(UiTheme.primaryText(getContext())); enabled.setChecked(initialPolicy.enabled);
+        enabled.setEnabled(!globalDspActive()); enabled.setAlpha(globalDspActive() ? 0.45f : 1f); card.addView(enabled);
         TextView ceilingLabel = secondary("Ceiling: " + initialPolicy.ceilingPercent + "%", 13); card.addView(ceilingLabel);
         SeekBar ceiling = new SeekBar(getContext()); ceiling.setMin(0); ceiling.setMax(100); ceiling.setProgress(initialPolicy.ceilingPercent);
-        ceiling.setVisibility(initialPolicy.enabled ? View.VISIBLE : View.GONE); ceilingLabel.setVisibility(initialPolicy.enabled ? View.VISIBLE : View.GONE); card.addView(ceiling);
+        ceiling.setVisibility(initialPolicy.enabled ? View.VISIBLE : View.GONE); ceilingLabel.setVisibility(initialPolicy.enabled ? View.VISIBLE : View.GONE);
+        ceiling.setEnabled(!globalDspActive()); ceiling.setAlpha(globalDspActive() ? 0.45f : 1f); card.addView(ceiling);
         enabled.setOnCheckedChangeListener((buttonView, isChecked) -> {
             ceiling.setVisibility(isChecked ? View.VISIBLE : View.GONE); ceilingLabel.setVisibility(isChecked ? View.VISIBLE : View.GONE);
             saveStreamPolicy(kind, isChecked, ceiling.getProgress());
@@ -207,7 +216,8 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
         LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.VERTICAL); row.setPadding(dp(12), dp(10), dp(12), dp(10)); row.setClickable(true); row.setFocusable(true);
         row.addView(text(source.displayName, 16, true));
         TextView sub = secondary(policy.mode.name() + " · " + pcmLabel(source) + "\n" + source.packageName, 12); row.addView(sub);
-        row.setOnClickListener(v -> showEditor(source, policy)); return row;
+        row.setEnabled(!globalDspActive()); row.setAlpha(globalDspActive() ? 0.45f : 1f);
+        row.setOnClickListener(v -> { if (!globalDspActive()) showEditor(source, policy); }); return row;
     }
 
     private String pcmLabel(SourceDescriptor source) {
@@ -216,6 +226,11 @@ final class AppsSystemView extends ScrollView implements RuntimeScreen {
         if (runtime.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT) return "PCM exact";
         if (runtime.meteringCapability == EngineCapabilities.MeteringCapability.PCM_MIXED) return "PCM mixed · Global works";
         return runtime.pcmState.name();
+    }
+
+    private boolean globalDspActive() {
+        return runtime.dspTransportCapability
+                == EngineCapabilities.DspTransportCapability.VERIFIED_GLOBAL_MIX;
     }
 
     private void showEditor(SourceDescriptor source, AppPolicy policy) {

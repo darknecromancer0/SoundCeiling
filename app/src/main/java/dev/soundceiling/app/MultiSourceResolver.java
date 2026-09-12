@@ -6,17 +6,17 @@ import java.util.Map;
 final class MultiSourceResolver {
     static final class Result {
         final boolean sourceControlEnabled;
-        final boolean limiterOnly;
+        final boolean downwardOnly;
         final int strictestMaxPercent;
         final int strictestFallbackPercent;
         final AppPolicy exactPolicy;
         final String reason;
 
-        Result(boolean sourceControlEnabled, boolean limiterOnly,
+        Result(boolean sourceControlEnabled, boolean downwardOnly,
                int strictestMaxPercent, int strictestFallbackPercent,
                AppPolicy exactPolicy, String reason) {
             this.sourceControlEnabled = sourceControlEnabled;
-            this.limiterOnly = limiterOnly;
+            this.downwardOnly = downwardOnly;
             this.strictestMaxPercent = strictestMaxPercent;
             this.strictestFallbackPercent = strictestFallbackPercent;
             this.exactPolicy = exactPolicy;
@@ -28,7 +28,7 @@ final class MultiSourceResolver {
                           int baseMaxPercent, int baseFallbackPercent) {
         int max = clamp(baseMaxPercent);
         int fallback = Math.min(max, clamp(baseFallbackPercent));
-        boolean limiterOnly = false;
+        boolean downwardOnly = false;
         AppPolicy exact = null;
         if (sources == null || sources.sources().isEmpty()) {
             return new Result(true, false, max, fallback, null, "no_exact_source");
@@ -40,7 +40,7 @@ final class MultiSourceResolver {
                 return new Result(false, true, max, fallback, null,
                         "policy_conflict_off_source:" + source.packageName);
             }
-            limiterOnly |= policy.limiterOnly;
+            downwardOnly |= policy.downwardOnly;
             if (policy.mode == AppRule.Mode.CUSTOM) {
                 max = Math.min(max, policy.maxMediaPercent);
                 fallback = Math.min(fallback, policy.fallbackMaxPercent);
@@ -51,7 +51,7 @@ final class MultiSourceResolver {
             }
         }
         fallback = Math.min(fallback, max);
-        return new Result(true, limiterOnly, max, fallback, exact,
+        return new Result(true, downwardOnly, max, fallback, exact,
                 sources.confidence == EngineCapabilities.SourceIdentityConfidence.EXACT
                         ? "exact_source_policy" : "shared_source_policy");
     }

@@ -159,10 +159,17 @@ public final class V060OneWayPureTest {
         int actual = TransientAttenuationPolicy.safeTarget(current, curve, deltaDb,
                 emergencyThresholdDb, 1, 15);
         float requiredGain = curve.gainDbForIndex(current) - (deltaDb - emergencyThresholdDb);
-        int expected = Math.max(1, curve.bestIndexAtOrBelowGain(requiredGain, 15));
-        assertEquals(expected, actual,
-                "transient emergency must map required dB attenuation through the volume curve");
+        int curveTarget = Math.max(1, curve.bestIndexAtOrBelowGain(requiredGain, 15));
+        int expectedFirst = Math.max(curveTarget, current - 2);
+        assertEquals(expectedFirst, actual,
+                "v0.7 transient write follows the dB curve but is capped to two Media steps per decision");
         assertTrue(actual < current, "transient emergency above threshold must attenuate");
+        int next = TransientAttenuationPolicy.safeTarget(actual, curve, deltaDb,
+                emergencyThresholdDb, 1, 15);
+        assertTrue(next < actual,
+                "persisting dangerous delta may continue toward the dB-derived target on later decisions");
+        assertTrue(next >= actual - 2,
+                "each later delta-transient decision remains bounded to two Media steps");
         assertEquals(current, TransientAttenuationPolicy.safeTarget(current, curve, 9f,
                         emergencyThresholdDb, 1, 15),
                 "transient below emergency threshold must hold");

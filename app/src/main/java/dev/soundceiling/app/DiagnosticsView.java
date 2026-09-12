@@ -1,7 +1,10 @@
 package dev.soundceiling.app;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Typeface;
+import android.provider.Settings;
+import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -14,6 +17,7 @@ import java.util.Locale;
 final class DiagnosticsView extends ScrollView implements RuntimeScreen {
     private final Activity activity;
     private final TextView summary;
+    private final Button sourceAccess;
     private final LinearLayout items;
 
     DiagnosticsView(Activity activity) {
@@ -37,11 +41,22 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
         summary.setPadding(0, dp(14), 0, dp(12));
         root.addView(summary);
 
+        sourceAccess = new Button(activity);
+        sourceAccess.setAllCaps(false);
+        sourceAccess.setText("Открыть доступ к активным медиасеансам");
+        sourceAccess.setVisibility(View.GONE);
+        sourceAccess.setOnClickListener(v -> {
+            try {
+                this.activity.startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+            } catch (RuntimeException ignored) {}
+        });
+        root.addView(sourceAccess, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(50)));
+
         items = new LinearLayout(activity);
         items.setOrientation(LinearLayout.VERTICAL);
         root.addView(items);
 
-        TextView logInfo = text("Логи: до 16 MiB суммарно. Старые сессии удаляются первыми; аудио PCM в лог не записывается.",
+        TextView logInfo = text("Логи: до 64 MiB суммарно. Старые сессии удаляются первыми; аудио PCM в лог не записывается.",
                 13, UiTheme.secondaryText(activity));
         logInfo.setPadding(0, dp(16), 0, dp(8));
         root.addView(logInfo);
@@ -55,8 +70,15 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
     @Override public void render(RuntimeState state) {
         summary.setText(String.format(Locale.US,
                 "Engine: %s\nCapture: %s · signal: %s · PCM: %s\n"
-                        + "Source: %s · package: %s · sourceConfidence: %s · rule: %s\n"
-                        + "meteringCapability: %s\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
+                        + "Source: %s · package: %s · sourceConfidence: %s · access: %s · rule: %s\n"
+                        + "meteringCapability: %s\nЧастотный спектр: %s · age %d ms\nvolumeControlCapability: %s\ndspTransportCapability: %s\n"
+                        + "Session DSP: QUARANTINED · reason=%s\n"
+                        + "PCM DSP mode: %s · audible output: %s · reason=%s\n"
+                        + "Shadow gain: requested=%+.2f dB · applied=%+.2f dB · active=%s\n"
+                        + "Shadow peaks: projected=%.2f dBFS · PCM=%.2f dBFS · clipped=%d · reason=%s\n"
+                        + "Relay state: %s · audible=%s · full=%s · recovery=%s · reason=%s\n"
+                        + "Relay volume: %d/%d · gain requested=%+.2f dB · applied=%+.2f dB\n"
+                        + "Relay output peak: %.2f dBFS · latency=%s · probe remaining=%d ms\n"
                         + "Downgrade reason: %s\nRoute: %s · Device profile: %s\n"
                         + "Media: %d/%d · effective max: %d\n"
                         + "Raw Peak %.1f dBFS · LUFS-like %.1f · reaction %s\nLog: %s",
@@ -64,8 +86,26 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 state.captureStatus, state.signalPresent ? "yes" : "no", state.pcmState,
                 state.sourceLabel.isEmpty() ? "—" : state.sourceLabel,
                 state.sourcePackage.isEmpty() ? "—" : state.sourcePackage,
-                state.sourceConfidence, state.appRuleLabel,
-                state.meteringCapability, state.volumeControlCapability, state.dspTransportCapability,
+                state.sourceConfidence, state.sourceAccessState, state.appRuleLabel,
+                state.meteringCapability, spectrumSource(state), state.meterAgeMs,
+                state.volumeControlCapability, state.dspTransportCapability,
+                EnhancedSessionSetup.RUNTIME_QUARANTINE_REASON,
+                state.pcmDspMode, state.pcmDspAudibleOutputAllowed ? "ALLOWED" : "BLOCKED",
+                state.pcmDspReason,
+                state.pcmShadowRequestedGainDb, state.pcmShadowAppliedGainDb,
+                state.pcmShadowActive ? "yes" : "no",
+                state.pcmShadowProjectedPeakDbfs, state.pcmShadowPcmPeakDbfs,
+                state.pcmShadowClippedSamples, state.pcmShadowReason,
+                state.relayState, state.relayAudible ? "yes" : "no",
+                state.relayFullExperimental ? "yes" : "no",
+                state.relayRecoveryRequired ? "yes" : "no",
+                state.relayReason, state.relayVolumeIndex,
+                state.relayVolumeHardMaximum,
+                state.relayRequestedGainDb, state.relayAppliedGainDb,
+                state.relayOutputPeakDbfs,
+                state.relayLatencyMs < 0L
+                        ? "—" : state.relayLatencyMs + " ms",
+                state.relayProbeRemainingMs,
                 state.downgradeReason.isEmpty() ? "—" : state.downgradeReason,
                 state.routeLabel.isEmpty() ? "—" : state.routeLabel,
                 state.profileName.isEmpty() ? "—" : state.profileName,
@@ -73,6 +113,9 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
                 state.rawPeakDbfs, state.sourceLoudness,
                 state.lastReactionLatencyMs >= 0 ? state.lastReactionLatencyMs + " ms" : "—",
                 state.logStatus.isEmpty() ? "not active" : state.logStatus));
+        sourceAccess.setVisibility(
+                state.sourceAccessState == CaptureRequestCoordinator.SourceAccessState.ACCESS_MISSING
+                        ? View.VISIBLE : View.GONE);
 
         DiagnosticItem[] published = state.diagnostics();
         List<DiagnosticItem> diagnostics;
@@ -95,6 +138,16 @@ final class DiagnosticsView extends ScrollView implements RuntimeScreen {
         }
         items.removeAllViews();
         for (DiagnosticItem item : diagnostics) addItem(item);
+    }
+
+    private static String spectrumSource(RuntimeState state) {
+        boolean available = false;
+        for (float value : state.bandLevels()) if (Float.isFinite(value)) { available = true; break; }
+        if (!available) return "unavailable";
+        if (state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_EXACT
+                || state.meteringCapability == EngineCapabilities.MeteringCapability.PCM_MIXED) return "PCM";
+        return state.captureStatus == RuntimeState.CaptureStatus.RUNNING
+                ? "Visualizer FFT" : "held last spectrum";
     }
 
     private void addItem(DiagnosticItem item) {

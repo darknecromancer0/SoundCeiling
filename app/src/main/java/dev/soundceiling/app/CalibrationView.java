@@ -3,6 +3,8 @@ package dev.soundceiling.app;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Typeface;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -18,6 +20,8 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     }
 
     private final Listener listener;
+    private final AudioManager audio;
+    private String restoredRouteId = "";
     private final TextView route;
     private final TextView speakerStatus;
     private final TextView calibrationStatus;
@@ -29,6 +33,7 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     CalibrationView(Context context, Listener listener) {
         super(context);
         this.listener = listener;
+        audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         setFillViewport(true);
         setBackgroundColor(UiTheme.background(context));
 
@@ -40,7 +45,11 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
         TextView title = text("Калибровка", 28, UiTheme.primaryText(context));
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title);
-        root.addView(text("Калибровка нужна только для приблизительного dB SPL. LUFS-like, dBFS и safety ceiling работают и без неё.",
+        root.addView(text("Калибровка нужна только для приблизительного dB SPL конкретного аудиовыхода. "
+                        + "Цифровые измерения и системные ограничения Media работают и без SPL-профиля.",
+                14, UiTheme.secondaryText(context)));
+        root.addView(text("Во время тест-тона SoundCeiling временно останавливает активную защиту, чтобы не искажать измерение. "
+                        + "Если защита работала до теста, после завершения или ошибки автоматически запускается Safe fallback.",
                 14, UiTheme.secondaryText(context)));
         route = text("Выход: …", 14, UiTheme.secondaryText(context));
         route.setPadding(0, dp(8), 0, dp(16));
@@ -48,8 +57,12 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
 
         TextView speakerTitle = section("Шаг 1 · Проверить аудиовыход");
         root.addView(speakerTitle);
-        root.addView(text("Безопасный тест: 1 кГц · -12 dBFS · 3 сек. Убедитесь, что звук идёт из нужного динамика/наушников.",
+        root.addView(text("1 кГц · -12 dBFS · 3 сек. -12 dBFS задаёт только цифровой уровень тестового сигнала и не гарантирует безопасную акустическую громкость. "
+                        + "Перед запуском вручную выставьте комфортно низкий Media. Если звук неприятно громкий — сразу уменьшите Media; тест будет остановлен и результат отброшен.",
                 14, UiTheme.secondaryText(context)));
+        root.addView(text("Не меняйте Media и не переключайте динамик, наушники или Bluetooth во время одного теста. "
+                        + "SoundCeiling отслеживает оба параметра и отменяет тест при изменении.",
+                13, UiTheme.secondaryText(context)));
         speakerProgress = progress();
         root.addView(speakerProgress);
         Button speakerButton = button("▶ Проверить динамик / наушники");
@@ -61,7 +74,8 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
         TextView calibrationTitle = section("Шаг 2 · Проиграть эталонный тон");
         calibrationTitle.setPadding(0, dp(28), 0, dp(6));
         root.addView(calibrationTitle);
-        root.addView(text("Эталон: 1 кГц · -30 dBFS · 3 сек. Измерьте его внешним SPL-метром. Для наушников точность требует акустического куплера.",
+        root.addView(text("Эталон: 1 кГц · -30 dBFS · 3 сек. Это также цифровой уровень, а фактическая громкость зависит от Media и аудиовыхода. "
+                        + "Измерьте тон внешним SPL-метром; для наушников точность требует акустического куплера.",
                 14, UiTheme.secondaryText(context)));
         calibrationProgress = progress();
         root.addView(calibrationProgress);
@@ -87,6 +101,7 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
         measuredSpl.setProgress(Prefs.lastMeasuredSpl(context));
         root.addView(measuredSpl);
         updateMeasuredLabel(measuredSpl.getProgress());
+        restoreCurrentRouteCalibration();
         measuredSpl.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 updateMeasuredLabel(progress);
@@ -108,11 +123,11 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
 
     private void showNoMeterInfo() {
         Prefs.get(getContext()).edit().putBoolean(Prefs.SPL_MODE, false).apply();
-        calibrationStatus.setText("dB SPL режим отключён. Используются LUFS-like/dBFS и системный safety ceiling.");
+        calibrationStatus.setText("dB SPL режим отключён. Остаются цифровые измерения и системная защита Media.");
         new AlertDialog.Builder(getContext())
                 .setTitle("Можно пользоваться без SPL-метра")
-                .setMessage("Оставьте dB SPL выключенным. Sound Ceiling всё равно видит цифровой уровень доступного PCM, "
-                        + "контролирует пики и системный потолок. Просто абсолютные dB SPL для конкретного динамика будут неизвестны.")
+                .setMessage("Оставьте dB SPL выключенным. SoundCeiling продолжит использовать доступные цифровые измерения, "
+                        + "контроль пиков и системные границы Media. Абсолютная акустическая громкость в dB SPL для конкретного динамика останется неизвестной.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
@@ -122,25 +137,44 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     }
 
     @Override public void render(RuntimeState state) {
+        restoreCurrentRouteCalibration();
         route.setText("Выход: " + (state.routeLabel.isEmpty() ? "определяется…" : state.routeLabel)
                 + " · Media " + state.volumeIndex + "/" + state.volumeMax
                 + (state.profileName.isEmpty() ? "\nSPL-калибровка: нет" : "\nSPL-калибровка: " + state.profileName));
     }
 
+    private void restoreCurrentRouteCalibration() {
+        AudioDeviceInfo device = DeviceDetector.detectOutputDevice(audio);
+        String routeId = DeviceDetector.key(device);
+        if (routeId.equals(restoredRouteId)) return;
+        restoredRouteId = routeId;
+        CalibrationPreferenceState saved = Prefs.calibrationState(getContext());
+        if (saved.matchesRoute(routeId)) {
+            measuredSpl.setProgress(saved.measuredSpl);
+            updateMeasuredLabel(saved.measuredSpl);
+            calibrationStatus.setText("Сохранённая калибровка этого выхода: "
+                    + saved.measuredSpl + " dB SPL");
+        } else {
+            int fallback = CalibrationPreferenceState.EMPTY.measuredSpl;
+            measuredSpl.setProgress(fallback);
+            updateMeasuredLabel(fallback);
+        }
+    }
+
     void onToneWaitingForEngineStop(ToneController.Kind kind) {
         ProgressBar p = progressFor(kind);
         p.setProgress(0);
-        statusFor(kind).setText("Останавливаю нормализатор перед тест-тоном…");
+        statusFor(kind).setText("Останавливаю защиту перед тест-тоном…");
     }
 
     void onToneStarting(ToneController.Kind kind) {
         ProgressBar p = progressFor(kind);
         p.setProgress(0);
-        statusFor(kind).setText("Запускаю тест-тон… Media остаётся без изменений");
+        statusFor(kind).setText("Запускаю тест-тон · Media и аудиовыход зафиксированы для этого теста");
     }
 
     void onToneStarted(ToneController.Kind kind, int playbackIndex) {
-        statusFor(kind).setText("Тон запущен · Media " + playbackIndex + " · громкость не изменялась");
+        statusFor(kind).setText("Тон запущен · Media " + playbackIndex + " · не меняйте громкость или аудиовыход");
     }
 
     void onToneTick(ToneController.Kind kind, int secondsRemaining, int playbackIndex) {
@@ -159,7 +193,7 @@ final class CalibrationView extends ScrollView implements RuntimeScreen {
     }
 
     void onToneError(ToneController.Kind kind, String error) {
-        statusFor(kind).setText("Ошибка тест-тона: " + error);
+        statusFor(kind).setText("Тест остановлен: " + error);
     }
 
     private ProgressBar progressFor(ToneController.Kind kind) {

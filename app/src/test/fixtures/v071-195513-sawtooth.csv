@@ -1,0 +1,6 @@
+elapsed_ms,loudness_dbfs,raw_peak_dbfs,pcm_present,media_index
+0,-13.39,-3.07,true,3
+202,-16.94,-15.24,true,4
+486,-13.39,-3.10,true,3
+565,-16.89,-13.31,true,4
+603,-12.75,-2.85,true,3

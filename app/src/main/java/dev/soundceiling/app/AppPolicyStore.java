@@ -71,7 +71,7 @@ final class AppPolicyStore {
         o.put("targetLoudness", p.targetLoudness);
         o.put("maxMediaPercent", p.maxMediaPercent);
         o.put("normalizationStrength", p.normalizationStrength);
-        o.put("limiterOnly", p.limiterOnly);
+        o.put("limiterOnly", p.downwardOnly);
         o.put("sourcePeakThresholdDbfs", p.sourcePeakThresholdDbfs);
         o.put("transientWarningDb", p.transientWarningDb);
         o.put("transientEmergencyDb", p.transientEmergencyDb);

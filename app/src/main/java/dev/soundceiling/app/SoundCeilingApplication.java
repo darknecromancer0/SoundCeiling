@@ -5,6 +5,7 @@ import android.app.Application;
 public final class SoundCeilingApplication extends Application {
     @Override public void onCreate() {
         super.onCreate();
+        DiagnosticLog.resetProcessGates();
         EqController.get(this).applySaved();
     }
 }

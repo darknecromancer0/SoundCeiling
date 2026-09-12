@@ -7,6 +7,7 @@ public final class HybridCoordinatorPureTest {
         testOffSourceHoldsComfortChanges();
         testExactPolicyStillCannotRaise();
         testManualPauseExplainsHold();
+        testLimiterModeAllowsOwnedBoundedRecovery();
         System.out.println("HybridCoordinatorPureTest: PASS");
     }
 
@@ -37,8 +38,8 @@ public final class HybridCoordinatorPureTest {
         EffectivePolicy exact = policy(true, true, false, 55, "");
         HybridEngineCoordinator.ControlPlan p = HybridEngineCoordinator.plan(
                 3, 3, 7, 6, exact, false, false);
-        assertEquals(3, p.requestedIndex, "v0.6 exact policy still cannot auto-raise Media");
-        if (!p.raiseBlocked) throw new AssertionError("one-way hold should be explicit");
+        assertEquals(3, p.requestedIndex, "v0.6 compatibility overload remains one-way");
+        if (!p.raiseBlocked) throw new AssertionError("compatibility one-way hold should be explicit");
     }
 
     private static void testManualPauseExplainsHold() {
@@ -47,6 +48,16 @@ public final class HybridCoordinatorPureTest {
                 3, 3, 6, 10, exact, true, false);
         assertEquals(3, p.requestedIndex, "manual pause no raise");
         if (!p.raiseBlocked) throw new AssertionError("manual pause should explain hold");
+    }
+
+    private static void testLimiterModeAllowsOwnedBoundedRecovery() {
+        EffectivePolicy limiter = policy(true, true, true, 70, "");
+        HybridEngineCoordinator.ControlPlan p = HybridEngineCoordinator.plan(
+                5, 5, 6, 10, 8, limiter, false, false, true);
+        assertEquals(6, p.requestedIndex,
+                "legacy limiter flag must not block one-step repayment of proven app-owned attenuation");
+        if (p.recoveryBlocked) throw new AssertionError("owned bounded recovery must remain authorized");
+        if (!"adaptive_recovery".equals(p.reason)) throw new AssertionError("unexpected reason: " + p.reason);
     }
 
     private static EffectivePolicy policy(boolean sourceControl, boolean raise, boolean limiter,

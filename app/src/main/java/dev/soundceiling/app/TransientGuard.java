@@ -1,6 +1,6 @@
 package dev.soundceiling.app;
 
-/** Detects sudden level jumps relative to a short elapsed-time adaptive baseline. */
+/** Detects sudden level jumps relative to an asymmetric adaptive program baseline. */
 final class TransientGuard {
     enum Severity { NONE, WARNING, EMERGENCY }
 
@@ -20,44 +20,123 @@ final class TransientGuard {
     }
 
     private static final long REARM_MS = 250L;
+    static final long ONSET_WARMUP_MS = 250L;
+    static final long EMERGENCY_CONFIRM_MS = 40L;
     static final long BASELINE_RISE_TAU_MS = 50L;
-    static final long BASELINE_FALL_TAU_MS = 35L;
+    static final long BASELINE_FALL_TAU_MS = 1000L;
     private static final long MAX_BASELINE_DT_MS = 250L;
     private static final float SILENCE_RESET_DBFS = -60f;
     private final float warningDeltaDb;
     private final float emergencyDeltaDb;
+    private final float hardPeakCeilingDbfs;
     private boolean initialized;
+    private boolean playbackActive;
     private float baselineDb;
+    private float emergencyCandidateBaselineDb;
+    private long warmupUntilMs;
+    private long emergencyCandidateSinceMs = Long.MIN_VALUE;
     private long rearmAtMs;
     private long lastUpdateMs = Long.MIN_VALUE;
 
     TransientGuard(float warningDeltaDb, float emergencyDeltaDb) {
+        this(warningDeltaDb, emergencyDeltaDb, 0f);
+    }
+
+    TransientGuard(float warningDeltaDb, float emergencyDeltaDb, float hardPeakCeilingDbfs) {
         this.warningDeltaDb = Math.max(0f, warningDeltaDb);
         this.emergencyDeltaDb = Math.max(this.warningDeltaDb, emergencyDeltaDb);
+        this.hardPeakCeilingDbfs = Float.isFinite(hardPeakCeilingDbfs)
+                ? hardPeakCeilingDbfs : 0f;
+    }
+
+    boolean hardPeakViolation(float projectedPeakDbfs) {
+        return Float.isFinite(projectedPeakDbfs) && projectedPeakDbfs > hardPeakCeilingDbfs;
+    }
+
+    /** Arms a short delta-only warmup on each inactive -> active playback transition. */
+    void onPlaybackState(boolean active, long nowMs) {
+        if (active == playbackActive) return;
+        playbackActive = active;
+        clearEmergencyCandidate();
+        if (active) {
+            warmupUntilMs = nowMs + ONSET_WARMUP_MS;
+            resetSignalState();
+        } else {
+            warmupUntilMs = 0L;
+            resetSignalState();
+        }
     }
 
     Event update(long nowMs, float fastLevelDb) {
         if (!Float.isFinite(fastLevelDb)) return new Event(Severity.NONE, 0f, baselineDb);
-        // Silence is not a meaningful transient baseline. Without this reset the first block of
-        // normal playback can look like a huge emergency after an idle period.
+        // Silence is not a meaningful transient baseline. It also ends the inferred continuous
+        // PCM program so the next audible block gets the same onset warmup as an explicit
+        // inactive -> active playback transition.
         if (fastLevelDb <= SILENCE_RESET_DBFS) {
-            reset();
+            playbackActive = false;
+            warmupUntilMs = 0L;
+            resetSignalState();
             return new Event(Severity.NONE, 0f, fastLevelDb);
         }
         if (!initialized) {
+            armImplicitPlaybackOnset(nowMs);
+            primeAt(fastLevelDb, nowMs);
+            return new Event(Severity.NONE, 0f, baselineDb);
+        }
+
+        // A transient delta is meaningful only across a continuously observed signal. If capture
+        // or source control did not feed this guard for longer than the normal baseline window,
+        // treat the resumed PCM as a new onset and warm the delta detector before comparing it.
+        long observationGapMs = lastUpdateMs == Long.MIN_VALUE ? 0L : nowMs - lastUpdateMs;
+        if (observationGapMs > MAX_BASELINE_DT_MS) {
+            playbackActive = false;
+            armImplicitPlaybackOnset(nowMs);
             primeAt(fastLevelDb, nowMs);
             return new Event(Severity.NONE, 0f, baselineDb);
         }
 
         float delta = fastLevelDb - baselineDb;
-        Severity raw = delta >= emergencyDeltaDb ? Severity.EMERGENCY
-                : delta >= warningDeltaDb ? Severity.WARNING : Severity.NONE;
-        Severity emitted = raw != Severity.NONE && nowMs >= rearmAtMs ? raw : Severity.NONE;
-        if (emitted != Severity.NONE) rearmAtMs = nowMs + REARM_MS;
+
+        // During playback onset/restart, delta remains diagnostic only. Prime the program
+        // baseline from the arriving blocks so the first loud block is not compared with silence.
+        if (playbackActive && nowMs < warmupUntilMs) {
+            baselineDb = fastLevelDb;
+            lastUpdateMs = nowMs;
+            clearEmergencyCandidate();
+            return new Event(Severity.NONE, delta, baselineDb);
+        }
+
+        Severity emitted = Severity.NONE;
+        if (emergencyCandidateSinceMs != Long.MIN_VALUE) {
+            // Confirmation uses the frozen reference from the first dangerous block while the
+            // ordinary adaptive baseline keeps following elapsed time. This prevents a sustained
+            // new program level from leaving the detector artificially far behind.
+            float candidateDelta = fastLevelDb - emergencyCandidateBaselineDb;
+            if (candidateDelta >= emergencyDeltaDb && nowMs >= rearmAtMs) {
+                if (nowMs - emergencyCandidateSinceMs >= EMERGENCY_CONFIRM_MS) {
+                    emitted = Severity.EMERGENCY;
+                    rearmAtMs = nowMs + REARM_MS;
+                    clearEmergencyCandidate();
+                } else {
+                    emitted = Severity.WARNING;
+                }
+            } else {
+                clearEmergencyCandidate();
+                if (delta >= warningDeltaDb && nowMs >= rearmAtMs) emitted = Severity.WARNING;
+            }
+        } else if (delta >= emergencyDeltaDb && nowMs >= rearmAtMs) {
+            emergencyCandidateSinceMs = nowMs;
+            emergencyCandidateBaselineDb = baselineDb;
+            emitted = Severity.WARNING;
+        } else if (delta >= warningDeltaDb && nowMs >= rearmAtMs) {
+            emitted = Severity.WARNING;
+        }
 
         long rawDt = lastUpdateMs == Long.MIN_VALUE ? 0L : nowMs - lastUpdateMs;
         long dtMs = Math.max(0L, Math.min(MAX_BASELINE_DT_MS, rawDt));
         if (dtMs > 0L) {
+            // A short musical trough must not redefine the recent program level. Rising material
+            // adapts quickly so a sustained new level settles; falling material releases slowly.
             long tauMs = fastLevelDb < baselineDb ? BASELINE_FALL_TAU_MS : BASELINE_RISE_TAU_MS;
             double alpha = 1.0 - Math.exp(-dtMs / (double) tauMs);
             baselineDb += (float) (alpha * (fastLevelDb - baselineDb));
@@ -68,21 +147,32 @@ final class TransientGuard {
     }
 
     void reset() {
-        initialized = false;
-        baselineDb = 0f;
-        rearmAtMs = 0L;
-        lastUpdateMs = Long.MIN_VALUE;
+        playbackActive = false;
+        warmupUntilMs = 0L;
+        resetSignalState();
     }
+
+    boolean isPlaybackActive() { return playbackActive; }
 
     void prime(float fastLevelDb) {
         if (!Float.isFinite(fastLevelDb) || fastLevelDb <= SILENCE_RESET_DBFS) {
-            reset();
+            playbackActive = false;
+            warmupUntilMs = 0L;
+            resetSignalState();
             return;
         }
         initialized = true;
         baselineDb = fastLevelDb;
         rearmAtMs = 0L;
         lastUpdateMs = Long.MIN_VALUE;
+        clearEmergencyCandidate();
+    }
+
+    private void armImplicitPlaybackOnset(long nowMs) {
+        if (playbackActive) return;
+        playbackActive = true;
+        warmupUntilMs = nowMs + ONSET_WARMUP_MS;
+        clearEmergencyCandidate();
     }
 
     private void primeAt(float fastLevelDb, long nowMs) {
@@ -90,5 +180,19 @@ final class TransientGuard {
         baselineDb = fastLevelDb;
         rearmAtMs = 0L;
         lastUpdateMs = nowMs;
+        clearEmergencyCandidate();
+    }
+
+    private void resetSignalState() {
+        initialized = false;
+        baselineDb = 0f;
+        rearmAtMs = 0L;
+        lastUpdateMs = Long.MIN_VALUE;
+        clearEmergencyCandidate();
+    }
+
+    private void clearEmergencyCandidate() {
+        emergencyCandidateSinceMs = Long.MIN_VALUE;
+        emergencyCandidateBaselineDb = 0f;
     }
 }

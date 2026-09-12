@@ -60,6 +60,15 @@ final class ControlProfile {
                 recoveryIntervalMs);
     }
 
+    /** Own target carries the user's maximum; physical Media is the ordinary PCM actuator. */
+    ControlProfile forIndependentVolume() {
+        return new ControlProfile(0, 100, false, 100, quietIndex, normalizationPreset,
+                targetLoudness, toleranceLu, normalizationStrength, downwardAttackMs,
+                upwardReleaseMs, holdAfterLoudMs, maxDownSteps, maxUpSteps,
+                sourcePeakThresholdDbfs, transientWarningDb, transientEmergencyDb, false,
+                recoveryIntervalMs);
+    }
+
     String encode() {
         return String.format(Locale.US,
                 "v1|%d|%d|%b|%d|%d|%s|%.6f|%.6f|%.6f|%d|%d|%d|%d|%d|%.6f|%.6f|%.6f|%b|%d",

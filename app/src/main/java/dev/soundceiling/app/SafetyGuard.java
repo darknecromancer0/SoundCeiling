@@ -9,9 +9,8 @@ final class SafetyGuard {
     }
 
     /**
-     * v0.6 automatic clamp. The current observed Media index is an absolute upward ceiling.
-     * Minimum is only a floor for automatic downward movement: if the user is already below it,
-     * SoundCeiling holds that lower user level rather than raising back to Minimum.
+     * Downward/hold clamp. Minimum is only a floor for automatic downward movement: if the user
+     * is already below it, SoundCeiling holds that lower user level rather than raising to Minimum.
      */
     static int clampAutomatic(int requestedIndex, int currentIndex, SafetySettings settings,
                               int effectiveMax, boolean allowBelowMinimum) {
@@ -21,6 +20,22 @@ final class SafetyGuard {
         int floor = allowBelowMinimum ? 0 : Math.min(settings.minIndex, current);
         if (upper < floor) floor = upper;
         return Math.max(floor, Math.min(upper, requestedIndex));
+    }
+
+    /**
+     * v0.7 recovery-only clamp. It can only HOLD or move upward from the current observed value,
+     * never by more than one Android Media index per write, and it can never cross the
+     * user-authorized envelope, effective policy ceiling, or hard max. Configured Minimum is
+     * deliberately not used as an upward target.
+     */
+    static int clampRecovery(int requestedIndex, int currentIndex, SafetySettings settings,
+                             int effectiveMax, int userEnvelopeCeiling) {
+        int current = Math.max(0, currentIndex);
+        int upper = Math.min(settings.hardMax(), Math.max(0, effectiveMax));
+        upper = Math.min(upper, Math.max(0, userEnvelopeCeiling));
+        if (upper <= current) return current;
+        int oneStepUpper = Math.min(upper, current + 1);
+        return Math.max(current, Math.min(oneStepUpper, requestedIndex));
     }
 
     private SafetyGuard() {}

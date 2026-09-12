@@ -11,7 +11,7 @@ final class ControlDefaults {
     static final float SOURCE_PEAK_THRESHOLD_DBFS = -2f;
     static final float TRANSIENT_WARNING_DB = 6f;
     static final float TRANSIENT_EMERGENCY_DB = 10f;
-    static final long LOG_BUDGET_BYTES = 16L * 1024L * 1024L;
+    static final long LOG_BUDGET_BYTES = 64L * 1024L * 1024L;
 
     private ControlDefaults() {}
 }

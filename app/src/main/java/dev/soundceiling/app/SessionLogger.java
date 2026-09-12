@@ -33,7 +33,9 @@ final class SessionLogger implements AutoCloseable {
 
     static SessionLogger start(Context context, String header) throws IOException {
         SessionLogger logger = new SessionLogger(context);
-        String fixedHeader = header == null ? "HEADER" : header.replace("version=0.5.0", "version=" + BuildConfig.VERSION_NAME);
+        String fixedHeader = header == null ? "HEADER" : header
+                .replace("version=0.5.0", "version=" + BuildConfig.VERSION_NAME)
+                .replace("version=0.6.0", "version=" + BuildConfig.VERSION_NAME);
         logger.write(fixedHeader + " logSession=" + logger.id + " logLocation=" + clean(LogStorage.activeLocation(context)));
         logger.write("LOG_INFO One SoundCeiling run is one logical session. Rotated part files belong to this session and are grouped in Open logs.");
         return logger;
@@ -45,6 +47,12 @@ final class SessionLogger implements AutoCloseable {
 
     synchronized void event(String code, String detail) {
         String line = LogFormatter.formatEvent(SystemClock.elapsedRealtime(), code, detail);
+        decisionContext.add(line);
+        write(line);
+    }
+
+    synchronized void summary(String line) {
+        if (line == null || line.isEmpty()) return;
         decisionContext.add(line);
         write(line);
     }
@@ -75,9 +83,11 @@ final class SessionLogger implements AutoCloseable {
     }
 
     private void open() throws IOException {
-        LogStorage.Created created = LogStorage.createPart(context, LogFilePolicy.partName(id, part));
+        String displayName = LogFilePolicy.partName(id, part);
+        LogStorage.Created created = LogStorage.createPart(context, displayName);
         uri = created.uri;
         out = created.out;
+        LogSessionIndex.recordPart(context, id, displayName, uri, System.currentTimeMillis());
         Prefs.get(context).edit().putString(Prefs.LAST_LOG_URI, uri.toString()).apply();
         bytes = 0L;
         if (part > 1) writeRaw("LOG_PART session=" + id + " part=" + part + " previousPartRotated=true");

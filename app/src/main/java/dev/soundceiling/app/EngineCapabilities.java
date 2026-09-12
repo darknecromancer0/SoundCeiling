@@ -7,7 +7,12 @@ final class EngineCapabilities {
     enum SourceIdentityConfidence { EXACT, LIKELY, MIXED, UNKNOWN }
     enum MeteringCapability { PCM_EXACT, PCM_MIXED, OUTPUT_MIX_PEAK_RMS, ACTIVITY_ONLY, NONE }
     enum VolumeControlCapability { PER_APP_VERIFIED, STREAM_MEDIA, SYSTEM_STREAMS, NONE }
-    enum DspTransportCapability { VERIFIED_GLOBAL, VERIFIED_SOURCE, EXPERIMENTAL, UNAVAILABLE }
+    enum DspTransportCapability {
+        UNAVAILABLE,
+        AVAILABLE_UNVERIFIED,
+        VERIFIED_POLICY_SCOPED,
+        VERIFIED_GLOBAL_MIX
+    }
 
     final PlaybackObservationCapability playbackObservation;
     final SourceIdentityConfidence sourceIdentity;
