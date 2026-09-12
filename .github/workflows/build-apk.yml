@@ -11,10 +11,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Upload source snapshot for v0.11.1 field build
+      - name: Upload source snapshot for v0.11.5 field build
         uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.11.4-source-snapshot
+          name: SoundCeiling-v0.11.5-source-snapshot
           path: |
             .github
             app
@@ -196,6 +196,8 @@ jobs:
         run: bash ./scripts/run-v0114-field-tests.sh
       - name: Check v0.11.4 Accessibility key service and Stop
         run: bash ./scripts/run-v0114-key-service-tests.sh
+      - name: Check v0.11.5 target-only keys, rising attack and native geometry
+        run: bash ./scripts/run-v0115-target-tests.sh
       - name: Install Android SDK 35 packages
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
@@ -219,11 +221,11 @@ jobs:
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.11.4-debug-apk
+          name: SoundCeiling-v0.11.5-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundCeiling-v0.11.4-debug-apk-checksum
+          name: SoundCeiling-v0.11.5-debug-apk-checksum
           path: app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error

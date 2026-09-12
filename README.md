@@ -1,4 +1,30 @@
-# Sound Ceiling for Android - v0.11.4
+# Sound Ceiling for Android - v0.11.5
+
+The September 12 Samsung log showed that Down still paused ordinary normalization above the
+user's chosen zero, native panel geometry was unavailable, and upward recovery could be armed
+when the current PCM block was already rising.
+
+- Hardware Up/Down now changes only the independent desired slider while ordinary control owns
+  the keys. Positive levels keep normalization running. Own 0% mutes and pauses; raising the own
+  level resumes. An explicit Pause button remains available. Lowering the maximum to zero also mutes.
+- A target revision at the last write boundary rejects decisions calculated before a newer slider
+  action. Physical keys no longer apply a second Media decrement on top of changing the target.
+- A rising current-block attack near the selected level cancels upward recovery dwell. The existing fast downward path,
+  recent-attack history and one-step quiet recovery remain; 0% leveling strength keeps nominal gain.
+- Geometry can now come from the system volume window when its Accessibility event has no source
+  node. Matched capsules share its height, width and top, with an 8 dp gap. Native geometry failures
+  now log the reason and service capability. Centered vector icons replace overflowing paths.
+- The panel retains two-second idle dismissal, five seconds after interaction, outside-tap close,
+  expanded controls and the existing off-after-Stop key filter.
+
+Install-over preserves own volume, maximum and Advanced profiles. Ordinary Media remains reactive
+and uses integer steps; geometry and listening results need the next Samsung test. PCM Shadow is
+diagnostic and Relay remains optional. These are technical field fixes before product 1.0.
+
+Evidence and focused phone check: [v0.11.5 field audit](docs/field-tests/2026-09-12-v0115-target-geometry-audit.md).
+The version sections below record historical behavior; the current key contract is described above.
+
+## v0.11.4 reaction and overlay (historical field build)
 
 The latest Samsung test exposed short-gap up/down reversals, a slower intermediate-transient path,
 oversized fixed-position capsules and unnecessary Accessibility key work after Stop.

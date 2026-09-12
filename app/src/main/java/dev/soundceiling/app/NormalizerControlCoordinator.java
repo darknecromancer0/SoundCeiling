@@ -373,8 +373,8 @@ public final class NormalizerControlCoordinator {
                     source, frame.independentReferenceDb, frame.independentMaximumTargetDb)
                     - source - frame.mediaGainDb;
             if (!Float.isFinite(correction)) correction = 0f;
-            String blocked = frame.mediaAutoVolumePaused ? "media_auto_paused_user_down"
-                    : frame.userVolumeMuted ? "user_volume_muted"
+            String blocked = frame.userVolumeMuted ? "user_volume_muted"
+                    : frame.mediaAutoVolumePaused ? "media_auto_paused_by_user"
                     : !frame.mediaAutoVolume ? "user_volume_waiting_source"
                     : frame.controlProfile.normalizationPreset == NormalizationPreset.OFF
                             || !(frame.controlProfile.normalizationStrength > 0f)

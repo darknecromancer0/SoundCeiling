@@ -29,7 +29,7 @@ final class ControlProfile {
 final class UserVolumeControl {
  static boolean owns, pause; static int steps;
  static boolean ownsMedia() { return owns; }
- static void step(Context c,int direction) { steps+=direction; pause=direction<0; }
+ static void step(Context c,int direction) { steps+=direction; pause=false; }
  static int percent(Context c) { return 50; }
  static boolean paused() { return pause; }
 }

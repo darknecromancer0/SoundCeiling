@@ -93,6 +93,13 @@ final class IndependentMediaController {
         int next = current + wantedDirection;
         if (next <= curve.minIndex()) return hold(current, "user_volume_lowest_step");
         if (next > Math.min(curve.maxIndex(), maximum)) return hold(current, "user_volume_highest_step");
+        if (wantedDirection > 0 && settings.strength > 0f && Float.isFinite(attackLoudness)
+                && attackLoudness > loudness + Math.max(1f, settings.toleranceDb)
+                && attackLoudness + curve.gainDbForIndex(next) > attackGoal - settings.toleranceDb) {
+            // Do not raise into an onset near the goal. A deliberately higher target
+            // still responds while the entire rising block remains well below it.
+            return hold(current, "user_volume_rising_attack");
+        }
         if (wantedDirection > 0 && !allowRaise) return hold(current, "user_volume_raise_policy_blocked");
         if (wantedDirection > 0 && now < raiseNotBeforeMs) {
             return hold(current, "user_volume_attack_hold");

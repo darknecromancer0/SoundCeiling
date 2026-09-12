@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -40,7 +41,7 @@ final class UserVolumeCapsules extends LinearLayout {
         more.setContentDescription("Развернуть настройки громкости SoundCeiling");
         more.setOnClickListener(v -> { interaction.run(); expand.run(); });
         desiredColumn.addView(more, new FrameLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(48), Gravity.TOP));
+                LayoutParams.MATCH_PARENT, dp(40), Gravity.TOP));
         LayoutParams first = new LayoutParams(0, heightPx, 1f);
         first.rightMargin = dp(8);
         addView(desiredColumn, first);
@@ -70,7 +71,7 @@ final class UserVolumeCapsules extends LinearLayout {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF bounds = new RectF();
         private final Path clip = new Path();
-        private final Path icon = new Path();
+        private final Drawable symbol;
         private final VolumeCapsuleGesture gesture = new VolumeCapsuleGesture();
         private int percent;
         private int limit = 100;
@@ -78,6 +79,7 @@ final class UserVolumeCapsules extends LinearLayout {
         Capsule(Context context, boolean isMaximum) {
             super(context);
             this.isMaximum = isMaximum;
+            symbol = context.getDrawable(isMaximum ? R.drawable.sc_ceiling_icon : R.drawable.sc_volume_icon);
             setFocusable(true);
             setClickable(true);
             setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
@@ -128,33 +130,12 @@ final class UserVolumeCapsules extends LinearLayout {
         }
 
         private void drawIcon(Canvas canvas, float cx, float cy) {
-            int saved = canvas.save();
-            canvas.translate(cx, cy);
-            float density = getResources().getDisplayMetrics().density;
-            float iconScale = Math.min(1f, getWidth() / (32f * density));
-            canvas.scale(density * iconScale, density * iconScale);
-            paint.setColor(Color.rgb(246, 247, 249));
-            paint.setStrokeWidth(1.8f);
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setStrokeJoin(Paint.Join.ROUND);
-            paint.setStyle(Paint.Style.STROKE);
-            icon.reset();
-            if (isMaximum) {
-                // A horizontal ceiling above an upward arrow makes the maximum distinct.
-                canvas.drawLine(-9f, -10f, 9f, -10f, paint);
-                canvas.drawLine(-9f, -10f, -9f, -6f, paint);
-                canvas.drawLine(9f, -10f, 9f, -6f, paint);
-                canvas.drawLine(0f, 10f, 0f, -3f, paint);
-                icon.moveTo(-5f, 2f); icon.lineTo(0f, -3f); icon.lineTo(5f, 2f);
-            } else {
-                icon.moveTo(-10f, -4f); icon.lineTo(-5f, -4f);
-                icon.lineTo(1f, -9f); icon.lineTo(1f, 9f);
-                icon.lineTo(-5f, 4f); icon.lineTo(-10f, 4f); icon.close();
-                canvas.drawArc(0f, -6f, 10f, 6f, -60f, 120f, false, paint);
-                canvas.drawArc(-1f, -11f, 19f, 11f, -55f, 110f, false, paint);
-            }
-            canvas.drawPath(icon, paint);
-            canvas.restoreToCount(saved);
+            if (symbol == null) return;
+            int size = Math.min(dp(24), Math.max(1, getWidth() - dp(10)));
+            int left = Math.round(cx - size / 2f);
+            int top = Math.round(cy - size / 2f);
+            symbol.setBounds(left, top, left + size, top + size);
+            symbol.draw(canvas);
         }
 
         @Override public boolean onTouchEvent(MotionEvent event) {
@@ -264,11 +245,13 @@ final class UserVolumeCapsules extends LinearLayout {
     /** Native-sized action target with a drawn ellipsis or close symbol. */
     static final class IconButton extends View {
         private final boolean close;
+        private final Drawable dots;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         IconButton(Context context, boolean close) {
             super(context);
             this.close = close;
+            dots = context.getDrawable(R.drawable.sc_more_icon);
             setClickable(true);
             setFocusable(true);
             setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
@@ -293,9 +276,11 @@ final class UserVolumeCapsules extends LinearLayout {
                 canvas.drawLine(cx - half, cy - half, cx + half, cy + half, paint);
                 canvas.drawLine(cx - half, cy + half, cx + half, cy - half, paint);
             } else {
-                paint.setStyle(Paint.Style.FILL);
-                for (int dot = -1; dot <= 1; dot++) {
-                    canvas.drawCircle(cx + dot * 7f * density, cy, 2f * density, paint);
+                if (dots != null) {
+                    int size = Math.min(Math.round(24f * density), getWidth() - Math.round(8f * density));
+                    int left = Math.round(cx - size / 2f), top = Math.round(cy - size / 2f);
+                    dots.setBounds(left, top, left + size, top + size);
+                    dots.draw(canvas);
                 }
             }
         }

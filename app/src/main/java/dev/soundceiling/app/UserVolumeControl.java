@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.AudioManager;
+import java.util.function.IntSupplier;
 
 /** User intent shared by the in-app card, Accessibility panel and ordinary capture service. */
 final class UserVolumeControl {
@@ -12,6 +13,8 @@ final class UserVolumeControl {
     static final String EXTRA_LOWER = "user_volume_lower";
     private static final String VOLUME = "independent_user_volume_percent";
     private static final String MAXIMUM = "independent_user_volume_maximum";
+    private static final Object TARGET_LOCK = new Object();
+    private static volatile long targetRevision;
     private static volatile boolean engineActive;
     private static volatile boolean relayBlocksMedia;
 
@@ -33,40 +36,66 @@ final class UserVolumeControl {
         return clamp(Prefs.get(context).getInt(MAXIMUM, 100));
     }
     static void setPercent(Context context, int value) {
-        setValue(context, value, true, false, true);
+        setValue(context, value, false);
     }
     static void setMaximumPercent(Context context, int value) {
-        ensureInitialized(context);
-        int maximum = clamp(value);
-        Prefs.get(context).edit().putInt(MAXIMUM, maximum).apply();
-        setValue(context, Math.min(Prefs.get(context).getInt(VOLUME, 0), maximum), true, true, true);
+        synchronized (TARGET_LOCK) {
+            ensureInitialized(context);
+            int maximum = clamp(value);
+            Prefs.get(context).edit().putInt(MAXIMUM, maximum).apply();
+            setValue(context, Math.min(Prefs.get(context).getInt(VOLUME, 0), maximum), true);
+        }
     }
     static void step(Context context, int direction) {
         AudioManager audio = audio(context);
         int step = Math.max(1, Math.round(100f / Math.max(1,
                 audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC))));
-        setValue(context, percent(context) + Integer.signum(direction) * step, direction > 0, false, true);
+        synchronized (TARGET_LOCK) {
+            setValue(context, percent(context) + Integer.signum(direction) * step, false);
+        }
     }
     /** Observed native movement is a delta of intent, never an absolute user target. */
     static void observeNativeDelta(Context context, int delta, int physicalMaximum) {
         if (delta == 0 || !ownsMedia()) return;
-        int wanted = percent(context) + Math.round(100f * delta / Math.max(1, physicalMaximum));
-        // Android already performed this physical step; do not apply another Down.
-        setValue(context, wanted, delta > 0, false, false);
+        synchronized (TARGET_LOCK) {
+            int wanted = percent(context) + Math.round(100f * delta / Math.max(1, physicalMaximum));
+            // Android already performed this physical step; do not apply another Down.
+            setValue(context, wanted, false);
+        }
     }
-    private static void setValue(Context context, int value, boolean resume, boolean maximumChange, boolean applyStep) {
-        ensureInitialized(context);
-        int old = Prefs.get(context).getInt(VOLUME, 0);
-        int next = Math.min(clamp(value), maximumPercent(context));
-        boolean lower = next < old || !resume;
-        if (ownsMedia() && lower) StrictSafetyState.mediaAutomation().pause("media_auto_paused_user_down");
-        Prefs.get(context).edit().putInt(VOLUME, next).apply();
-        DiagnosticLog.event("user_volume_intent", "from=" + old + " to=" + next
-                + " maximum=" + maximumPercent(context) + " resume=" + resume
-                + " maximumChange=" + maximumChange);
-        if (ownsMedia()) {
-            context.startService(new Intent(context, NormalizerService.class).setAction(ACTION_CHANGED)
-                    .putExtra(EXTRA_RESUME, resume).putExtra(EXTRA_LOWER, lower && applyStep));
+    private static void setValue(Context context, int value, boolean maximumChange) {
+        synchronized (TARGET_LOCK) {
+            ensureInitialized(context);
+            int old = Prefs.get(context).getInt(VOLUME, 0);
+            int next = Math.min(clamp(value), maximumPercent(context));
+            // A positive desired level always continues ordinary normalization. Physical
+            // keys change this target, never a second, independent Media step.
+            boolean resume = next > 0;
+            if (ownsMedia() && !resume) StrictSafetyState.mediaAutomation().pause("media_auto_paused_user_zero");
+            Prefs.get(context).edit().putInt(VOLUME, next).apply();
+            targetRevision++;
+            if (ownsMedia() && resume) StrictSafetyState.mediaAutomation().resumeByUser();
+            DiagnosticLog.event("user_volume_intent", "from=" + old + " to=" + next
+                    + " maximum=" + maximumPercent(context) + " resume=" + resume
+                    + " maximumChange=" + maximumChange + " revision=" + targetRevision);
+            if (ownsMedia()) {
+                context.startService(new Intent(context, NormalizerService.class).setAction(ACTION_CHANGED)
+                        .putExtra(EXTRA_RESUME, resume).putExtra(EXTRA_LOWER, false));
+            }
+        }
+    }
+    static long revision() { return targetRevision; }
+    static int forRevision(long expected, IntSupplier action, int fallback) {
+        synchronized (TARGET_LOCK) {
+            return expected == targetRevision ? action.getAsInt() : fallback;
+        }
+    }
+    /** Called inside the service session gate; delayed intents carry no authority of their own. */
+    static int applyLatestTarget(Context context, ControlVolumeCurve curve,
+            UserVolumeActionApplier actions, long now) {
+        synchronized (TARGET_LOCK) {
+            int nominal = nominalIndex(context, curve);
+            return actions.apply(nominal, false, nominal > 0 && !paused(), now);
         }
     }
     static boolean ownsMedia() {
@@ -80,13 +109,18 @@ final class UserVolumeControl {
     static boolean paused() { return StrictSafetyState.mediaAutomation().paused(); }
     static void setEngineActive(boolean value) { engineActive = value; }
     static void pauseByUser(Context context) {
-        if (!ownsMedia()) return;
-        StrictSafetyState.mediaAutomation().pause("media_auto_paused_by_user");
-        context.startService(new Intent(context, NormalizerService.class).setAction(NormalizerService.ACTION_PAUSE));
+        synchronized (TARGET_LOCK) {
+            if (!ownsMedia()) return;
+            StrictSafetyState.mediaAutomation().pause("media_auto_paused_by_user");
+            targetRevision++;
+            context.startService(new Intent(context, NormalizerService.class).setAction(ACTION_CHANGED));
+        }
     }
     static void resumeByUser(Context context) {
-        if (!ownsMedia()) return;
-        context.startService(new Intent(context, NormalizerService.class).setAction(NormalizerService.ACTION_RESUME));
+        synchronized (TARGET_LOCK) {
+            if (!ownsMedia()) return;
+            setValue(context, percent(context), false);
+        }
     }
     static int nominalIndex(Context context, ControlVolumeCurve curve) {
         int percent = percent(context);

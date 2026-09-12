@@ -103,16 +103,17 @@ final class UserVolumeCard extends LinearLayout {
         maximum.setEnabled(!relay);
         desired.setAlpha(relay ? 0.45f : 1f);
         maximum.setAlpha(relay ? 0.45f : 1f);
-        pause.setEnabled(owns);
-        pause.setText(owns && UserVolumeControl.paused() ? "Продолжить" : "Пауза");
+        pause.setEnabled(owns && wanted > 0);
+        pause.setText(wanted == 0 ? "Без звука" : owns && UserVolumeControl.paused() ? "Продолжить" : "Пауза");
         mode.setText(relay
                 ? "Сейчас работает Relay. Его громкость — в карточке Relay."
                 : !owns
                 ? "Настройки следующего запуска. Нажмите «Запустить»."
+                : wanted == 0 ? "Громкость 0: без звука. Поднимите ползунок, чтобы продолжить."
                 : UserVolumeControl.paused()
                 ? "Автогромкость на паузе. Ползунок или «Продолжить» возобновит её."
                 : compact ? "Samsung Media меняется автоматически."
-                : "Задайте желаемую громкость. Samsung Media подстраивается автоматически. Down — тише и пауза; Up — громче и продолжить.");
+                : "Задайте желаемую громкость. Samsung Media подстраивается автоматически. Кнопки меняют вашу громкость. Пауза — только при 0%.");
         try {
             int index = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
             int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);

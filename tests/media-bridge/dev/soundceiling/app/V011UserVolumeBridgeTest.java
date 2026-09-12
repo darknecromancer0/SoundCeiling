@@ -33,8 +33,9 @@ public final class V011UserVolumeBridgeTest {
         check(audio.index > 4, "real Android write bridge must lift quiet material past old cap 4");
         int boosted = audio.index;
         user.apply(3, true, false, 4000);
-        check(audio.index == boosted - 1 && authority.paused(), "Down immediately lowers actual Media and pauses");
+        check(audio.index == boosted && authority.allowsWrites(), "Down no longer has a separate physical step or pause");
         authority.observe(tracker.observe(audio.index, 4020, 15));
+        authority.pause("media_auto_paused_by_user");
         user.apply(4, false, true, 4100);
         check(authority.allowsWrites(), "Up/Continue clears latch without capture restart");
         user.apply(0, true, true, 4200);

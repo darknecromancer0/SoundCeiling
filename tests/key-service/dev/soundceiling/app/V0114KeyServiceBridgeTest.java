@@ -19,14 +19,15 @@ public final class V0114KeyServiceBridgeTest {
   require(!service.onKeyEvent(key(0,29)), "nonvolume keys pass through");
   noSlowReads(audio);
 
-  UserVolumeControl.owns=true; StrictSafetyState.setEngineRunning(service,true);
+  UserVolumeControl.owns=true; StrictSafetyState.mediaAutomation().start();
+  StrictSafetyState.setEngineRunning(service,true);
   require(armed(service), "start arms the actual Android service flags");
   require(service.onKeyEvent(key(0,24)), "ordinary Up owns intent");
   require(UserVolumeControl.steps==1 && audio.adjusts==0 && UserVolumeOverlay.shows==0,
     "key intent applies before queued window creation");
   Handler.flush(); require(audio.adjusts==1 && UserVolumeOverlay.shows==1, "UI displays after key callback");
   service.onKeyEvent(key(1,24));
-  service.onKeyEvent(key(0,25)); require(UserVolumeControl.pause, "Down still pauses");
+  service.onKeyEvent(key(0,25)); require(StrictSafetyState.mediaAutomation().allowsWrites(), "owned Down does not apply a separate legacy pause");
   int shown=UserVolumeOverlay.shows;
   UserVolumeControl.owns=false;
   Prefs.beforeEdit=()->require(!armed(service), "Stop must disarm before preference I/O and teardown");

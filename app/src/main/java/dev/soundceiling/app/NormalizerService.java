@@ -190,9 +190,7 @@ public class NormalizerService extends Service {
         if (UserVolumeControl.ACTION_CHANGED.equals(action)) {
             sessionGate.runIfCurrent(sessionGate.current(), () -> {
                 if (!UserVolumeControl.ownsMedia()) return;
-                userVolumeActions.apply(UserVolumeControl.nominalIndex(this, controlCurve),
-                        intent.getBooleanExtra(UserVolumeControl.EXTRA_LOWER, false),
-                        intent.getBooleanExtra(UserVolumeControl.EXTRA_RESUME, false),
+                UserVolumeControl.applyLatestTarget(this, controlCurve, userVolumeActions,
                         SystemClock.elapsedRealtime());
             });
             return finishRelayActionIfIdle(startId);
@@ -795,6 +793,7 @@ public class NormalizerService extends Service {
             }
             int policyMaxIndex = UserVolumeControl.ownsMedia() ? controlCurve.maxIndex()
                     : controlCurve.capIndexFromPercent(hybridSnapshot.policy.maxMediaPercent);
+            long volumeRevision = UserVolumeControl.revision();
             ControlCommand command = coordinateFrame(now, current, levels,
                     signal, hybridSnapshot.policy, effectiveProfile, hybridSnapshot.sources.confidence,
                     hybridSnapshot.playback, blockRms, signal, loud.momentaryDbfs);
@@ -802,7 +801,7 @@ public class NormalizerService extends Service {
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
-                    effectiveProfile.autoMute, now);
+                    effectiveProfile.autoMute, now, volumeRevision);
             command = respectMediaPause(command);
             logControlSummary(now, command, applied, levels);
             String reason = command.reason();
@@ -1012,13 +1011,14 @@ public class NormalizerService extends Service {
                             CaptureReferenceEstimator.Mode.UNKNOWN, fallbackPeak, fallbackRms,
                             reading.levelAvailable));
             int policyMaxIndex = controlCurve.capIndexFromPercent(hybridSnapshot.policy.fallbackMaxPercent);
+            long volumeRevision = UserVolumeControl.revision();
             ControlCommand command = coordinateFrame(detectedAt, current, levels,
                     signal, hybridSnapshot.policy, effectiveProfile, hybridSnapshot.sources.confidence,
                     hybridSnapshot.playback, fallbackRms, reading.levelAvailable, Float.NaN);
             persistCoordinatorCeilingsIfRequested();
             boolean emergency = isSafetyCommand(command);
             int applied = applyCoordinatorCommand(command, current, safetySettings, policyMaxIndex,
-                    effectiveProfile.autoMute, detectedAt);
+                    effectiveProfile.autoMute, detectedAt, volumeRevision);
             logControlSummary(detectedAt, command, applied, levels);
             long latency = applied < current
                     ? Math.max(0L, SystemClock.elapsedRealtime() - detectedAt) : -1L;
@@ -1283,6 +1283,18 @@ public class NormalizerService extends Service {
             return command;
         }
         return ControlCommand.none(StrictSafetyState.mediaAutomation().reason());
+    }
+
+    private int applyCoordinatorCommand(ControlCommand command, int current, SafetySettings settings,
+            int effectiveMax, boolean autoMuteEnabled, long now, long volumeRevision) {
+        if (UserVolumeControl.ownsMedia() && command != null
+                && command.provenance() == ControlCommand.Provenance.AUTO_MEDIA) {
+            // Keep the existing session-gate -> target -> Media-authority lock order.
+            return sessionGate.callIfCurrent(currentSessionToken(),
+                    () -> UserVolumeControl.forRevision(volumeRevision, () -> applyCoordinatorCommandCurrent(
+                            command, current, settings, effectiveMax, autoMuteEnabled, now), current), current);
+        }
+        return applyCoordinatorCommand(command, current, settings, effectiveMax, autoMuteEnabled, now);
     }
 
     private int applyCoordinatorCommand(ControlCommand command, int current, SafetySettings settings,

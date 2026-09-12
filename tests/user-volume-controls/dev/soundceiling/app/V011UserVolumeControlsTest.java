@@ -22,7 +22,7 @@ public final class V011UserVolumeControlsTest {
         UserVolumeControl.observeNativeDelta(context, -1, 15);
         apply(context, writes);
         check(context.audio.index == 2, "native Down must not apply a second physical Down");
-        check(UserVolumeControl.percent(context) == 27 && UserVolumeControl.paused(), "native Down lowers desired and pauses");
+        check(UserVolumeControl.percent(context) == 27 && !UserVolumeControl.paused(), "native Down changes desired and continues above zero");
         UserVolumeControl.setPercent(context, 40);
         apply(context, writes);
         check(!UserVolumeControl.paused(), "own gesture explicitly resumes");

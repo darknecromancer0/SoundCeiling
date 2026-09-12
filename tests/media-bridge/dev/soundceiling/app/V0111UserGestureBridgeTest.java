@@ -18,9 +18,9 @@ public final class V0111UserGestureBridgeTest {
         check(audio.index == 1 && audio.writes == 0,
                 "own slider reduction updates target without repeated full steps or 1->0->1");
         user.apply(3, true, false, 1200);
-        check(audio.index == 0 && authority.paused(), "hardware Down still lowers immediately and pauses");
-        user.apply(3, true, true, 1300);
-        check(audio.index == 0, "dragging own slider down cannot unmute native zero");
+        check(audio.index == 1 && authority.allowsWrites(), "hardware Down leaves positive targets running without a second physical step");
+        user.apply(0, true, true, 1300);
+        check(audio.index == 0 && authority.paused(), "only own zero mutes and remains paused");
         user.apply(3, false, true, 1400);
         check(audio.index == 1 && authority.allowsWrites(), "explicit Up or Continue leaves zero");
         System.out.println("V0111UserGestureBridgeTest: PASS");

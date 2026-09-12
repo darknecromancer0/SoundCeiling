@@ -10,9 +10,11 @@ import android.util.DisplayMetrics;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
+import android.accessibilityservice.AccessibilityServiceInfo;
 
-import java.util.ArrayDeque;
-import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -48,19 +50,39 @@ final class SystemVolumePanelProbe {
         metrics.setTo(service.getResources().getDisplayMetrics());
         WindowManager manager = (WindowManager) service.getSystemService(AccessibilityService.WINDOW_SERVICE);
         if (manager != null) manager.getDefaultDisplay().getRealMetrics(metrics);
+        int windowId = event.getWindowId();
+        AccessibilityServiceInfo info = service.getServiceInfo();
+        int capabilities = info == null ? 0 : info.getCapabilities();
         boolean queued = worker.post(() -> {
-            UserVolumeOverlayPlacement.Box box = null;
+            VolumePanelGeometry.Result answer = new VolumePanelGeometry.Result(null, "cancelled");
             try {
-                if (!closed && requestGeneration == generation) box = find(copy, metrics);
-            } catch (RuntimeException ignored) { /* SystemUI may dismiss its window during the query. */ }
+                if (!closed && requestGeneration == generation) {
+                    answer = new VolumePanelGeometry(metrics.widthPixels, metrics.heightPixels, metrics.density,
+                            SystemClock::uptimeMillis, () -> !closed && requestGeneration == generation)
+                            .find(new VolumePanelGeometry.Access() {
+                                public VolumePanelGeometry.Node source() { return wrap(copy.getSource()); }
+                                public List<VolumePanelGeometry.Window> windows() {
+                                    List<AccessibilityWindowInfo> nativeWindows = service.getWindows();
+                                    List<VolumePanelGeometry.Window> result = new ArrayList<>();
+                                    if (nativeWindows != null) for (AccessibilityWindowInfo window : nativeWindows) {
+                                        if (window != null) result.add(new NativeWindow(window));
+                                    }
+                                    return result;
+                                }
+                            }, windowId);
+                }
+            } catch (RuntimeException error) {
+                answer = new VolumePanelGeometry.Result(null, "error_" + error.getClass().getSimpleName());
+            }
             finally { copy.recycle(); busy.set(false); }
-            UserVolumeOverlayPlacement.Box found = box;
+            VolumePanelGeometry.Result found = answer;
             main.post(() -> {
                 if (closed || requestGeneration != generation) return;
-                result.accept(found);
-                DiagnosticLog.transition("volume_panel_geometry", String.valueOf(found),
-                        "native=" + found + " screen=" + metrics.widthPixels + 'x' + metrics.heightPixels
-                                + " density=" + metrics.density);
+                result.accept(found.bounds);
+                DiagnosticLog.transition("volume_panel_geometry", found.reason + ':' + found.bounds,
+                        "native=" + found.bounds + " reason=" + found.reason + " window=" + windowId
+                                + " capabilities=" + capabilities + " screen=" + metrics.widthPixels + 'x'
+                                + metrics.heightPixels + " density=" + metrics.density);
             });
         });
         if (!queued) { copy.recycle(); busy.set(false); }
@@ -74,75 +96,33 @@ final class SystemVolumePanelProbe {
         thread.quitSafely();
     }
 
-    private static UserVolumeOverlayPlacement.Box find(AccessibilityEvent event, DisplayMetrics metrics) {
-        long deadline = SystemClock.uptimeMillis() + 250L;
-        AccessibilityNodeInfo root = event.getSource();
-        if (root == null) return null;
-        ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
-        UserVolumeOverlayPlacement.Box best = null;
-        int bestScore = -1;
-        try {
-            if (!systemUi(root)) return null;
-            // A slider-change event may start at the track. Include its nearby pill/header parent.
-            for (int level = 0; level < 4 && SystemClock.uptimeMillis() < deadline; level++) {
-                AccessibilityNodeInfo parent = root.getParent();
-                if (parent == null) break;
-                if (!systemUi(parent)) { parent.recycle(); break; }
-                root.recycle(); root = parent;
-            }
-            queue.add(root); root = null;
-            int visited = 0;
-            while (!queue.isEmpty() && visited++ < 64 && SystemClock.uptimeMillis() < deadline) {
-                AccessibilityNodeInfo node = queue.removeFirst();
-                try {
-                    if (!systemUi(node) || !node.isVisibleToUser()) continue;
-                    Rect rect = new Rect();
-                    node.getBoundsInScreen(rect);
-                    String id = node.getViewIdResourceName();
-                    id = id == null ? "" : id.toLowerCase(Locale.ROOT);
-                    String type = String.valueOf(node.getClassName());
-                    UserVolumeOverlayPlacement.Box box = new UserVolumeOverlayPlacement.Box(
-                            rect.left, rect.top, rect.right, rect.bottom);
-                    if ((id.contains("volume") || type.contains("SeekBar"))
-                            && UserVolumeOverlayPlacement.validNative(metrics.widthPixels,
-                                    metrics.heightPixels, metrics.density, box)) {
-                        int score = Math.round(box.height() / metrics.density)
-                                + (id.contains("media") || id.contains("music") ? 500 : 0)
-                                + (type.contains("SeekBar") ? 100 : 0);
-                        // Prefer the enclosing narrow capsule, including its icon and menu.
-                        AccessibilityNodeInfo parent = node.getParent();
-                        if (parent != null) {
-                            try {
-                                if (systemUi(parent)) {
-                                    parent.getBoundsInScreen(rect);
-                                    UserVolumeOverlayPlacement.Box outer = new UserVolumeOverlayPlacement.Box(
-                                            rect.left, rect.top, rect.right, rect.bottom);
-                                    if (UserVolumeOverlayPlacement.validNative(metrics.widthPixels,
-                                            metrics.heightPixels, metrics.density, outer)
-                                            && outer.width() <= box.width() * 1.35f
-                                            && outer.left <= box.left && outer.right >= box.right
-                                            && outer.top <= box.top && outer.bottom >= box.bottom) box = outer;
-                                }
-                            } finally { parent.recycle(); }
-                        }
-                        if (score > bestScore) { bestScore = score; best = box; }
-                    }
-                    int children = Math.min(node.getChildCount(), 64 - visited - queue.size());
-                    for (int i = 0; i < children && SystemClock.uptimeMillis() < deadline; i++) {
-                        AccessibilityNodeInfo child = node.getChild(i);
-                        if (child != null) queue.addLast(child);
-                    }
-                } finally { node.recycle(); }
-            }
-            return best;
-        } finally {
-            if (root != null) root.recycle();
-            while (!queue.isEmpty()) queue.removeFirst().recycle();
-        }
+    private static VolumePanelGeometry.Node wrap(AccessibilityNodeInfo node) {
+        return node == null ? null : new NativeNode(node);
     }
-
-    private static boolean systemUi(AccessibilityNodeInfo node) {
-        CharSequence name = node.getPackageName();
-        return name != null && "com.android.systemui".contentEquals(name);
+    private static UserVolumeOverlayPlacement.Box box(Rect rect) {
+        return new UserVolumeOverlayPlacement.Box(rect.left, rect.top, rect.right, rect.bottom);
+    }
+    private static final class NativeNode implements VolumePanelGeometry.Node {
+        private final AccessibilityNodeInfo node;
+        NativeNode(AccessibilityNodeInfo node) { this.node = node; }
+        public String packageName() { return String.valueOf(node.getPackageName()); }
+        public String className() { return String.valueOf(node.getClassName()); }
+        public String resourceId() { return node.getViewIdResourceName(); }
+        public boolean visible() { return node.isVisibleToUser(); }
+        public UserVolumeOverlayPlacement.Box bounds() { Rect r = new Rect(); node.getBoundsInScreen(r); return box(r); }
+        public VolumePanelGeometry.Node parent() { return wrap(node.getParent()); }
+        public int childCount() { return node.getChildCount(); }
+        public VolumePanelGeometry.Node child(int index) { return wrap(node.getChild(index)); }
+        public void recycle() { node.recycle(); }
+    }
+    private static final class NativeWindow implements VolumePanelGeometry.Window {
+        private final AccessibilityWindowInfo window;
+        NativeWindow(AccessibilityWindowInfo window) { this.window = window; }
+        public int id() { return window.getId(); }
+        public boolean system() { return window.getType() == AccessibilityWindowInfo.TYPE_SYSTEM; }
+        public String title() { return String.valueOf(window.getTitle()); }
+        public UserVolumeOverlayPlacement.Box bounds() { Rect r = new Rect(); window.getBoundsInScreen(r); return box(r); }
+        public VolumePanelGeometry.Node root() { return wrap(window.getRoot()); }
+        public void recycle() { window.recycle(); }
     }
 }

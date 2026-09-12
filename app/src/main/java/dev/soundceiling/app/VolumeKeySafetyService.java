@@ -40,7 +40,8 @@ public final class VolumeKeySafetyService extends AccessibilityService {
         AccessibilityServiceInfo info = getServiceInfo();
         if (info != null) {
             info.flags |= AccessibilityServiceInfo.FLAG_ENABLE_ACCESSIBILITY_VOLUME
-                    | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
+                    | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+                    | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
             info.flags &= ~AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
             info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                     | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
@@ -247,8 +248,8 @@ public final class VolumeKeySafetyService extends AccessibilityService {
         if (UserVolumeUiPolicy.isVolumeWindow(event.getEventType(), event.getPackageName(),
                 event.getClassName(), event.getContentDescription(), event.getText())) {
             showOwnPanel(false);
-            // Inspect only this SystemUI volume event on a background worker.
-            // No root from the foreground application or global window enumeration.
+            // Inspect the SystemUI event and its volume window on a background worker.
+            // Window metadata can identify VolumeDialog when the event has no source node.
             if (panelProbe != null) panelProbe.inspect(event);
         }
     }

@@ -139,7 +139,7 @@ final class AdvancedModeView extends ScrollView implements RuntimeScreen {
         root.addView(quietRow);
 
         section("Главное");
-        root.addView(secondary("Параметры Target и силы относятся к PCM Shadow/Relay и прежней нормализации. Обычную громкость и её максимум задаёт верхняя карточка. Down — тише и пауза; Up, ползунок или «Продолжить» возобновляют автогромкость.", 13));
+        root.addView(secondary("Параметры Target и силы относятся к PCM Shadow/Relay и прежней нормализации. Обычную громкость и её максимум задаёт верхняя карточка. Кнопки меняют только вашу громкость. При 0% — без звука и пауза; положительный уровень продолжает автогромкость.", 13));
         normalizationGroup = new RadioGroup(context); normalizationGroup.setOrientation(RadioGroup.HORIZONTAL);
         addNormalization("Off", NormalizationPreset.OFF); addNormalization("Light", NormalizationPreset.LIGHT);
         addNormalization("Medium", NormalizationPreset.MEDIUM); addNormalization("Strict", NormalizationPreset.STRICT);
